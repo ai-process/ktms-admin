@@ -1,0 +1,200 @@
+syntax = "proto3";
+
+package llmproxy.v1;
+
+option go_package = "github.com/ai-process/llm-proxy-admin/internal/gen/llmproxy/v1;llmproxyv1";
+
+// Effort is the only routing field the proxy is guaranteed to understand.
+// Everything else about a request's purpose travels in opaque attributes.
+enum Effort {
+  EFFORT_UNSPECIFIED = 0;
+  EFFORT_LOW = 1;
+  EFFORT_MEDIUM = 2;
+  EFFORT_HIGH = 3;
+}
+
+// System content never travels as a message: it goes in the two instruction
+// fields of GenerateTextRequest, matching the internal ChatContext v2 shape.
+enum MessageRole {
+  MESSAGE_ROLE_UNSPECIFIED = 0;
+  MESSAGE_ROLE_USER = 1;
+  MESSAGE_ROLE_ASSISTANT = 2;
+}
+
+message ChatMessage {
+  MessageRole role = 1;
+  string text = 2;
+}
+
+// SchemaProperty mirrors the vendor-neutral llm.SchemaProperty.
+message SchemaProperty {
+  // "string" | "integer" | "boolean" | "object" | "array"
+  string type = 1;
+  string description = 2;
+  map<string, SchemaProperty> properties = 3; // object types
+  SchemaProperty items = 4; // array types
+  repeated string required = 5; // object types
+  bool nullable = 6;
+}
+
+// ResponseSchema mirrors llm.ResponseSchema (top level of the JSON schema).
+message ResponseSchema {
+  string type = 1;
+  map<string, SchemaProperty> properties = 2;
+  SchemaProperty items = 3;
+  repeated string required = 4;
+}
+
+message GenerateTextRequest {
+  Effort effort = 1;
+  // Opaque routing/usage attributes: "subject", "user_id", "task", ...
+  // Matched by equality in rules and forwarded to usage meta.
+  // Two names are reserved: "user_id" attributes the call to an end user, and
+  // "usage_project" names the usage-collector project for callers that front
+  // many tenants (e.g. a chat platform serving many bots from one process).
+  // Without it the project is the api key's name.
+  map<string, string> attributes = 2;
+  repeated ChatMessage messages = 3;
+  string base_system_instruction = 4; // persistent, joined upstream
+  string request_instruction = 5; // ephemeral per-request instruction
+  ResponseSchema response_schema = 6; // unset = free text
+  int32 max_output_tokens = 7; // 0 = no ceiling
+  bool enable_google_search = 8; // only google-capable models can serve it
+  string action_id = 9; // usage attribution, e.g. "app.summarize"
+  string model_override = 10; // exact registry model id; bypasses rules, not throttles
+}
+
+message TokensUsage {
+  int64 input = 1;
+  int64 output = 2;
+}
+
+message GenerateTextResponse {
+  repeated string choices = 1;
+  TokensUsage usage = 2;
+  string resolved_model = 3; // registry model id actually used
+  string resolved_vendor = 4; // "openai" | "google" | "deepseek"
+  string matched_rule = 5; // rule name, "" on model_override
+}
+
+message ListModelsRequest {}
+
+message ModelInfo {
+  string id = 1;
+  string vendor = 2;
+  repeated Effort efforts = 3;
+  repeated string capabilities = 4;
+  int32 rpm = 5;
+  double price_in_per_mtok = 6;
+  double price_out_per_mtok = 7;
+}
+
+message ListModelsResponse {
+  // Only models the calling client holds a vendor key for.
+  repeated ModelInfo models = 1;
+}
+
+// Error contract: retry only on UNAVAILABLE ("vendors_unavailable").
+// RESOURCE_EXHAUSTED = throttled ("throttled:rpm" | "throttled:budget_key" |
+// "throttled:budget_user") — back off, do not hot-retry.
+// FAILED_PRECONDITION: "output_truncated" (raise max_output_tokens, do not
+// retry as-is), "no_capable_model", "no_vendor_key", "not_configured".
+// INTERNAL "vendor_error" = terminal vendor failure.
+service LLMProxyService {
+  rpc GenerateText(GenerateTextRequest) returns (GenerateTextResponse);
+  // Speech and images route by the same rules as text. They carry no effort of
+  // their own: the proxy routes them at EFFORT_LOW with a reserved
+  // attributes["modality"] of "tts" or "image", so a rule pins them by matching
+  // that attribute and the chain is filtered to models declaring the matching
+  // capability. Without such a rule the low catch-all matches, holds no capable
+  // model, and the call fails FAILED_PRECONDITION "no_capable_model".
+  rpc SynthesizeSpeech(SynthesizeSpeechRequest) returns (SynthesizeSpeechResponse);
+  rpc GenerateImage(GenerateImageRequest) returns (GenerateImageResponse);
+  // Judge asks typed questions about a state and gets calibrated answers back —
+  // a decision, not a generation. It routes like the other modalities:
+  // EFFORT_LOW plus a reserved attributes["modality"] of "judge", chain
+  // filtered to models declaring the "judge" capability.
+  rpc Judge(JudgeRequest) returns (JudgeResponse);
+  rpc ListModels(ListModelsRequest) returns (ListModelsResponse);
+}
+
+message SynthesizeSpeechRequest {
+  string text = 1; // read verbatim; not a prompt
+  string language = 2; // steers pronunciation, e.g. "Serbian"
+  map<string, string> attributes = 3; // same routing/usage attributes as text
+  string action_id = 4;
+  string model_override = 5; // exact registry model id; bypasses rules
+}
+
+message SynthesizeSpeechResponse {
+  bytes audio = 1; // OGG/Opus
+  string mime_type = 2;
+  int32 duration_ms = 3; // 0 when the vendor reports none
+  string resolved_model = 4;
+  string resolved_vendor = 5;
+  TokensUsage usage = 6;
+  string matched_rule = 7;
+}
+
+message GenerateImageRequest {
+  string prompt = 1;
+  map<string, string> attributes = 2;
+  string action_id = 3;
+  string model_override = 4;
+}
+
+message GenerateImageResponse {
+  bytes image = 1;
+  string mime_type = 2;
+  string resolved_model = 3;
+  string resolved_vendor = 4;
+  TokensUsage usage = 5;
+  string matched_rule = 6;
+}
+
+// JudgeType is the question shape. Each type answers a different kind of
+// question and fills different fields of JudgeAnswer.
+enum JudgeType {
+  JUDGE_TYPE_UNSPECIFIED = 0;
+  JUDGE_TYPE_NOUL = 1; // does this hold? -> probability of yes
+  JUDGE_TYPE_CHOICE = 2; // which one? -> option id + distribution
+  JUDGE_TYPE_SCORE = 3; // how much? -> weighted position on ordered levels
+}
+
+message JudgeQuestion {
+  JudgeType type = 1;
+  string instructions = 2; // the judgment itself, stated in full
+  map<string, string> options = 3; // CHOICE: option id -> what it covers
+  repeated string levels = 4; // SCORE: ordered level descriptions, lowest first
+  string true_criteria = 5; // NOUL, optional: what a yes means
+  string false_criteria = 6; // NOUL, optional: what a no means
+}
+
+message JudgeAnswer {
+  JudgeType type = 1;
+  string choice = 2; // CHOICE: the selected option id
+  double noul = 3; // NOUL: probability of yes, 0..1
+  double score = 4; // SCORE: probability-weighted level position
+  map<string, double> probabilities = 5; // CHOICE/SCORE: full distribution
+  double confidence = 6; // CHOICE/SCORE: how concentrated that distribution is
+  map<string, string> legend = 7; // SCORE: level index -> its description
+}
+
+message JudgeRequest {
+  // The state to judge, as JSON: an object, array or bare string. Passed to the
+  // vendor verbatim, so the caller owns its shape; the proxy only checks that
+  // it parses.
+  string state_json = 1;
+  map<string, JudgeQuestion> questions = 2; // caller's ids; answers come back under them
+  map<string, string> attributes = 3; // same routing/usage attributes as text
+  string action_id = 4;
+  string model_override = 5; // exact registry model id; bypasses rules
+}
+
+message JudgeResponse {
+  map<string, JudgeAnswer> answers = 1; // one per requested question id
+  TokensUsage usage = 2;
+  string resolved_model = 3;
+  string resolved_vendor = 4;
+  string matched_rule = 5;
+}

@@ -1,0 +1,56 @@
+# The whole family: llm-proxy, light-tokenmeter and this console on one Postgres.
+# Copy env.example to .env, fill in the Google and key values, then:
+#   docker compose -f examples/compose.yaml --env-file .env up -d
+#
+# First run: mint the console's key, then restart the console:
+#   grpcurl -plaintext -H "authorization: Bearer $BOOTSTRAP_ADMIN_KEY" -d '{"name":"console","scopes":["admin"]}' \
+#     localhost:9090 llmproxy.v1.LLMProxyAdminService/MintAPIKey
+# Put the returned key in .env as LLM_PROXY_ADMIN_KEY.
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      retries: 20
+
+  llm-proxy:
+    image: coyl/llm-proxy:latest
+    depends_on: { db: { condition: service_healthy } }
+    environment:
+      DATABASE_URL: postgres://postgres:${DB_PASSWORD:-postgres}@db:5432/llmproxy?sslmode=disable
+      LLMPROXY_ENCRYPTION_KEYS: ${LLMPROXY_ENCRYPTION_KEYS:?generate with: echo "1:$(head -c 32 /dev/urandom | base64)"}
+      BOOTSTRAP_ADMIN_KEY: ${BOOTSTRAP_ADMIN_KEY:-}
+      USAGE_COLLECTOR_HOST: light-tokenmeter:9090
+    ports: ["9090:9090"]
+
+  light-tokenmeter:
+    image: coyl/light-tokenmeter:latest
+    depends_on: { db: { condition: service_healthy } }
+    environment:
+      DATABASE_URL: postgres://postgres:${DB_PASSWORD:-postgres}@db:5432/tokenmeter?sslmode=disable
+
+  console:
+    image: coyl/llm-proxy-admin:latest
+    depends_on: [llm-proxy, light-tokenmeter]
+    environment:
+      PUBLIC_URL: ${PUBLIC_URL:?set PUBLIC_URL in .env}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?set GOOGLE_CLIENT_ID in .env}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:?set GOOGLE_CLIENT_SECRET in .env}
+      ALLOWED_EMAILS: ${ALLOWED_EMAILS:?set ALLOWED_EMAILS in .env}
+      VIEWER_EMAILS: ${VIEWER_EMAILS:-}
+      SESSION_SECRET: ${SESSION_SECRET:-}
+      LLM_PROXY_ADDR: llm-proxy:9090
+      LLM_PROXY_ADMIN_KEY: ${LLM_PROXY_ADMIN_KEY:-}
+      TOKENMETER_URL: http://light-tokenmeter:8080
+    ports: ["8080:8080"]
+
+volumes:
+  pgdata:

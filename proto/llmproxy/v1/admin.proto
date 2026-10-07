@@ -1,0 +1,137 @@
+syntax = "proto3";
+
+package llmproxy.v1;
+
+import "google/protobuf/timestamp.proto";
+import "llmproxy/v1/llmproxy.proto";
+
+option go_package = "github.com/ai-process/llm-proxy-admin/internal/gen/llmproxy/v1;llmproxyv1";
+
+// ModelSpec is a registry entry. Vendor credentials are NOT part of the spec:
+// they are per-client rows managed via SetVendorKey.
+message ModelSpec {
+  string id = 1; // unique registry id, referenced by rules and model_override
+  string vendor = 2; // openai | google | deepseek
+  string endpoint = 3; // optional base-URL override
+  repeated Effort efforts = 4; // tiers this model may serve
+  repeated string capabilities = 5; // e.g. "google_search"
+  int32 rpm = 6; // per client key per minute, 0 = unlimited
+  double price_in_per_mtok = 7; // standard (off-peak) rate
+  double price_out_per_mtok = 8;
+  // Peak rates, 0 when the vendor bills one price all day. DeepSeek V4 doubles
+  // for two windows daily, so a single price understates its cost.
+  double price_in_peak_per_mtok = 12;
+  double price_out_peak_per_mtok = 13;
+  int64 daily_tokens_per_key = 9; // per api key per UTC day, 0 = unlimited
+  int64 daily_tokens_per_user = 10; // per attributes["user_id"] per UTC day
+  bool enabled = 11;
+}
+
+message RuleSpec {
+  string name = 1; // unique, logged and put in usage meta
+  int32 priority = 2; // unique; higher wins, first match takes the request
+  Effort effort = 3; // EFFORT_UNSPECIFIED = matches any effort
+  map<string, string> attributes = 4; // equality predicates over request attributes
+  repeated string use = 5; // ordered fallback chain of model ids, cheaper-first
+  bool enabled = 6;
+}
+
+message UpsertModelRequest {
+  ModelSpec model = 1;
+}
+
+message UpsertModelResponse {}
+
+message DeleteModelRequest {
+  string id = 1;
+}
+
+message DeleteModelResponse {}
+
+// ReplaceRules swaps the whole rule set transactionally. Rules change
+// together; per-rule CRUD would deadlock on the catch-all validation.
+message ReplaceRulesRequest {
+  repeated RuleSpec rules = 1;
+}
+
+message ReplaceRulesResponse {}
+
+message SetVendorKeyRequest {
+  string api_key_name = 1; // client key this vendor credential is assigned to
+  string vendor = 2;
+  string plain_key = 3; // encrypted at rest; never stored, logged, or returned
+}
+
+message SetVendorKeyResponse {}
+
+message DeleteVendorKeyRequest {
+  string api_key_name = 1;
+  string vendor = 2;
+}
+
+message DeleteVendorKeyResponse {}
+
+message VendorKeyInfo {
+  string api_key_name = 1;
+  string vendor = 2;
+  int32 key_version = 3; // keyring version used to encrypt
+  google.protobuf.Timestamp created_at = 4;
+}
+
+message GetConfigRequest {}
+
+message GetConfigResponse {
+  repeated ModelSpec models = 1;
+  repeated RuleSpec rules = 2;
+  repeated VendorKeyInfo vendor_keys = 3;
+  int64 version = 4;
+}
+
+message MintAPIKeyRequest {
+  string name = 1;
+  repeated string scopes = 2; // "generate" | "admin"
+}
+
+message MintAPIKeyResponse {
+  string plain_key = 1; // returned exactly once, never stored or logged
+}
+
+message RevokeAPIKeyRequest {
+  string name = 1;
+}
+
+message RevokeAPIKeyResponse {}
+
+message ListAPIKeysRequest {}
+
+message APIKeyInfo {
+  string name = 1;
+  repeated string scopes = 2;
+  google.protobuf.Timestamp created_at = 3;
+  bool disabled = 4;
+}
+
+message ListAPIKeysResponse {
+  repeated APIKeyInfo keys = 1;
+}
+
+message RotateEncryptionRequest {}
+
+message RotateEncryptionResponse {
+  int32 reencrypted = 1; // vendor keys re-encrypted with the active keyring version
+}
+
+// All admin RPCs require the "admin" scope. Every config mutation validates
+// the resulting full config in one transaction and bumps the config version.
+service LLMProxyAdminService {
+  rpc UpsertModel(UpsertModelRequest) returns (UpsertModelResponse);
+  rpc DeleteModel(DeleteModelRequest) returns (DeleteModelResponse);
+  rpc ReplaceRules(ReplaceRulesRequest) returns (ReplaceRulesResponse);
+  rpc SetVendorKey(SetVendorKeyRequest) returns (SetVendorKeyResponse);
+  rpc DeleteVendorKey(DeleteVendorKeyRequest) returns (DeleteVendorKeyResponse);
+  rpc GetConfig(GetConfigRequest) returns (GetConfigResponse);
+  rpc MintAPIKey(MintAPIKeyRequest) returns (MintAPIKeyResponse);
+  rpc RevokeAPIKey(RevokeAPIKeyRequest) returns (RevokeAPIKeyResponse);
+  rpc ListAPIKeys(ListAPIKeysRequest) returns (ListAPIKeysResponse);
+  rpc RotateEncryption(RotateEncryptionRequest) returns (RotateEncryptionResponse);
+}

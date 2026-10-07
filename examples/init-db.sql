@@ -1,0 +1,2 @@
+CREATE DATABASE llmproxy;
+CREATE DATABASE tokenmeter;
