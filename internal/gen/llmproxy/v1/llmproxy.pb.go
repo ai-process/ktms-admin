@@ -9,6 +9,7 @@ package llmproxyv1
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -83,6 +84,7 @@ const (
 	MessageRole_MESSAGE_ROLE_UNSPECIFIED MessageRole = 0
 	MessageRole_MESSAGE_ROLE_USER        MessageRole = 1
 	MessageRole_MESSAGE_ROLE_ASSISTANT   MessageRole = 2
+	MessageRole_MESSAGE_ROLE_TOOL        MessageRole = 3
 )
 
 // Enum value maps for MessageRole.
@@ -91,11 +93,13 @@ var (
 		0: "MESSAGE_ROLE_UNSPECIFIED",
 		1: "MESSAGE_ROLE_USER",
 		2: "MESSAGE_ROLE_ASSISTANT",
+		3: "MESSAGE_ROLE_TOOL",
 	}
 	MessageRole_value = map[string]int32{
 		"MESSAGE_ROLE_UNSPECIFIED": 0,
 		"MESSAGE_ROLE_USER":        1,
 		"MESSAGE_ROLE_ASSISTANT":   2,
+		"MESSAGE_ROLE_TOOL":        3,
 	}
 )
 
@@ -180,17 +184,495 @@ func (JudgeType) EnumDescriptor() ([]byte, []int) {
 	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{2}
 }
 
+type BatchState int32
+
+const (
+	BatchState_BATCH_STATE_UNSPECIFIED BatchState = 0
+	BatchState_BATCH_STATE_PENDING     BatchState = 1
+	BatchState_BATCH_STATE_RUNNING     BatchState = 2
+	BatchState_BATCH_STATE_SUCCEEDED   BatchState = 3
+	BatchState_BATCH_STATE_FAILED      BatchState = 4
+	BatchState_BATCH_STATE_CANCELLED   BatchState = 5
+	BatchState_BATCH_STATE_EXPIRED     BatchState = 6
+)
+
+// Enum value maps for BatchState.
+var (
+	BatchState_name = map[int32]string{
+		0: "BATCH_STATE_UNSPECIFIED",
+		1: "BATCH_STATE_PENDING",
+		2: "BATCH_STATE_RUNNING",
+		3: "BATCH_STATE_SUCCEEDED",
+		4: "BATCH_STATE_FAILED",
+		5: "BATCH_STATE_CANCELLED",
+		6: "BATCH_STATE_EXPIRED",
+	}
+	BatchState_value = map[string]int32{
+		"BATCH_STATE_UNSPECIFIED": 0,
+		"BATCH_STATE_PENDING":     1,
+		"BATCH_STATE_RUNNING":     2,
+		"BATCH_STATE_SUCCEEDED":   3,
+		"BATCH_STATE_FAILED":      4,
+		"BATCH_STATE_CANCELLED":   5,
+		"BATCH_STATE_EXPIRED":     6,
+	}
+)
+
+func (x BatchState) Enum() *BatchState {
+	p := new(BatchState)
+	*p = x
+	return p
+}
+
+func (x BatchState) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (BatchState) Descriptor() protoreflect.EnumDescriptor {
+	return file_llmproxy_v1_llmproxy_proto_enumTypes[3].Descriptor()
+}
+
+func (BatchState) Type() protoreflect.EnumType {
+	return &file_llmproxy_v1_llmproxy_proto_enumTypes[3]
+}
+
+func (x BatchState) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use BatchState.Descriptor instead.
+func (BatchState) EnumDescriptor() ([]byte, []int) {
+	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{3}
+}
+
+type ToolChoice_Mode int32
+
+const (
+	ToolChoice_MODE_UNSPECIFIED ToolChoice_Mode = 0
+	ToolChoice_MODE_AUTO        ToolChoice_Mode = 1
+	ToolChoice_MODE_NONE        ToolChoice_Mode = 2
+	ToolChoice_MODE_REQUIRED    ToolChoice_Mode = 3
+	ToolChoice_MODE_SPECIFIC    ToolChoice_Mode = 4
+)
+
+// Enum value maps for ToolChoice_Mode.
+var (
+	ToolChoice_Mode_name = map[int32]string{
+		0: "MODE_UNSPECIFIED",
+		1: "MODE_AUTO",
+		2: "MODE_NONE",
+		3: "MODE_REQUIRED",
+		4: "MODE_SPECIFIC",
+	}
+	ToolChoice_Mode_value = map[string]int32{
+		"MODE_UNSPECIFIED": 0,
+		"MODE_AUTO":        1,
+		"MODE_NONE":        2,
+		"MODE_REQUIRED":    3,
+		"MODE_SPECIFIC":    4,
+	}
+)
+
+func (x ToolChoice_Mode) Enum() *ToolChoice_Mode {
+	p := new(ToolChoice_Mode)
+	*p = x
+	return p
+}
+
+func (x ToolChoice_Mode) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ToolChoice_Mode) Descriptor() protoreflect.EnumDescriptor {
+	return file_llmproxy_v1_llmproxy_proto_enumTypes[4].Descriptor()
+}
+
+func (ToolChoice_Mode) Type() protoreflect.EnumType {
+	return &file_llmproxy_v1_llmproxy_proto_enumTypes[4]
+}
+
+func (x ToolChoice_Mode) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ToolChoice_Mode.Descriptor instead.
+func (ToolChoice_Mode) EnumDescriptor() ([]byte, []int) {
+	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{5, 0}
+}
+
+type ToolCall struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Type          string                 `protobuf:"bytes,2,opt,name=type,proto3" json:"type,omitempty"` // "function"
+	Function      *FunctionCall          `protobuf:"bytes,3,opt,name=function,proto3" json:"function,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ToolCall) Reset() {
+	*x = ToolCall{}
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ToolCall) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ToolCall) ProtoMessage() {}
+
+func (x *ToolCall) ProtoReflect() protoreflect.Message {
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ToolCall.ProtoReflect.Descriptor instead.
+func (*ToolCall) Descriptor() ([]byte, []int) {
+	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *ToolCall) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *ToolCall) GetType() string {
+	if x != nil {
+		return x.Type
+	}
+	return ""
+}
+
+func (x *ToolCall) GetFunction() *FunctionCall {
+	if x != nil {
+		return x.Function
+	}
+	return nil
+}
+
+type FunctionCall struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Arguments     string                 `protobuf:"bytes,2,opt,name=arguments,proto3" json:"arguments,omitempty"` // JSON-encoded arguments
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FunctionCall) Reset() {
+	*x = FunctionCall{}
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FunctionCall) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FunctionCall) ProtoMessage() {}
+
+func (x *FunctionCall) ProtoReflect() protoreflect.Message {
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FunctionCall.ProtoReflect.Descriptor instead.
+func (*FunctionCall) Descriptor() ([]byte, []int) {
+	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *FunctionCall) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *FunctionCall) GetArguments() string {
+	if x != nil {
+		return x.Arguments
+	}
+	return ""
+}
+
+type ToolCallChunk struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Index          int32                  `protobuf:"varint,1,opt,name=index,proto3" json:"index,omitempty"`
+	Id             string                 `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
+	Type           string                 `protobuf:"bytes,3,opt,name=type,proto3" json:"type,omitempty"`
+	Name           string                 `protobuf:"bytes,4,opt,name=name,proto3" json:"name,omitempty"`
+	ArgumentsDelta string                 `protobuf:"bytes,5,opt,name=arguments_delta,json=argumentsDelta,proto3" json:"arguments_delta,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ToolCallChunk) Reset() {
+	*x = ToolCallChunk{}
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ToolCallChunk) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ToolCallChunk) ProtoMessage() {}
+
+func (x *ToolCallChunk) ProtoReflect() protoreflect.Message {
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ToolCallChunk.ProtoReflect.Descriptor instead.
+func (*ToolCallChunk) Descriptor() ([]byte, []int) {
+	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *ToolCallChunk) GetIndex() int32 {
+	if x != nil {
+		return x.Index
+	}
+	return 0
+}
+
+func (x *ToolCallChunk) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *ToolCallChunk) GetType() string {
+	if x != nil {
+		return x.Type
+	}
+	return ""
+}
+
+func (x *ToolCallChunk) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ToolCallChunk) GetArgumentsDelta() string {
+	if x != nil {
+		return x.ArgumentsDelta
+	}
+	return ""
+}
+
+type Tool struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Type          string                 `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"` // "function"
+	Function      *FunctionDefinition    `protobuf:"bytes,2,opt,name=function,proto3" json:"function,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Tool) Reset() {
+	*x = Tool{}
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Tool) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Tool) ProtoMessage() {}
+
+func (x *Tool) ProtoReflect() protoreflect.Message {
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Tool.ProtoReflect.Descriptor instead.
+func (*Tool) Descriptor() ([]byte, []int) {
+	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *Tool) GetType() string {
+	if x != nil {
+		return x.Type
+	}
+	return ""
+}
+
+func (x *Tool) GetFunction() *FunctionDefinition {
+	if x != nil {
+		return x.Function
+	}
+	return nil
+}
+
+type FunctionDefinition struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Description   string                 `protobuf:"bytes,2,opt,name=description,proto3" json:"description,omitempty"`
+	Parameters    *ResponseSchema        `protobuf:"bytes,3,opt,name=parameters,proto3" json:"parameters,omitempty"`
+	Strict        bool                   `protobuf:"varint,4,opt,name=strict,proto3" json:"strict,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FunctionDefinition) Reset() {
+	*x = FunctionDefinition{}
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FunctionDefinition) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FunctionDefinition) ProtoMessage() {}
+
+func (x *FunctionDefinition) ProtoReflect() protoreflect.Message {
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FunctionDefinition.ProtoReflect.Descriptor instead.
+func (*FunctionDefinition) Descriptor() ([]byte, []int) {
+	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *FunctionDefinition) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *FunctionDefinition) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *FunctionDefinition) GetParameters() *ResponseSchema {
+	if x != nil {
+		return x.Parameters
+	}
+	return nil
+}
+
+func (x *FunctionDefinition) GetStrict() bool {
+	if x != nil {
+		return x.Strict
+	}
+	return false
+}
+
+type ToolChoice struct {
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	Mode                 ToolChoice_Mode        `protobuf:"varint,1,opt,name=mode,proto3,enum=llmproxy.v1.ToolChoice_Mode" json:"mode,omitempty"`
+	SpecificFunctionName string                 `protobuf:"bytes,2,opt,name=specific_function_name,json=specificFunctionName,proto3" json:"specific_function_name,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
+}
+
+func (x *ToolChoice) Reset() {
+	*x = ToolChoice{}
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ToolChoice) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ToolChoice) ProtoMessage() {}
+
+func (x *ToolChoice) ProtoReflect() protoreflect.Message {
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ToolChoice.ProtoReflect.Descriptor instead.
+func (*ToolChoice) Descriptor() ([]byte, []int) {
+	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *ToolChoice) GetMode() ToolChoice_Mode {
+	if x != nil {
+		return x.Mode
+	}
+	return ToolChoice_MODE_UNSPECIFIED
+}
+
+func (x *ToolChoice) GetSpecificFunctionName() string {
+	if x != nil {
+		return x.SpecificFunctionName
+	}
+	return ""
+}
+
 type ChatMessage struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Role          MessageRole            `protobuf:"varint,1,opt,name=role,proto3,enum=llmproxy.v1.MessageRole" json:"role,omitempty"`
 	Text          string                 `protobuf:"bytes,2,opt,name=text,proto3" json:"text,omitempty"`
+	ToolCalls     []*ToolCall            `protobuf:"bytes,3,rep,name=tool_calls,json=toolCalls,proto3" json:"tool_calls,omitempty"`
+	ToolCallId    string                 `protobuf:"bytes,4,opt,name=tool_call_id,json=toolCallId,proto3" json:"tool_call_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ChatMessage) Reset() {
 	*x = ChatMessage{}
-	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[0]
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -202,7 +684,7 @@ func (x *ChatMessage) String() string {
 func (*ChatMessage) ProtoMessage() {}
 
 func (x *ChatMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[0]
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -215,7 +697,7 @@ func (x *ChatMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChatMessage.ProtoReflect.Descriptor instead.
 func (*ChatMessage) Descriptor() ([]byte, []int) {
-	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{0}
+	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *ChatMessage) GetRole() MessageRole {
@@ -228,6 +710,20 @@ func (x *ChatMessage) GetRole() MessageRole {
 func (x *ChatMessage) GetText() string {
 	if x != nil {
 		return x.Text
+	}
+	return ""
+}
+
+func (x *ChatMessage) GetToolCalls() []*ToolCall {
+	if x != nil {
+		return x.ToolCalls
+	}
+	return nil
+}
+
+func (x *ChatMessage) GetToolCallId() string {
+	if x != nil {
+		return x.ToolCallId
 	}
 	return ""
 }
@@ -248,7 +744,7 @@ type SchemaProperty struct {
 
 func (x *SchemaProperty) Reset() {
 	*x = SchemaProperty{}
-	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[1]
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -260,7 +756,7 @@ func (x *SchemaProperty) String() string {
 func (*SchemaProperty) ProtoMessage() {}
 
 func (x *SchemaProperty) ProtoReflect() protoreflect.Message {
-	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[1]
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -273,7 +769,7 @@ func (x *SchemaProperty) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SchemaProperty.ProtoReflect.Descriptor instead.
 func (*SchemaProperty) Descriptor() ([]byte, []int) {
-	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{1}
+	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *SchemaProperty) GetType() string {
@@ -331,7 +827,7 @@ type ResponseSchema struct {
 
 func (x *ResponseSchema) Reset() {
 	*x = ResponseSchema{}
-	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[2]
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -343,7 +839,7 @@ func (x *ResponseSchema) String() string {
 func (*ResponseSchema) ProtoMessage() {}
 
 func (x *ResponseSchema) ProtoReflect() protoreflect.Message {
-	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[2]
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -356,7 +852,7 @@ func (x *ResponseSchema) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResponseSchema.ProtoReflect.Descriptor instead.
 func (*ResponseSchema) Descriptor() ([]byte, []int) {
-	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{2}
+	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ResponseSchema) GetType() string {
@@ -405,13 +901,15 @@ type GenerateTextRequest struct {
 	EnableGoogleSearch    bool              `protobuf:"varint,8,opt,name=enable_google_search,json=enableGoogleSearch,proto3" json:"enable_google_search,omitempty"`         // only google-capable models can serve it
 	ActionId              string            `protobuf:"bytes,9,opt,name=action_id,json=actionId,proto3" json:"action_id,omitempty"`                                          // usage attribution, e.g. "app.summarize"
 	ModelOverride         string            `protobuf:"bytes,10,opt,name=model_override,json=modelOverride,proto3" json:"model_override,omitempty"`                          // exact registry model id; bypasses rules, not throttles
+	Tools                 []*Tool           `protobuf:"bytes,11,rep,name=tools,proto3" json:"tools,omitempty"`
+	ToolChoice            *ToolChoice       `protobuf:"bytes,12,opt,name=tool_choice,json=toolChoice,proto3" json:"tool_choice,omitempty"`
 	unknownFields         protoimpl.UnknownFields
 	sizeCache             protoimpl.SizeCache
 }
 
 func (x *GenerateTextRequest) Reset() {
 	*x = GenerateTextRequest{}
-	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[3]
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -423,7 +921,7 @@ func (x *GenerateTextRequest) String() string {
 func (*GenerateTextRequest) ProtoMessage() {}
 
 func (x *GenerateTextRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[3]
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -436,7 +934,7 @@ func (x *GenerateTextRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GenerateTextRequest.ProtoReflect.Descriptor instead.
 func (*GenerateTextRequest) Descriptor() ([]byte, []int) {
-	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{3}
+	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *GenerateTextRequest) GetEffort() Effort {
@@ -509,6 +1007,20 @@ func (x *GenerateTextRequest) GetModelOverride() string {
 	return ""
 }
 
+func (x *GenerateTextRequest) GetTools() []*Tool {
+	if x != nil {
+		return x.Tools
+	}
+	return nil
+}
+
+func (x *GenerateTextRequest) GetToolChoice() *ToolChoice {
+	if x != nil {
+		return x.ToolChoice
+	}
+	return nil
+}
+
 type TokensUsage struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Input         int64                  `protobuf:"varint,1,opt,name=input,proto3" json:"input,omitempty"`
@@ -519,7 +1031,7 @@ type TokensUsage struct {
 
 func (x *TokensUsage) Reset() {
 	*x = TokensUsage{}
-	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[4]
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -531,7 +1043,7 @@ func (x *TokensUsage) String() string {
 func (*TokensUsage) ProtoMessage() {}
 
 func (x *TokensUsage) ProtoReflect() protoreflect.Message {
-	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[4]
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -544,7 +1056,7 @@ func (x *TokensUsage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TokensUsage.ProtoReflect.Descriptor instead.
 func (*TokensUsage) Descriptor() ([]byte, []int) {
-	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{4}
+	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *TokensUsage) GetInput() int64 {
@@ -561,6 +1073,74 @@ func (x *TokensUsage) GetOutput() int64 {
 	return 0
 }
 
+type Choice struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Index         int32                  `protobuf:"varint,1,opt,name=index,proto3" json:"index,omitempty"`
+	Text          string                 `protobuf:"bytes,2,opt,name=text,proto3" json:"text,omitempty"`
+	ToolCalls     []*ToolCall            `protobuf:"bytes,3,rep,name=tool_calls,json=toolCalls,proto3" json:"tool_calls,omitempty"`
+	FinishReason  string                 `protobuf:"bytes,4,opt,name=finish_reason,json=finishReason,proto3" json:"finish_reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Choice) Reset() {
+	*x = Choice{}
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Choice) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Choice) ProtoMessage() {}
+
+func (x *Choice) ProtoReflect() protoreflect.Message {
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Choice.ProtoReflect.Descriptor instead.
+func (*Choice) Descriptor() ([]byte, []int) {
+	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *Choice) GetIndex() int32 {
+	if x != nil {
+		return x.Index
+	}
+	return 0
+}
+
+func (x *Choice) GetText() string {
+	if x != nil {
+		return x.Text
+	}
+	return ""
+}
+
+func (x *Choice) GetToolCalls() []*ToolCall {
+	if x != nil {
+		return x.ToolCalls
+	}
+	return nil
+}
+
+func (x *Choice) GetFinishReason() string {
+	if x != nil {
+		return x.FinishReason
+	}
+	return ""
+}
+
 type GenerateTextResponse struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	Choices        []string               `protobuf:"bytes,1,rep,name=choices,proto3" json:"choices,omitempty"`
@@ -568,13 +1148,14 @@ type GenerateTextResponse struct {
 	ResolvedModel  string                 `protobuf:"bytes,3,opt,name=resolved_model,json=resolvedModel,proto3" json:"resolved_model,omitempty"`    // registry model id actually used
 	ResolvedVendor string                 `protobuf:"bytes,4,opt,name=resolved_vendor,json=resolvedVendor,proto3" json:"resolved_vendor,omitempty"` // "openai" | "google" | "deepseek"
 	MatchedRule    string                 `protobuf:"bytes,5,opt,name=matched_rule,json=matchedRule,proto3" json:"matched_rule,omitempty"`          // rule name, "" on model_override
+	Details        []*Choice              `protobuf:"bytes,6,rep,name=details,proto3" json:"details,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
 
 func (x *GenerateTextResponse) Reset() {
 	*x = GenerateTextResponse{}
-	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[5]
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -586,7 +1167,7 @@ func (x *GenerateTextResponse) String() string {
 func (*GenerateTextResponse) ProtoMessage() {}
 
 func (x *GenerateTextResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[5]
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -599,7 +1180,7 @@ func (x *GenerateTextResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GenerateTextResponse.ProtoReflect.Descriptor instead.
 func (*GenerateTextResponse) Descriptor() ([]byte, []int) {
-	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{5}
+	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *GenerateTextResponse) GetChoices() []string {
@@ -637,6 +1218,105 @@ func (x *GenerateTextResponse) GetMatchedRule() string {
 	return ""
 }
 
+func (x *GenerateTextResponse) GetDetails() []*Choice {
+	if x != nil {
+		return x.Details
+	}
+	return nil
+}
+
+type GenerateTextChunk struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Delta          string                 `protobuf:"bytes,1,opt,name=delta,proto3" json:"delta,omitempty"`
+	FinishReason   string                 `protobuf:"bytes,2,opt,name=finish_reason,json=finishReason,proto3" json:"finish_reason,omitempty"`
+	Usage          *TokensUsage           `protobuf:"bytes,3,opt,name=usage,proto3" json:"usage,omitempty"`
+	ResolvedModel  string                 `protobuf:"bytes,4,opt,name=resolved_model,json=resolvedModel,proto3" json:"resolved_model,omitempty"`
+	ResolvedVendor string                 `protobuf:"bytes,5,opt,name=resolved_vendor,json=resolvedVendor,proto3" json:"resolved_vendor,omitempty"`
+	MatchedRule    string                 `protobuf:"bytes,6,opt,name=matched_rule,json=matchedRule,proto3" json:"matched_rule,omitempty"`
+	ToolCallChunks []*ToolCallChunk       `protobuf:"bytes,7,rep,name=tool_call_chunks,json=toolCallChunks,proto3" json:"tool_call_chunks,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *GenerateTextChunk) Reset() {
+	*x = GenerateTextChunk{}
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GenerateTextChunk) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GenerateTextChunk) ProtoMessage() {}
+
+func (x *GenerateTextChunk) ProtoReflect() protoreflect.Message {
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GenerateTextChunk.ProtoReflect.Descriptor instead.
+func (*GenerateTextChunk) Descriptor() ([]byte, []int) {
+	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *GenerateTextChunk) GetDelta() string {
+	if x != nil {
+		return x.Delta
+	}
+	return ""
+}
+
+func (x *GenerateTextChunk) GetFinishReason() string {
+	if x != nil {
+		return x.FinishReason
+	}
+	return ""
+}
+
+func (x *GenerateTextChunk) GetUsage() *TokensUsage {
+	if x != nil {
+		return x.Usage
+	}
+	return nil
+}
+
+func (x *GenerateTextChunk) GetResolvedModel() string {
+	if x != nil {
+		return x.ResolvedModel
+	}
+	return ""
+}
+
+func (x *GenerateTextChunk) GetResolvedVendor() string {
+	if x != nil {
+		return x.ResolvedVendor
+	}
+	return ""
+}
+
+func (x *GenerateTextChunk) GetMatchedRule() string {
+	if x != nil {
+		return x.MatchedRule
+	}
+	return ""
+}
+
+func (x *GenerateTextChunk) GetToolCallChunks() []*ToolCallChunk {
+	if x != nil {
+		return x.ToolCallChunks
+	}
+	return nil
+}
+
 type ListModelsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -645,7 +1325,7 @@ type ListModelsRequest struct {
 
 func (x *ListModelsRequest) Reset() {
 	*x = ListModelsRequest{}
-	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[6]
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -657,7 +1337,7 @@ func (x *ListModelsRequest) String() string {
 func (*ListModelsRequest) ProtoMessage() {}
 
 func (x *ListModelsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[6]
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -670,25 +1350,27 @@ func (x *ListModelsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListModelsRequest.ProtoReflect.Descriptor instead.
 func (*ListModelsRequest) Descriptor() ([]byte, []int) {
-	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{6}
+	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{14}
 }
 
 type ModelInfo struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	Id              string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Vendor          string                 `protobuf:"bytes,2,opt,name=vendor,proto3" json:"vendor,omitempty"`
-	Efforts         []Effort               `protobuf:"varint,3,rep,packed,name=efforts,proto3,enum=llmproxy.v1.Effort" json:"efforts,omitempty"`
-	Capabilities    []string               `protobuf:"bytes,4,rep,name=capabilities,proto3" json:"capabilities,omitempty"`
-	Rpm             int32                  `protobuf:"varint,5,opt,name=rpm,proto3" json:"rpm,omitempty"`
-	PriceInPerMtok  float64                `protobuf:"fixed64,6,opt,name=price_in_per_mtok,json=priceInPerMtok,proto3" json:"price_in_per_mtok,omitempty"`
-	PriceOutPerMtok float64                `protobuf:"fixed64,7,opt,name=price_out_per_mtok,json=priceOutPerMtok,proto3" json:"price_out_per_mtok,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	Id                   string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Vendor               string                 `protobuf:"bytes,2,opt,name=vendor,proto3" json:"vendor,omitempty"`
+	Efforts              []Effort               `protobuf:"varint,3,rep,packed,name=efforts,proto3,enum=llmproxy.v1.Effort" json:"efforts,omitempty"`
+	Capabilities         []string               `protobuf:"bytes,4,rep,name=capabilities,proto3" json:"capabilities,omitempty"`
+	Rpm                  int32                  `protobuf:"varint,5,opt,name=rpm,proto3" json:"rpm,omitempty"`
+	PriceInPerMtok       float64                `protobuf:"fixed64,6,opt,name=price_in_per_mtok,json=priceInPerMtok,proto3" json:"price_in_per_mtok,omitempty"`
+	PriceOutPerMtok      float64                `protobuf:"fixed64,7,opt,name=price_out_per_mtok,json=priceOutPerMtok,proto3" json:"price_out_per_mtok,omitempty"`
+	PriceInBatchPerMtok  float64                `protobuf:"fixed64,8,opt,name=price_in_batch_per_mtok,json=priceInBatchPerMtok,proto3" json:"price_in_batch_per_mtok,omitempty"`
+	PriceOutBatchPerMtok float64                `protobuf:"fixed64,9,opt,name=price_out_batch_per_mtok,json=priceOutBatchPerMtok,proto3" json:"price_out_batch_per_mtok,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *ModelInfo) Reset() {
 	*x = ModelInfo{}
-	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[7]
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -700,7 +1382,7 @@ func (x *ModelInfo) String() string {
 func (*ModelInfo) ProtoMessage() {}
 
 func (x *ModelInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[7]
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -713,7 +1395,7 @@ func (x *ModelInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModelInfo.ProtoReflect.Descriptor instead.
 func (*ModelInfo) Descriptor() ([]byte, []int) {
-	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{7}
+	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *ModelInfo) GetId() string {
@@ -765,6 +1447,20 @@ func (x *ModelInfo) GetPriceOutPerMtok() float64 {
 	return 0
 }
 
+func (x *ModelInfo) GetPriceInBatchPerMtok() float64 {
+	if x != nil {
+		return x.PriceInBatchPerMtok
+	}
+	return 0
+}
+
+func (x *ModelInfo) GetPriceOutBatchPerMtok() float64 {
+	if x != nil {
+		return x.PriceOutBatchPerMtok
+	}
+	return 0
+}
+
 type ListModelsResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Only models the calling client holds a vendor key for.
@@ -775,7 +1471,7 @@ type ListModelsResponse struct {
 
 func (x *ListModelsResponse) Reset() {
 	*x = ListModelsResponse{}
-	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[8]
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -787,7 +1483,7 @@ func (x *ListModelsResponse) String() string {
 func (*ListModelsResponse) ProtoMessage() {}
 
 func (x *ListModelsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[8]
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -800,12 +1496,56 @@ func (x *ListModelsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListModelsResponse.ProtoReflect.Descriptor instead.
 func (*ListModelsResponse) Descriptor() ([]byte, []int) {
-	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{8}
+	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ListModelsResponse) GetModels() []*ModelInfo {
 	if x != nil {
 		return x.Models
+	}
+	return nil
+}
+
+type GenerateTextStreamRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Request       *GenerateTextRequest   `protobuf:"bytes,1,opt,name=request,proto3" json:"request,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GenerateTextStreamRequest) Reset() {
+	*x = GenerateTextStreamRequest{}
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GenerateTextStreamRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GenerateTextStreamRequest) ProtoMessage() {}
+
+func (x *GenerateTextStreamRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GenerateTextStreamRequest.ProtoReflect.Descriptor instead.
+func (*GenerateTextStreamRequest) Descriptor() ([]byte, []int) {
+	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *GenerateTextStreamRequest) GetRequest() *GenerateTextRequest {
+	if x != nil {
+		return x.Request
 	}
 	return nil
 }
@@ -823,7 +1563,7 @@ type SynthesizeSpeechRequest struct {
 
 func (x *SynthesizeSpeechRequest) Reset() {
 	*x = SynthesizeSpeechRequest{}
-	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[9]
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -835,7 +1575,7 @@ func (x *SynthesizeSpeechRequest) String() string {
 func (*SynthesizeSpeechRequest) ProtoMessage() {}
 
 func (x *SynthesizeSpeechRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[9]
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -848,7 +1588,7 @@ func (x *SynthesizeSpeechRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SynthesizeSpeechRequest.ProtoReflect.Descriptor instead.
 func (*SynthesizeSpeechRequest) Descriptor() ([]byte, []int) {
-	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{9}
+	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *SynthesizeSpeechRequest) GetText() string {
@@ -901,7 +1641,7 @@ type SynthesizeSpeechResponse struct {
 
 func (x *SynthesizeSpeechResponse) Reset() {
 	*x = SynthesizeSpeechResponse{}
-	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[10]
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -913,7 +1653,7 @@ func (x *SynthesizeSpeechResponse) String() string {
 func (*SynthesizeSpeechResponse) ProtoMessage() {}
 
 func (x *SynthesizeSpeechResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[10]
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -926,7 +1666,7 @@ func (x *SynthesizeSpeechResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SynthesizeSpeechResponse.ProtoReflect.Descriptor instead.
 func (*SynthesizeSpeechResponse) Descriptor() ([]byte, []int) {
-	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{10}
+	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *SynthesizeSpeechResponse) GetAudio() []byte {
@@ -990,7 +1730,7 @@ type GenerateImageRequest struct {
 
 func (x *GenerateImageRequest) Reset() {
 	*x = GenerateImageRequest{}
-	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[11]
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1002,7 +1742,7 @@ func (x *GenerateImageRequest) String() string {
 func (*GenerateImageRequest) ProtoMessage() {}
 
 func (x *GenerateImageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[11]
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1015,7 +1755,7 @@ func (x *GenerateImageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GenerateImageRequest.ProtoReflect.Descriptor instead.
 func (*GenerateImageRequest) Descriptor() ([]byte, []int) {
-	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{11}
+	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *GenerateImageRequest) GetPrompt() string {
@@ -1060,7 +1800,7 @@ type GenerateImageResponse struct {
 
 func (x *GenerateImageResponse) Reset() {
 	*x = GenerateImageResponse{}
-	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[12]
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1072,7 +1812,7 @@ func (x *GenerateImageResponse) String() string {
 func (*GenerateImageResponse) ProtoMessage() {}
 
 func (x *GenerateImageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[12]
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1085,7 +1825,7 @@ func (x *GenerateImageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GenerateImageResponse.ProtoReflect.Descriptor instead.
 func (*GenerateImageResponse) Descriptor() ([]byte, []int) {
-	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{12}
+	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *GenerateImageResponse) GetImage() []byte {
@@ -1144,7 +1884,7 @@ type JudgeQuestion struct {
 
 func (x *JudgeQuestion) Reset() {
 	*x = JudgeQuestion{}
-	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[13]
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1156,7 +1896,7 @@ func (x *JudgeQuestion) String() string {
 func (*JudgeQuestion) ProtoMessage() {}
 
 func (x *JudgeQuestion) ProtoReflect() protoreflect.Message {
-	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[13]
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1169,7 +1909,7 @@ func (x *JudgeQuestion) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JudgeQuestion.ProtoReflect.Descriptor instead.
 func (*JudgeQuestion) Descriptor() ([]byte, []int) {
-	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{13}
+	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *JudgeQuestion) GetType() JudgeType {
@@ -1229,7 +1969,7 @@ type JudgeAnswer struct {
 
 func (x *JudgeAnswer) Reset() {
 	*x = JudgeAnswer{}
-	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[14]
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1241,7 +1981,7 @@ func (x *JudgeAnswer) String() string {
 func (*JudgeAnswer) ProtoMessage() {}
 
 func (x *JudgeAnswer) ProtoReflect() protoreflect.Message {
-	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[14]
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1254,7 +1994,7 @@ func (x *JudgeAnswer) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JudgeAnswer.ProtoReflect.Descriptor instead.
 func (*JudgeAnswer) Descriptor() ([]byte, []int) {
-	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{14}
+	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *JudgeAnswer) GetType() JudgeType {
@@ -1322,7 +2062,7 @@ type JudgeRequest struct {
 
 func (x *JudgeRequest) Reset() {
 	*x = JudgeRequest{}
-	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[15]
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1334,7 +2074,7 @@ func (x *JudgeRequest) String() string {
 func (*JudgeRequest) ProtoMessage() {}
 
 func (x *JudgeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[15]
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1347,7 +2087,7 @@ func (x *JudgeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JudgeRequest.ProtoReflect.Descriptor instead.
 func (*JudgeRequest) Descriptor() ([]byte, []int) {
-	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{15}
+	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *JudgeRequest) GetStateJson() string {
@@ -1398,7 +2138,7 @@ type JudgeResponse struct {
 
 func (x *JudgeResponse) Reset() {
 	*x = JudgeResponse{}
-	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[16]
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1410,7 +2150,7 @@ func (x *JudgeResponse) String() string {
 func (*JudgeResponse) ProtoMessage() {}
 
 func (x *JudgeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[16]
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1423,7 +2163,7 @@ func (x *JudgeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JudgeResponse.ProtoReflect.Descriptor instead.
 func (*JudgeResponse) Descriptor() ([]byte, []int) {
-	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{16}
+	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *JudgeResponse) GetAnswers() map[string]*JudgeAnswer {
@@ -1461,14 +2201,753 @@ func (x *JudgeResponse) GetMatchedRule() string {
 	return ""
 }
 
+type BatchCounts struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Total         int32                  `protobuf:"varint,1,opt,name=total,proto3" json:"total,omitempty"`
+	Done          int32                  `protobuf:"varint,2,opt,name=done,proto3" json:"done,omitempty"`
+	Failed        int32                  `protobuf:"varint,3,opt,name=failed,proto3" json:"failed,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BatchCounts) Reset() {
+	*x = BatchCounts{}
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BatchCounts) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BatchCounts) ProtoMessage() {}
+
+func (x *BatchCounts) ProtoReflect() protoreflect.Message {
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BatchCounts.ProtoReflect.Descriptor instead.
+func (*BatchCounts) Descriptor() ([]byte, []int) {
+	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *BatchCounts) GetTotal() int32 {
+	if x != nil {
+		return x.Total
+	}
+	return 0
+}
+
+func (x *BatchCounts) GetDone() int32 {
+	if x != nil {
+		return x.Done
+	}
+	return 0
+}
+
+func (x *BatchCounts) GetFailed() int32 {
+	if x != nil {
+		return x.Failed
+	}
+	return 0
+}
+
+type Batch struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	ClientBatchId string                 `protobuf:"bytes,2,opt,name=client_batch_id,json=clientBatchId,proto3" json:"client_batch_id,omitempty"`
+	State         BatchState             `protobuf:"varint,3,opt,name=state,proto3,enum=llmproxy.v1.BatchState" json:"state,omitempty"`
+	Counts        *BatchCounts           `protobuf:"bytes,4,opt,name=counts,proto3" json:"counts,omitempty"`
+	Model         string                 `protobuf:"bytes,5,opt,name=model,proto3" json:"model,omitempty"`
+	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	CompletedAt   *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=completed_at,json=completedAt,proto3" json:"completed_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Batch) Reset() {
+	*x = Batch{}
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Batch) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Batch) ProtoMessage() {}
+
+func (x *Batch) ProtoReflect() protoreflect.Message {
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Batch.ProtoReflect.Descriptor instead.
+func (*Batch) Descriptor() ([]byte, []int) {
+	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *Batch) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *Batch) GetClientBatchId() string {
+	if x != nil {
+		return x.ClientBatchId
+	}
+	return ""
+}
+
+func (x *Batch) GetState() BatchState {
+	if x != nil {
+		return x.State
+	}
+	return BatchState_BATCH_STATE_UNSPECIFIED
+}
+
+func (x *Batch) GetCounts() *BatchCounts {
+	if x != nil {
+		return x.Counts
+	}
+	return nil
+}
+
+func (x *Batch) GetModel() string {
+	if x != nil {
+		return x.Model
+	}
+	return ""
+}
+
+func (x *Batch) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+func (x *Batch) GetCompletedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CompletedAt
+	}
+	return nil
+}
+
+type BatchItemRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	CustomId      string                 `protobuf:"bytes,1,opt,name=custom_id,json=customId,proto3" json:"custom_id,omitempty"`
+	Request       *GenerateTextRequest   `protobuf:"bytes,2,opt,name=request,proto3" json:"request,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BatchItemRequest) Reset() {
+	*x = BatchItemRequest{}
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BatchItemRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BatchItemRequest) ProtoMessage() {}
+
+func (x *BatchItemRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BatchItemRequest.ProtoReflect.Descriptor instead.
+func (*BatchItemRequest) Descriptor() ([]byte, []int) {
+	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *BatchItemRequest) GetCustomId() string {
+	if x != nil {
+		return x.CustomId
+	}
+	return ""
+}
+
+func (x *BatchItemRequest) GetRequest() *GenerateTextRequest {
+	if x != nil {
+		return x.Request
+	}
+	return nil
+}
+
+type SubmitBatchRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Items         []*BatchItemRequest    `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`
+	Effort        Effort                 `protobuf:"varint,2,opt,name=effort,proto3,enum=llmproxy.v1.Effort" json:"effort,omitempty"`
+	Attributes    map[string]string      `protobuf:"bytes,3,rep,name=attributes,proto3" json:"attributes,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	ClientBatchId string                 `protobuf:"bytes,4,opt,name=client_batch_id,json=clientBatchId,proto3" json:"client_batch_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SubmitBatchRequest) Reset() {
+	*x = SubmitBatchRequest{}
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubmitBatchRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubmitBatchRequest) ProtoMessage() {}
+
+func (x *SubmitBatchRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubmitBatchRequest.ProtoReflect.Descriptor instead.
+func (*SubmitBatchRequest) Descriptor() ([]byte, []int) {
+	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *SubmitBatchRequest) GetItems() []*BatchItemRequest {
+	if x != nil {
+		return x.Items
+	}
+	return nil
+}
+
+func (x *SubmitBatchRequest) GetEffort() Effort {
+	if x != nil {
+		return x.Effort
+	}
+	return Effort_EFFORT_UNSPECIFIED
+}
+
+func (x *SubmitBatchRequest) GetAttributes() map[string]string {
+	if x != nil {
+		return x.Attributes
+	}
+	return nil
+}
+
+func (x *SubmitBatchRequest) GetClientBatchId() string {
+	if x != nil {
+		return x.ClientBatchId
+	}
+	return ""
+}
+
+type SubmitBatchResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Batch         *Batch                 `protobuf:"bytes,1,opt,name=batch,proto3" json:"batch,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SubmitBatchResponse) Reset() {
+	*x = SubmitBatchResponse{}
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubmitBatchResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubmitBatchResponse) ProtoMessage() {}
+
+func (x *SubmitBatchResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubmitBatchResponse.ProtoReflect.Descriptor instead.
+func (*SubmitBatchResponse) Descriptor() ([]byte, []int) {
+	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{30}
+}
+
+func (x *SubmitBatchResponse) GetBatch() *Batch {
+	if x != nil {
+		return x.Batch
+	}
+	return nil
+}
+
+type GetBatchRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	BatchId       string                 `protobuf:"bytes,1,opt,name=batch_id,json=batchId,proto3" json:"batch_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetBatchRequest) Reset() {
+	*x = GetBatchRequest{}
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetBatchRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetBatchRequest) ProtoMessage() {}
+
+func (x *GetBatchRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetBatchRequest.ProtoReflect.Descriptor instead.
+func (*GetBatchRequest) Descriptor() ([]byte, []int) {
+	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{31}
+}
+
+func (x *GetBatchRequest) GetBatchId() string {
+	if x != nil {
+		return x.BatchId
+	}
+	return ""
+}
+
+type BatchItemError struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Code          int32                  `protobuf:"varint,1,opt,name=code,proto3" json:"code,omitempty"`
+	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	Reason        string                 `protobuf:"bytes,3,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BatchItemError) Reset() {
+	*x = BatchItemError{}
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[32]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BatchItemError) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BatchItemError) ProtoMessage() {}
+
+func (x *BatchItemError) ProtoReflect() protoreflect.Message {
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[32]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BatchItemError.ProtoReflect.Descriptor instead.
+func (*BatchItemError) Descriptor() ([]byte, []int) {
+	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{32}
+}
+
+func (x *BatchItemError) GetCode() int32 {
+	if x != nil {
+		return x.Code
+	}
+	return 0
+}
+
+func (x *BatchItemError) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+func (x *BatchItemError) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+type BatchItemResult struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	CustomId string                 `protobuf:"bytes,1,opt,name=custom_id,json=customId,proto3" json:"custom_id,omitempty"`
+	// Types that are valid to be assigned to Result:
+	//
+	//	*BatchItemResult_Response
+	//	*BatchItemResult_Error
+	Result        isBatchItemResult_Result `protobuf_oneof:"result"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BatchItemResult) Reset() {
+	*x = BatchItemResult{}
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[33]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BatchItemResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BatchItemResult) ProtoMessage() {}
+
+func (x *BatchItemResult) ProtoReflect() protoreflect.Message {
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[33]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BatchItemResult.ProtoReflect.Descriptor instead.
+func (*BatchItemResult) Descriptor() ([]byte, []int) {
+	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{33}
+}
+
+func (x *BatchItemResult) GetCustomId() string {
+	if x != nil {
+		return x.CustomId
+	}
+	return ""
+}
+
+func (x *BatchItemResult) GetResult() isBatchItemResult_Result {
+	if x != nil {
+		return x.Result
+	}
+	return nil
+}
+
+func (x *BatchItemResult) GetResponse() *GenerateTextResponse {
+	if x != nil {
+		if x, ok := x.Result.(*BatchItemResult_Response); ok {
+			return x.Response
+		}
+	}
+	return nil
+}
+
+func (x *BatchItemResult) GetError() *BatchItemError {
+	if x != nil {
+		if x, ok := x.Result.(*BatchItemResult_Error); ok {
+			return x.Error
+		}
+	}
+	return nil
+}
+
+type isBatchItemResult_Result interface {
+	isBatchItemResult_Result()
+}
+
+type BatchItemResult_Response struct {
+	Response *GenerateTextResponse `protobuf:"bytes,2,opt,name=response,proto3,oneof"`
+}
+
+type BatchItemResult_Error struct {
+	Error *BatchItemError `protobuf:"bytes,3,opt,name=error,proto3,oneof"`
+}
+
+func (*BatchItemResult_Response) isBatchItemResult_Result() {}
+
+func (*BatchItemResult_Error) isBatchItemResult_Result() {}
+
+type ListBatchResultsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	BatchId       string                 `protobuf:"bytes,1,opt,name=batch_id,json=batchId,proto3" json:"batch_id,omitempty"`
+	PageSize      int32                  `protobuf:"varint,2,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	PageToken     string                 `protobuf:"bytes,3,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListBatchResultsRequest) Reset() {
+	*x = ListBatchResultsRequest{}
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[34]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListBatchResultsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListBatchResultsRequest) ProtoMessage() {}
+
+func (x *ListBatchResultsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[34]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListBatchResultsRequest.ProtoReflect.Descriptor instead.
+func (*ListBatchResultsRequest) Descriptor() ([]byte, []int) {
+	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{34}
+}
+
+func (x *ListBatchResultsRequest) GetBatchId() string {
+	if x != nil {
+		return x.BatchId
+	}
+	return ""
+}
+
+func (x *ListBatchResultsRequest) GetPageSize() int32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+func (x *ListBatchResultsRequest) GetPageToken() string {
+	if x != nil {
+		return x.PageToken
+	}
+	return ""
+}
+
+type ListBatchResultsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Items         []*BatchItemResult     `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`
+	NextPageToken string                 `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListBatchResultsResponse) Reset() {
+	*x = ListBatchResultsResponse{}
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[35]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListBatchResultsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListBatchResultsResponse) ProtoMessage() {}
+
+func (x *ListBatchResultsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[35]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListBatchResultsResponse.ProtoReflect.Descriptor instead.
+func (*ListBatchResultsResponse) Descriptor() ([]byte, []int) {
+	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{35}
+}
+
+func (x *ListBatchResultsResponse) GetItems() []*BatchItemResult {
+	if x != nil {
+		return x.Items
+	}
+	return nil
+}
+
+func (x *ListBatchResultsResponse) GetNextPageToken() string {
+	if x != nil {
+		return x.NextPageToken
+	}
+	return ""
+}
+
+type CancelBatchRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	BatchId       string                 `protobuf:"bytes,1,opt,name=batch_id,json=batchId,proto3" json:"batch_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CancelBatchRequest) Reset() {
+	*x = CancelBatchRequest{}
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[36]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CancelBatchRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CancelBatchRequest) ProtoMessage() {}
+
+func (x *CancelBatchRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[36]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CancelBatchRequest.ProtoReflect.Descriptor instead.
+func (*CancelBatchRequest) Descriptor() ([]byte, []int) {
+	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{36}
+}
+
+func (x *CancelBatchRequest) GetBatchId() string {
+	if x != nil {
+		return x.BatchId
+	}
+	return ""
+}
+
+type CancelBatchResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CancelBatchResponse) Reset() {
+	*x = CancelBatchResponse{}
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[37]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CancelBatchResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CancelBatchResponse) ProtoMessage() {}
+
+func (x *CancelBatchResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_llmproxy_v1_llmproxy_proto_msgTypes[37]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CancelBatchResponse.ProtoReflect.Descriptor instead.
+func (*CancelBatchResponse) Descriptor() ([]byte, []int) {
+	return file_llmproxy_v1_llmproxy_proto_rawDescGZIP(), []int{37}
+}
+
 var File_llmproxy_v1_llmproxy_proto protoreflect.FileDescriptor
 
 const file_llmproxy_v1_llmproxy_proto_rawDesc = "" +
 	"\n" +
-	"\x1allmproxy/v1/llmproxy.proto\x12\vllmproxy.v1\"O\n" +
+	"\x1allmproxy/v1/llmproxy.proto\x12\vllmproxy.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"e\n" +
+	"\bToolCall\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04type\x18\x02 \x01(\tR\x04type\x125\n" +
+	"\bfunction\x18\x03 \x01(\v2\x19.llmproxy.v1.FunctionCallR\bfunction\"@\n" +
+	"\fFunctionCall\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1c\n" +
+	"\targuments\x18\x02 \x01(\tR\targuments\"\x86\x01\n" +
+	"\rToolCallChunk\x12\x14\n" +
+	"\x05index\x18\x01 \x01(\x05R\x05index\x12\x0e\n" +
+	"\x02id\x18\x02 \x01(\tR\x02id\x12\x12\n" +
+	"\x04type\x18\x03 \x01(\tR\x04type\x12\x12\n" +
+	"\x04name\x18\x04 \x01(\tR\x04name\x12'\n" +
+	"\x0farguments_delta\x18\x05 \x01(\tR\x0eargumentsDelta\"W\n" +
+	"\x04Tool\x12\x12\n" +
+	"\x04type\x18\x01 \x01(\tR\x04type\x12;\n" +
+	"\bfunction\x18\x02 \x01(\v2\x1f.llmproxy.v1.FunctionDefinitionR\bfunction\"\x9f\x01\n" +
+	"\x12FunctionDefinition\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12 \n" +
+	"\vdescription\x18\x02 \x01(\tR\vdescription\x12;\n" +
+	"\n" +
+	"parameters\x18\x03 \x01(\v2\x1b.llmproxy.v1.ResponseSchemaR\n" +
+	"parameters\x12\x16\n" +
+	"\x06strict\x18\x04 \x01(\bR\x06strict\"\xd6\x01\n" +
+	"\n" +
+	"ToolChoice\x120\n" +
+	"\x04mode\x18\x01 \x01(\x0e2\x1c.llmproxy.v1.ToolChoice.ModeR\x04mode\x124\n" +
+	"\x16specific_function_name\x18\x02 \x01(\tR\x14specificFunctionName\"`\n" +
+	"\x04Mode\x12\x14\n" +
+	"\x10MODE_UNSPECIFIED\x10\x00\x12\r\n" +
+	"\tMODE_AUTO\x10\x01\x12\r\n" +
+	"\tMODE_NONE\x10\x02\x12\x11\n" +
+	"\rMODE_REQUIRED\x10\x03\x12\x11\n" +
+	"\rMODE_SPECIFIC\x10\x04\"\xa7\x01\n" +
 	"\vChatMessage\x12,\n" +
 	"\x04role\x18\x01 \x01(\x0e2\x18.llmproxy.v1.MessageRoleR\x04role\x12\x12\n" +
-	"\x04text\x18\x02 \x01(\tR\x04text\"\xda\x02\n" +
+	"\x04text\x18\x02 \x01(\tR\x04text\x124\n" +
+	"\n" +
+	"tool_calls\x18\x03 \x03(\v2\x15.llmproxy.v1.ToolCallR\ttoolCalls\x12 \n" +
+	"\ftool_call_id\x18\x04 \x01(\tR\n" +
+	"toolCallId\"\xda\x02\n" +
 	"\x0eSchemaProperty\x12\x12\n" +
 	"\x04type\x18\x01 \x01(\tR\x04type\x12 \n" +
 	"\vdescription\x18\x02 \x01(\tR\vdescription\x12K\n" +
@@ -1490,7 +2969,7 @@ const file_llmproxy_v1_llmproxy_proto_rawDesc = "" +
 	"\brequired\x18\x04 \x03(\tR\brequired\x1aZ\n" +
 	"\x0fPropertiesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x121\n" +
-	"\x05value\x18\x02 \x01(\v2\x1b.llmproxy.v1.SchemaPropertyR\x05value:\x028\x01\"\xda\x04\n" +
+	"\x05value\x18\x02 \x01(\v2\x1b.llmproxy.v1.SchemaPropertyR\x05value:\x028\x01\"\xbd\x05\n" +
 	"\x13GenerateTextRequest\x12+\n" +
 	"\x06effort\x18\x01 \x01(\x0e2\x13.llmproxy.v1.EffortR\x06effort\x12P\n" +
 	"\n" +
@@ -1504,20 +2983,38 @@ const file_llmproxy_v1_llmproxy_proto_rawDesc = "" +
 	"\x14enable_google_search\x18\b \x01(\bR\x12enableGoogleSearch\x12\x1b\n" +
 	"\taction_id\x18\t \x01(\tR\bactionId\x12%\n" +
 	"\x0emodel_override\x18\n" +
-	" \x01(\tR\rmodelOverride\x1a=\n" +
+	" \x01(\tR\rmodelOverride\x12'\n" +
+	"\x05tools\x18\v \x03(\v2\x11.llmproxy.v1.ToolR\x05tools\x128\n" +
+	"\vtool_choice\x18\f \x01(\v2\x17.llmproxy.v1.ToolChoiceR\n" +
+	"toolChoice\x1a=\n" +
 	"\x0fAttributesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\";\n" +
 	"\vTokensUsage\x12\x14\n" +
 	"\x05input\x18\x01 \x01(\x03R\x05input\x12\x16\n" +
-	"\x06output\x18\x02 \x01(\x03R\x06output\"\xd3\x01\n" +
+	"\x06output\x18\x02 \x01(\x03R\x06output\"\x8d\x01\n" +
+	"\x06Choice\x12\x14\n" +
+	"\x05index\x18\x01 \x01(\x05R\x05index\x12\x12\n" +
+	"\x04text\x18\x02 \x01(\tR\x04text\x124\n" +
+	"\n" +
+	"tool_calls\x18\x03 \x03(\v2\x15.llmproxy.v1.ToolCallR\ttoolCalls\x12#\n" +
+	"\rfinish_reason\x18\x04 \x01(\tR\ffinishReason\"\x82\x02\n" +
 	"\x14GenerateTextResponse\x12\x18\n" +
 	"\achoices\x18\x01 \x03(\tR\achoices\x12.\n" +
 	"\x05usage\x18\x02 \x01(\v2\x18.llmproxy.v1.TokensUsageR\x05usage\x12%\n" +
 	"\x0eresolved_model\x18\x03 \x01(\tR\rresolvedModel\x12'\n" +
 	"\x0fresolved_vendor\x18\x04 \x01(\tR\x0eresolvedVendor\x12!\n" +
-	"\fmatched_rule\x18\x05 \x01(\tR\vmatchedRule\"\x13\n" +
-	"\x11ListModelsRequest\"\xf0\x01\n" +
+	"\fmatched_rule\x18\x05 \x01(\tR\vmatchedRule\x12-\n" +
+	"\adetails\x18\x06 \x03(\v2\x13.llmproxy.v1.ChoiceR\adetails\"\xb7\x02\n" +
+	"\x11GenerateTextChunk\x12\x14\n" +
+	"\x05delta\x18\x01 \x01(\tR\x05delta\x12#\n" +
+	"\rfinish_reason\x18\x02 \x01(\tR\ffinishReason\x12.\n" +
+	"\x05usage\x18\x03 \x01(\v2\x18.llmproxy.v1.TokensUsageR\x05usage\x12%\n" +
+	"\x0eresolved_model\x18\x04 \x01(\tR\rresolvedModel\x12'\n" +
+	"\x0fresolved_vendor\x18\x05 \x01(\tR\x0eresolvedVendor\x12!\n" +
+	"\fmatched_rule\x18\x06 \x01(\tR\vmatchedRule\x12D\n" +
+	"\x10tool_call_chunks\x18\a \x03(\v2\x1a.llmproxy.v1.ToolCallChunkR\x0etoolCallChunks\"\x13\n" +
+	"\x11ListModelsRequest\"\xde\x02\n" +
 	"\tModelInfo\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x16\n" +
 	"\x06vendor\x18\x02 \x01(\tR\x06vendor\x12-\n" +
@@ -1525,9 +3022,13 @@ const file_llmproxy_v1_llmproxy_proto_rawDesc = "" +
 	"\fcapabilities\x18\x04 \x03(\tR\fcapabilities\x12\x10\n" +
 	"\x03rpm\x18\x05 \x01(\x05R\x03rpm\x12)\n" +
 	"\x11price_in_per_mtok\x18\x06 \x01(\x01R\x0epriceInPerMtok\x12+\n" +
-	"\x12price_out_per_mtok\x18\a \x01(\x01R\x0fpriceOutPerMtok\"D\n" +
+	"\x12price_out_per_mtok\x18\a \x01(\x01R\x0fpriceOutPerMtok\x124\n" +
+	"\x17price_in_batch_per_mtok\x18\b \x01(\x01R\x13priceInBatchPerMtok\x126\n" +
+	"\x18price_out_batch_per_mtok\x18\t \x01(\x01R\x14priceOutBatchPerMtok\"D\n" +
 	"\x12ListModelsResponse\x12.\n" +
-	"\x06models\x18\x01 \x03(\v2\x16.llmproxy.v1.ModelInfoR\x06models\"\xa2\x02\n" +
+	"\x06models\x18\x01 \x03(\v2\x16.llmproxy.v1.ModelInfoR\x06models\"W\n" +
+	"\x19GenerateTextStreamRequest\x12:\n" +
+	"\arequest\x18\x01 \x01(\v2 .llmproxy.v1.GenerateTextRequestR\arequest\"\xa2\x02\n" +
 	"\x17SynthesizeSpeechRequest\x12\x12\n" +
 	"\x04text\x18\x01 \x01(\tR\x04text\x12\x1a\n" +
 	"\blanguage\x18\x02 \x01(\tR\blanguage\x12T\n" +
@@ -1614,29 +3115,94 @@ const file_llmproxy_v1_llmproxy_proto_rawDesc = "" +
 	"\fmatched_rule\x18\x05 \x01(\tR\vmatchedRule\x1aT\n" +
 	"\fAnswersEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12.\n" +
-	"\x05value\x18\x02 \x01(\v2\x18.llmproxy.v1.JudgeAnswerR\x05value:\x028\x01*T\n" +
+	"\x05value\x18\x02 \x01(\v2\x18.llmproxy.v1.JudgeAnswerR\x05value:\x028\x01\"O\n" +
+	"\vBatchCounts\x12\x14\n" +
+	"\x05total\x18\x01 \x01(\x05R\x05total\x12\x12\n" +
+	"\x04done\x18\x02 \x01(\x05R\x04done\x12\x16\n" +
+	"\x06failed\x18\x03 \x01(\x05R\x06failed\"\xb0\x02\n" +
+	"\x05Batch\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12&\n" +
+	"\x0fclient_batch_id\x18\x02 \x01(\tR\rclientBatchId\x12-\n" +
+	"\x05state\x18\x03 \x01(\x0e2\x17.llmproxy.v1.BatchStateR\x05state\x120\n" +
+	"\x06counts\x18\x04 \x01(\v2\x18.llmproxy.v1.BatchCountsR\x06counts\x12\x14\n" +
+	"\x05model\x18\x05 \x01(\tR\x05model\x129\n" +
+	"\n" +
+	"created_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12=\n" +
+	"\fcompleted_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\vcompletedAt\"k\n" +
+	"\x10BatchItemRequest\x12\x1b\n" +
+	"\tcustom_id\x18\x01 \x01(\tR\bcustomId\x12:\n" +
+	"\arequest\x18\x02 \x01(\v2 .llmproxy.v1.GenerateTextRequestR\arequest\"\xae\x02\n" +
+	"\x12SubmitBatchRequest\x123\n" +
+	"\x05items\x18\x01 \x03(\v2\x1d.llmproxy.v1.BatchItemRequestR\x05items\x12+\n" +
+	"\x06effort\x18\x02 \x01(\x0e2\x13.llmproxy.v1.EffortR\x06effort\x12O\n" +
+	"\n" +
+	"attributes\x18\x03 \x03(\v2/.llmproxy.v1.SubmitBatchRequest.AttributesEntryR\n" +
+	"attributes\x12&\n" +
+	"\x0fclient_batch_id\x18\x04 \x01(\tR\rclientBatchId\x1a=\n" +
+	"\x0fAttributesEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"?\n" +
+	"\x13SubmitBatchResponse\x12(\n" +
+	"\x05batch\x18\x01 \x01(\v2\x12.llmproxy.v1.BatchR\x05batch\",\n" +
+	"\x0fGetBatchRequest\x12\x19\n" +
+	"\bbatch_id\x18\x01 \x01(\tR\abatchId\"V\n" +
+	"\x0eBatchItemError\x12\x12\n" +
+	"\x04code\x18\x01 \x01(\x05R\x04code\x12\x18\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\x12\x16\n" +
+	"\x06reason\x18\x03 \x01(\tR\x06reason\"\xae\x01\n" +
+	"\x0fBatchItemResult\x12\x1b\n" +
+	"\tcustom_id\x18\x01 \x01(\tR\bcustomId\x12?\n" +
+	"\bresponse\x18\x02 \x01(\v2!.llmproxy.v1.GenerateTextResponseH\x00R\bresponse\x123\n" +
+	"\x05error\x18\x03 \x01(\v2\x1b.llmproxy.v1.BatchItemErrorH\x00R\x05errorB\b\n" +
+	"\x06result\"p\n" +
+	"\x17ListBatchResultsRequest\x12\x19\n" +
+	"\bbatch_id\x18\x01 \x01(\tR\abatchId\x12\x1b\n" +
+	"\tpage_size\x18\x02 \x01(\x05R\bpageSize\x12\x1d\n" +
+	"\n" +
+	"page_token\x18\x03 \x01(\tR\tpageToken\"v\n" +
+	"\x18ListBatchResultsResponse\x122\n" +
+	"\x05items\x18\x01 \x03(\v2\x1c.llmproxy.v1.BatchItemResultR\x05items\x12&\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"/\n" +
+	"\x12CancelBatchRequest\x12\x19\n" +
+	"\bbatch_id\x18\x01 \x01(\tR\abatchId\"\x15\n" +
+	"\x13CancelBatchResponse*T\n" +
 	"\x06Effort\x12\x16\n" +
 	"\x12EFFORT_UNSPECIFIED\x10\x00\x12\x0e\n" +
 	"\n" +
 	"EFFORT_LOW\x10\x01\x12\x11\n" +
 	"\rEFFORT_MEDIUM\x10\x02\x12\x0f\n" +
-	"\vEFFORT_HIGH\x10\x03*^\n" +
+	"\vEFFORT_HIGH\x10\x03*u\n" +
 	"\vMessageRole\x12\x1c\n" +
 	"\x18MESSAGE_ROLE_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11MESSAGE_ROLE_USER\x10\x01\x12\x1a\n" +
-	"\x16MESSAGE_ROLE_ASSISTANT\x10\x02*i\n" +
+	"\x16MESSAGE_ROLE_ASSISTANT\x10\x02\x12\x15\n" +
+	"\x11MESSAGE_ROLE_TOOL\x10\x03*i\n" +
 	"\tJudgeType\x12\x1a\n" +
 	"\x16JUDGE_TYPE_UNSPECIFIED\x10\x00\x12\x13\n" +
 	"\x0fJUDGE_TYPE_NOUL\x10\x01\x12\x15\n" +
 	"\x11JUDGE_TYPE_CHOICE\x10\x02\x12\x14\n" +
-	"\x10JUDGE_TYPE_SCORE\x10\x032\xae\x03\n" +
+	"\x10JUDGE_TYPE_SCORE\x10\x03*\xc2\x01\n" +
+	"\n" +
+	"BatchState\x12\x1b\n" +
+	"\x17BATCH_STATE_UNSPECIFIED\x10\x00\x12\x17\n" +
+	"\x13BATCH_STATE_PENDING\x10\x01\x12\x17\n" +
+	"\x13BATCH_STATE_RUNNING\x10\x02\x12\x19\n" +
+	"\x15BATCH_STATE_SUCCEEDED\x10\x03\x12\x16\n" +
+	"\x12BATCH_STATE_FAILED\x10\x04\x12\x19\n" +
+	"\x15BATCH_STATE_CANCELLED\x10\x05\x12\x17\n" +
+	"\x13BATCH_STATE_EXPIRED\x10\x062\xd1\x06\n" +
 	"\x0fLLMProxyService\x12S\n" +
-	"\fGenerateText\x12 .llmproxy.v1.GenerateTextRequest\x1a!.llmproxy.v1.GenerateTextResponse\x12_\n" +
+	"\fGenerateText\x12 .llmproxy.v1.GenerateTextRequest\x1a!.llmproxy.v1.GenerateTextResponse\x12^\n" +
+	"\x12GenerateTextStream\x12&.llmproxy.v1.GenerateTextStreamRequest\x1a\x1e.llmproxy.v1.GenerateTextChunk0\x01\x12_\n" +
 	"\x10SynthesizeSpeech\x12$.llmproxy.v1.SynthesizeSpeechRequest\x1a%.llmproxy.v1.SynthesizeSpeechResponse\x12V\n" +
 	"\rGenerateImage\x12!.llmproxy.v1.GenerateImageRequest\x1a\".llmproxy.v1.GenerateImageResponse\x12>\n" +
 	"\x05Judge\x12\x19.llmproxy.v1.JudgeRequest\x1a\x1a.llmproxy.v1.JudgeResponse\x12M\n" +
 	"\n" +
-	"ListModels\x12\x1e.llmproxy.v1.ListModelsRequest\x1a\x1f.llmproxy.v1.ListModelsResponseB\xb8\x01\n" +
+	"ListModels\x12\x1e.llmproxy.v1.ListModelsRequest\x1a\x1f.llmproxy.v1.ListModelsResponse\x12P\n" +
+	"\vSubmitBatch\x12\x1f.llmproxy.v1.SubmitBatchRequest\x1a .llmproxy.v1.SubmitBatchResponse\x12<\n" +
+	"\bGetBatch\x12\x1c.llmproxy.v1.GetBatchRequest\x1a\x12.llmproxy.v1.Batch\x12_\n" +
+	"\x10ListBatchResults\x12$.llmproxy.v1.ListBatchResultsRequest\x1a%.llmproxy.v1.ListBatchResultsResponse\x12P\n" +
+	"\vCancelBatch\x12\x1f.llmproxy.v1.CancelBatchRequest\x1a .llmproxy.v1.CancelBatchResponseB\xb8\x01\n" +
 	"\x0fcom.llmproxy.v1B\rLlmproxyProtoP\x01ZIgithub.com/ai-process/llm-proxy-admin/internal/gen/llmproxy/v1;llmproxyv1\xa2\x02\x03LXX\xaa\x02\vLlmproxy.V1\xca\x02\vLlmproxy\\V1\xe2\x02\x17Llmproxy\\V1\\GPBMetadata\xea\x02\fLlmproxy::V1b\x06proto3"
 
 var (
@@ -1651,86 +3217,145 @@ func file_llmproxy_v1_llmproxy_proto_rawDescGZIP() []byte {
 	return file_llmproxy_v1_llmproxy_proto_rawDescData
 }
 
-var file_llmproxy_v1_llmproxy_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_llmproxy_v1_llmproxy_proto_msgTypes = make([]protoimpl.MessageInfo, 28)
+var file_llmproxy_v1_llmproxy_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
+var file_llmproxy_v1_llmproxy_proto_msgTypes = make([]protoimpl.MessageInfo, 50)
 var file_llmproxy_v1_llmproxy_proto_goTypes = []any{
-	(Effort)(0),                      // 0: llmproxy.v1.Effort
-	(MessageRole)(0),                 // 1: llmproxy.v1.MessageRole
-	(JudgeType)(0),                   // 2: llmproxy.v1.JudgeType
-	(*ChatMessage)(nil),              // 3: llmproxy.v1.ChatMessage
-	(*SchemaProperty)(nil),           // 4: llmproxy.v1.SchemaProperty
-	(*ResponseSchema)(nil),           // 5: llmproxy.v1.ResponseSchema
-	(*GenerateTextRequest)(nil),      // 6: llmproxy.v1.GenerateTextRequest
-	(*TokensUsage)(nil),              // 7: llmproxy.v1.TokensUsage
-	(*GenerateTextResponse)(nil),     // 8: llmproxy.v1.GenerateTextResponse
-	(*ListModelsRequest)(nil),        // 9: llmproxy.v1.ListModelsRequest
-	(*ModelInfo)(nil),                // 10: llmproxy.v1.ModelInfo
-	(*ListModelsResponse)(nil),       // 11: llmproxy.v1.ListModelsResponse
-	(*SynthesizeSpeechRequest)(nil),  // 12: llmproxy.v1.SynthesizeSpeechRequest
-	(*SynthesizeSpeechResponse)(nil), // 13: llmproxy.v1.SynthesizeSpeechResponse
-	(*GenerateImageRequest)(nil),     // 14: llmproxy.v1.GenerateImageRequest
-	(*GenerateImageResponse)(nil),    // 15: llmproxy.v1.GenerateImageResponse
-	(*JudgeQuestion)(nil),            // 16: llmproxy.v1.JudgeQuestion
-	(*JudgeAnswer)(nil),              // 17: llmproxy.v1.JudgeAnswer
-	(*JudgeRequest)(nil),             // 18: llmproxy.v1.JudgeRequest
-	(*JudgeResponse)(nil),            // 19: llmproxy.v1.JudgeResponse
-	nil,                              // 20: llmproxy.v1.SchemaProperty.PropertiesEntry
-	nil,                              // 21: llmproxy.v1.ResponseSchema.PropertiesEntry
-	nil,                              // 22: llmproxy.v1.GenerateTextRequest.AttributesEntry
-	nil,                              // 23: llmproxy.v1.SynthesizeSpeechRequest.AttributesEntry
-	nil,                              // 24: llmproxy.v1.GenerateImageRequest.AttributesEntry
-	nil,                              // 25: llmproxy.v1.JudgeQuestion.OptionsEntry
-	nil,                              // 26: llmproxy.v1.JudgeAnswer.ProbabilitiesEntry
-	nil,                              // 27: llmproxy.v1.JudgeAnswer.LegendEntry
-	nil,                              // 28: llmproxy.v1.JudgeRequest.QuestionsEntry
-	nil,                              // 29: llmproxy.v1.JudgeRequest.AttributesEntry
-	nil,                              // 30: llmproxy.v1.JudgeResponse.AnswersEntry
+	(Effort)(0),                       // 0: llmproxy.v1.Effort
+	(MessageRole)(0),                  // 1: llmproxy.v1.MessageRole
+	(JudgeType)(0),                    // 2: llmproxy.v1.JudgeType
+	(BatchState)(0),                   // 3: llmproxy.v1.BatchState
+	(ToolChoice_Mode)(0),              // 4: llmproxy.v1.ToolChoice.Mode
+	(*ToolCall)(nil),                  // 5: llmproxy.v1.ToolCall
+	(*FunctionCall)(nil),              // 6: llmproxy.v1.FunctionCall
+	(*ToolCallChunk)(nil),             // 7: llmproxy.v1.ToolCallChunk
+	(*Tool)(nil),                      // 8: llmproxy.v1.Tool
+	(*FunctionDefinition)(nil),        // 9: llmproxy.v1.FunctionDefinition
+	(*ToolChoice)(nil),                // 10: llmproxy.v1.ToolChoice
+	(*ChatMessage)(nil),               // 11: llmproxy.v1.ChatMessage
+	(*SchemaProperty)(nil),            // 12: llmproxy.v1.SchemaProperty
+	(*ResponseSchema)(nil),            // 13: llmproxy.v1.ResponseSchema
+	(*GenerateTextRequest)(nil),       // 14: llmproxy.v1.GenerateTextRequest
+	(*TokensUsage)(nil),               // 15: llmproxy.v1.TokensUsage
+	(*Choice)(nil),                    // 16: llmproxy.v1.Choice
+	(*GenerateTextResponse)(nil),      // 17: llmproxy.v1.GenerateTextResponse
+	(*GenerateTextChunk)(nil),         // 18: llmproxy.v1.GenerateTextChunk
+	(*ListModelsRequest)(nil),         // 19: llmproxy.v1.ListModelsRequest
+	(*ModelInfo)(nil),                 // 20: llmproxy.v1.ModelInfo
+	(*ListModelsResponse)(nil),        // 21: llmproxy.v1.ListModelsResponse
+	(*GenerateTextStreamRequest)(nil), // 22: llmproxy.v1.GenerateTextStreamRequest
+	(*SynthesizeSpeechRequest)(nil),   // 23: llmproxy.v1.SynthesizeSpeechRequest
+	(*SynthesizeSpeechResponse)(nil),  // 24: llmproxy.v1.SynthesizeSpeechResponse
+	(*GenerateImageRequest)(nil),      // 25: llmproxy.v1.GenerateImageRequest
+	(*GenerateImageResponse)(nil),     // 26: llmproxy.v1.GenerateImageResponse
+	(*JudgeQuestion)(nil),             // 27: llmproxy.v1.JudgeQuestion
+	(*JudgeAnswer)(nil),               // 28: llmproxy.v1.JudgeAnswer
+	(*JudgeRequest)(nil),              // 29: llmproxy.v1.JudgeRequest
+	(*JudgeResponse)(nil),             // 30: llmproxy.v1.JudgeResponse
+	(*BatchCounts)(nil),               // 31: llmproxy.v1.BatchCounts
+	(*Batch)(nil),                     // 32: llmproxy.v1.Batch
+	(*BatchItemRequest)(nil),          // 33: llmproxy.v1.BatchItemRequest
+	(*SubmitBatchRequest)(nil),        // 34: llmproxy.v1.SubmitBatchRequest
+	(*SubmitBatchResponse)(nil),       // 35: llmproxy.v1.SubmitBatchResponse
+	(*GetBatchRequest)(nil),           // 36: llmproxy.v1.GetBatchRequest
+	(*BatchItemError)(nil),            // 37: llmproxy.v1.BatchItemError
+	(*BatchItemResult)(nil),           // 38: llmproxy.v1.BatchItemResult
+	(*ListBatchResultsRequest)(nil),   // 39: llmproxy.v1.ListBatchResultsRequest
+	(*ListBatchResultsResponse)(nil),  // 40: llmproxy.v1.ListBatchResultsResponse
+	(*CancelBatchRequest)(nil),        // 41: llmproxy.v1.CancelBatchRequest
+	(*CancelBatchResponse)(nil),       // 42: llmproxy.v1.CancelBatchResponse
+	nil,                               // 43: llmproxy.v1.SchemaProperty.PropertiesEntry
+	nil,                               // 44: llmproxy.v1.ResponseSchema.PropertiesEntry
+	nil,                               // 45: llmproxy.v1.GenerateTextRequest.AttributesEntry
+	nil,                               // 46: llmproxy.v1.SynthesizeSpeechRequest.AttributesEntry
+	nil,                               // 47: llmproxy.v1.GenerateImageRequest.AttributesEntry
+	nil,                               // 48: llmproxy.v1.JudgeQuestion.OptionsEntry
+	nil,                               // 49: llmproxy.v1.JudgeAnswer.ProbabilitiesEntry
+	nil,                               // 50: llmproxy.v1.JudgeAnswer.LegendEntry
+	nil,                               // 51: llmproxy.v1.JudgeRequest.QuestionsEntry
+	nil,                               // 52: llmproxy.v1.JudgeRequest.AttributesEntry
+	nil,                               // 53: llmproxy.v1.JudgeResponse.AnswersEntry
+	nil,                               // 54: llmproxy.v1.SubmitBatchRequest.AttributesEntry
+	(*timestamppb.Timestamp)(nil),     // 55: google.protobuf.Timestamp
 }
 var file_llmproxy_v1_llmproxy_proto_depIdxs = []int32{
-	1,  // 0: llmproxy.v1.ChatMessage.role:type_name -> llmproxy.v1.MessageRole
-	20, // 1: llmproxy.v1.SchemaProperty.properties:type_name -> llmproxy.v1.SchemaProperty.PropertiesEntry
-	4,  // 2: llmproxy.v1.SchemaProperty.items:type_name -> llmproxy.v1.SchemaProperty
-	21, // 3: llmproxy.v1.ResponseSchema.properties:type_name -> llmproxy.v1.ResponseSchema.PropertiesEntry
-	4,  // 4: llmproxy.v1.ResponseSchema.items:type_name -> llmproxy.v1.SchemaProperty
-	0,  // 5: llmproxy.v1.GenerateTextRequest.effort:type_name -> llmproxy.v1.Effort
-	22, // 6: llmproxy.v1.GenerateTextRequest.attributes:type_name -> llmproxy.v1.GenerateTextRequest.AttributesEntry
-	3,  // 7: llmproxy.v1.GenerateTextRequest.messages:type_name -> llmproxy.v1.ChatMessage
-	5,  // 8: llmproxy.v1.GenerateTextRequest.response_schema:type_name -> llmproxy.v1.ResponseSchema
-	7,  // 9: llmproxy.v1.GenerateTextResponse.usage:type_name -> llmproxy.v1.TokensUsage
-	0,  // 10: llmproxy.v1.ModelInfo.efforts:type_name -> llmproxy.v1.Effort
-	10, // 11: llmproxy.v1.ListModelsResponse.models:type_name -> llmproxy.v1.ModelInfo
-	23, // 12: llmproxy.v1.SynthesizeSpeechRequest.attributes:type_name -> llmproxy.v1.SynthesizeSpeechRequest.AttributesEntry
-	7,  // 13: llmproxy.v1.SynthesizeSpeechResponse.usage:type_name -> llmproxy.v1.TokensUsage
-	24, // 14: llmproxy.v1.GenerateImageRequest.attributes:type_name -> llmproxy.v1.GenerateImageRequest.AttributesEntry
-	7,  // 15: llmproxy.v1.GenerateImageResponse.usage:type_name -> llmproxy.v1.TokensUsage
-	2,  // 16: llmproxy.v1.JudgeQuestion.type:type_name -> llmproxy.v1.JudgeType
-	25, // 17: llmproxy.v1.JudgeQuestion.options:type_name -> llmproxy.v1.JudgeQuestion.OptionsEntry
-	2,  // 18: llmproxy.v1.JudgeAnswer.type:type_name -> llmproxy.v1.JudgeType
-	26, // 19: llmproxy.v1.JudgeAnswer.probabilities:type_name -> llmproxy.v1.JudgeAnswer.ProbabilitiesEntry
-	27, // 20: llmproxy.v1.JudgeAnswer.legend:type_name -> llmproxy.v1.JudgeAnswer.LegendEntry
-	28, // 21: llmproxy.v1.JudgeRequest.questions:type_name -> llmproxy.v1.JudgeRequest.QuestionsEntry
-	29, // 22: llmproxy.v1.JudgeRequest.attributes:type_name -> llmproxy.v1.JudgeRequest.AttributesEntry
-	30, // 23: llmproxy.v1.JudgeResponse.answers:type_name -> llmproxy.v1.JudgeResponse.AnswersEntry
-	7,  // 24: llmproxy.v1.JudgeResponse.usage:type_name -> llmproxy.v1.TokensUsage
-	4,  // 25: llmproxy.v1.SchemaProperty.PropertiesEntry.value:type_name -> llmproxy.v1.SchemaProperty
-	4,  // 26: llmproxy.v1.ResponseSchema.PropertiesEntry.value:type_name -> llmproxy.v1.SchemaProperty
-	16, // 27: llmproxy.v1.JudgeRequest.QuestionsEntry.value:type_name -> llmproxy.v1.JudgeQuestion
-	17, // 28: llmproxy.v1.JudgeResponse.AnswersEntry.value:type_name -> llmproxy.v1.JudgeAnswer
-	6,  // 29: llmproxy.v1.LLMProxyService.GenerateText:input_type -> llmproxy.v1.GenerateTextRequest
-	12, // 30: llmproxy.v1.LLMProxyService.SynthesizeSpeech:input_type -> llmproxy.v1.SynthesizeSpeechRequest
-	14, // 31: llmproxy.v1.LLMProxyService.GenerateImage:input_type -> llmproxy.v1.GenerateImageRequest
-	18, // 32: llmproxy.v1.LLMProxyService.Judge:input_type -> llmproxy.v1.JudgeRequest
-	9,  // 33: llmproxy.v1.LLMProxyService.ListModels:input_type -> llmproxy.v1.ListModelsRequest
-	8,  // 34: llmproxy.v1.LLMProxyService.GenerateText:output_type -> llmproxy.v1.GenerateTextResponse
-	13, // 35: llmproxy.v1.LLMProxyService.SynthesizeSpeech:output_type -> llmproxy.v1.SynthesizeSpeechResponse
-	15, // 36: llmproxy.v1.LLMProxyService.GenerateImage:output_type -> llmproxy.v1.GenerateImageResponse
-	19, // 37: llmproxy.v1.LLMProxyService.Judge:output_type -> llmproxy.v1.JudgeResponse
-	11, // 38: llmproxy.v1.LLMProxyService.ListModels:output_type -> llmproxy.v1.ListModelsResponse
-	34, // [34:39] is the sub-list for method output_type
-	29, // [29:34] is the sub-list for method input_type
-	29, // [29:29] is the sub-list for extension type_name
-	29, // [29:29] is the sub-list for extension extendee
-	0,  // [0:29] is the sub-list for field type_name
+	6,  // 0: llmproxy.v1.ToolCall.function:type_name -> llmproxy.v1.FunctionCall
+	9,  // 1: llmproxy.v1.Tool.function:type_name -> llmproxy.v1.FunctionDefinition
+	13, // 2: llmproxy.v1.FunctionDefinition.parameters:type_name -> llmproxy.v1.ResponseSchema
+	4,  // 3: llmproxy.v1.ToolChoice.mode:type_name -> llmproxy.v1.ToolChoice.Mode
+	1,  // 4: llmproxy.v1.ChatMessage.role:type_name -> llmproxy.v1.MessageRole
+	5,  // 5: llmproxy.v1.ChatMessage.tool_calls:type_name -> llmproxy.v1.ToolCall
+	43, // 6: llmproxy.v1.SchemaProperty.properties:type_name -> llmproxy.v1.SchemaProperty.PropertiesEntry
+	12, // 7: llmproxy.v1.SchemaProperty.items:type_name -> llmproxy.v1.SchemaProperty
+	44, // 8: llmproxy.v1.ResponseSchema.properties:type_name -> llmproxy.v1.ResponseSchema.PropertiesEntry
+	12, // 9: llmproxy.v1.ResponseSchema.items:type_name -> llmproxy.v1.SchemaProperty
+	0,  // 10: llmproxy.v1.GenerateTextRequest.effort:type_name -> llmproxy.v1.Effort
+	45, // 11: llmproxy.v1.GenerateTextRequest.attributes:type_name -> llmproxy.v1.GenerateTextRequest.AttributesEntry
+	11, // 12: llmproxy.v1.GenerateTextRequest.messages:type_name -> llmproxy.v1.ChatMessage
+	13, // 13: llmproxy.v1.GenerateTextRequest.response_schema:type_name -> llmproxy.v1.ResponseSchema
+	8,  // 14: llmproxy.v1.GenerateTextRequest.tools:type_name -> llmproxy.v1.Tool
+	10, // 15: llmproxy.v1.GenerateTextRequest.tool_choice:type_name -> llmproxy.v1.ToolChoice
+	5,  // 16: llmproxy.v1.Choice.tool_calls:type_name -> llmproxy.v1.ToolCall
+	15, // 17: llmproxy.v1.GenerateTextResponse.usage:type_name -> llmproxy.v1.TokensUsage
+	16, // 18: llmproxy.v1.GenerateTextResponse.details:type_name -> llmproxy.v1.Choice
+	15, // 19: llmproxy.v1.GenerateTextChunk.usage:type_name -> llmproxy.v1.TokensUsage
+	7,  // 20: llmproxy.v1.GenerateTextChunk.tool_call_chunks:type_name -> llmproxy.v1.ToolCallChunk
+	0,  // 21: llmproxy.v1.ModelInfo.efforts:type_name -> llmproxy.v1.Effort
+	20, // 22: llmproxy.v1.ListModelsResponse.models:type_name -> llmproxy.v1.ModelInfo
+	14, // 23: llmproxy.v1.GenerateTextStreamRequest.request:type_name -> llmproxy.v1.GenerateTextRequest
+	46, // 24: llmproxy.v1.SynthesizeSpeechRequest.attributes:type_name -> llmproxy.v1.SynthesizeSpeechRequest.AttributesEntry
+	15, // 25: llmproxy.v1.SynthesizeSpeechResponse.usage:type_name -> llmproxy.v1.TokensUsage
+	47, // 26: llmproxy.v1.GenerateImageRequest.attributes:type_name -> llmproxy.v1.GenerateImageRequest.AttributesEntry
+	15, // 27: llmproxy.v1.GenerateImageResponse.usage:type_name -> llmproxy.v1.TokensUsage
+	2,  // 28: llmproxy.v1.JudgeQuestion.type:type_name -> llmproxy.v1.JudgeType
+	48, // 29: llmproxy.v1.JudgeQuestion.options:type_name -> llmproxy.v1.JudgeQuestion.OptionsEntry
+	2,  // 30: llmproxy.v1.JudgeAnswer.type:type_name -> llmproxy.v1.JudgeType
+	49, // 31: llmproxy.v1.JudgeAnswer.probabilities:type_name -> llmproxy.v1.JudgeAnswer.ProbabilitiesEntry
+	50, // 32: llmproxy.v1.JudgeAnswer.legend:type_name -> llmproxy.v1.JudgeAnswer.LegendEntry
+	51, // 33: llmproxy.v1.JudgeRequest.questions:type_name -> llmproxy.v1.JudgeRequest.QuestionsEntry
+	52, // 34: llmproxy.v1.JudgeRequest.attributes:type_name -> llmproxy.v1.JudgeRequest.AttributesEntry
+	53, // 35: llmproxy.v1.JudgeResponse.answers:type_name -> llmproxy.v1.JudgeResponse.AnswersEntry
+	15, // 36: llmproxy.v1.JudgeResponse.usage:type_name -> llmproxy.v1.TokensUsage
+	3,  // 37: llmproxy.v1.Batch.state:type_name -> llmproxy.v1.BatchState
+	31, // 38: llmproxy.v1.Batch.counts:type_name -> llmproxy.v1.BatchCounts
+	55, // 39: llmproxy.v1.Batch.created_at:type_name -> google.protobuf.Timestamp
+	55, // 40: llmproxy.v1.Batch.completed_at:type_name -> google.protobuf.Timestamp
+	14, // 41: llmproxy.v1.BatchItemRequest.request:type_name -> llmproxy.v1.GenerateTextRequest
+	33, // 42: llmproxy.v1.SubmitBatchRequest.items:type_name -> llmproxy.v1.BatchItemRequest
+	0,  // 43: llmproxy.v1.SubmitBatchRequest.effort:type_name -> llmproxy.v1.Effort
+	54, // 44: llmproxy.v1.SubmitBatchRequest.attributes:type_name -> llmproxy.v1.SubmitBatchRequest.AttributesEntry
+	32, // 45: llmproxy.v1.SubmitBatchResponse.batch:type_name -> llmproxy.v1.Batch
+	17, // 46: llmproxy.v1.BatchItemResult.response:type_name -> llmproxy.v1.GenerateTextResponse
+	37, // 47: llmproxy.v1.BatchItemResult.error:type_name -> llmproxy.v1.BatchItemError
+	38, // 48: llmproxy.v1.ListBatchResultsResponse.items:type_name -> llmproxy.v1.BatchItemResult
+	12, // 49: llmproxy.v1.SchemaProperty.PropertiesEntry.value:type_name -> llmproxy.v1.SchemaProperty
+	12, // 50: llmproxy.v1.ResponseSchema.PropertiesEntry.value:type_name -> llmproxy.v1.SchemaProperty
+	27, // 51: llmproxy.v1.JudgeRequest.QuestionsEntry.value:type_name -> llmproxy.v1.JudgeQuestion
+	28, // 52: llmproxy.v1.JudgeResponse.AnswersEntry.value:type_name -> llmproxy.v1.JudgeAnswer
+	14, // 53: llmproxy.v1.LLMProxyService.GenerateText:input_type -> llmproxy.v1.GenerateTextRequest
+	22, // 54: llmproxy.v1.LLMProxyService.GenerateTextStream:input_type -> llmproxy.v1.GenerateTextStreamRequest
+	23, // 55: llmproxy.v1.LLMProxyService.SynthesizeSpeech:input_type -> llmproxy.v1.SynthesizeSpeechRequest
+	25, // 56: llmproxy.v1.LLMProxyService.GenerateImage:input_type -> llmproxy.v1.GenerateImageRequest
+	29, // 57: llmproxy.v1.LLMProxyService.Judge:input_type -> llmproxy.v1.JudgeRequest
+	19, // 58: llmproxy.v1.LLMProxyService.ListModels:input_type -> llmproxy.v1.ListModelsRequest
+	34, // 59: llmproxy.v1.LLMProxyService.SubmitBatch:input_type -> llmproxy.v1.SubmitBatchRequest
+	36, // 60: llmproxy.v1.LLMProxyService.GetBatch:input_type -> llmproxy.v1.GetBatchRequest
+	39, // 61: llmproxy.v1.LLMProxyService.ListBatchResults:input_type -> llmproxy.v1.ListBatchResultsRequest
+	41, // 62: llmproxy.v1.LLMProxyService.CancelBatch:input_type -> llmproxy.v1.CancelBatchRequest
+	17, // 63: llmproxy.v1.LLMProxyService.GenerateText:output_type -> llmproxy.v1.GenerateTextResponse
+	18, // 64: llmproxy.v1.LLMProxyService.GenerateTextStream:output_type -> llmproxy.v1.GenerateTextChunk
+	24, // 65: llmproxy.v1.LLMProxyService.SynthesizeSpeech:output_type -> llmproxy.v1.SynthesizeSpeechResponse
+	26, // 66: llmproxy.v1.LLMProxyService.GenerateImage:output_type -> llmproxy.v1.GenerateImageResponse
+	30, // 67: llmproxy.v1.LLMProxyService.Judge:output_type -> llmproxy.v1.JudgeResponse
+	21, // 68: llmproxy.v1.LLMProxyService.ListModels:output_type -> llmproxy.v1.ListModelsResponse
+	35, // 69: llmproxy.v1.LLMProxyService.SubmitBatch:output_type -> llmproxy.v1.SubmitBatchResponse
+	32, // 70: llmproxy.v1.LLMProxyService.GetBatch:output_type -> llmproxy.v1.Batch
+	40, // 71: llmproxy.v1.LLMProxyService.ListBatchResults:output_type -> llmproxy.v1.ListBatchResultsResponse
+	42, // 72: llmproxy.v1.LLMProxyService.CancelBatch:output_type -> llmproxy.v1.CancelBatchResponse
+	63, // [63:73] is the sub-list for method output_type
+	53, // [53:63] is the sub-list for method input_type
+	53, // [53:53] is the sub-list for extension type_name
+	53, // [53:53] is the sub-list for extension extendee
+	0,  // [0:53] is the sub-list for field type_name
 }
 
 func init() { file_llmproxy_v1_llmproxy_proto_init() }
@@ -1738,13 +3363,17 @@ func file_llmproxy_v1_llmproxy_proto_init() {
 	if File_llmproxy_v1_llmproxy_proto != nil {
 		return
 	}
+	file_llmproxy_v1_llmproxy_proto_msgTypes[33].OneofWrappers = []any{
+		(*BatchItemResult_Response)(nil),
+		(*BatchItemResult_Error)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_llmproxy_v1_llmproxy_proto_rawDesc), len(file_llmproxy_v1_llmproxy_proto_rawDesc)),
-			NumEnums:      3,
-			NumMessages:   28,
+			NumEnums:      5,
+			NumMessages:   50,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

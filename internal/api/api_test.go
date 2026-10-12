@@ -129,6 +129,29 @@ func TestMutationsNeedRoleAndCSRF(t *testing.T) {
 	}
 }
 
+func TestUpsertModelPreservesBatchPrices(t *testing.T) {
+	s, fa, _ := newServer(t, "")
+	h := s.Handler()
+	body := `{"vendor":"ollama","efforts":["EFFORT_LOW"],"price_in_batch_per_mtok":0.5,"price_out_batch_per_mtok":1.5,"enabled":true}`
+	boss := sessionCookie(t, "boss@x.com")
+
+	if w := call(h, "PUT", "/api/proxy/models/m_ollama", body, boss, csrf); w.Code != 200 {
+		t.Fatalf("upsert model = %d, body = %s", w.Code, w.Body)
+	}
+	if fa.upserted == nil {
+		t.Fatal("expected model to reach proxy")
+	}
+	if fa.upserted.Vendor != "ollama" {
+		t.Errorf("expected vendor ollama, got %s", fa.upserted.Vendor)
+	}
+	if fa.upserted.PriceInBatchPerMtok != 0.5 {
+		t.Errorf("expected price_in_batch_per_mtok 0.5, got %f", fa.upserted.PriceInBatchPerMtok)
+	}
+	if fa.upserted.PriceOutBatchPerMtok != 1.5 {
+		t.Errorf("expected price_out_batch_per_mtok 1.5, got %f", fa.upserted.PriceOutBatchPerMtok)
+	}
+}
+
 func TestUsageReportUsesPrices(t *testing.T) {
 	var gotQuery string
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

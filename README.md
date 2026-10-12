@@ -50,11 +50,11 @@ this console on one Postgres) with the first-run steps in its header.
 **Just looking around on your machine?** Skip Google entirely, on localhost only:
 
 ```bash
-docker run --rm -p 8080:8080 -e PUBLIC_URL=http://localhost:8080 -e INSECURE_NO_AUTH=true \
-  -e TOKENMETER_URL=http://host.docker.internal:8081 coyl/llm-proxy-admin:latest
+docker run --rm -p 8081:8080 -e PUBLIC_URL=http://localhost:8081 -e INSECURE_NO_AUTH=true \
+  -e TOKENMETER_URL=http://host.docker.internal:8080 coyl/llm-proxy-admin:latest
 ```
 
-`INSECURE_NO_AUTH` is refused unless `PUBLIC_URL` is `localhost` or `127.0.0.1`.
+`INSECURE_NO_AUTH` is refused unless `PUBLIC_URL` host is `localhost`, `127.0.0.1`, or `[::1]`.
 
 ## Setting up Google sign-in
 
@@ -99,7 +99,7 @@ The console shows only the pages whose backend you configured.
 | --- | --- |
 | `TOKENMETER_URL` | **Usage** page. Nothing else. |
 | `LLM_PROXY_ADDR` + `LLM_PROXY_ADMIN_KEY` | **Models, Rules, Keys, Playground**. |
-| both | Everything, plus **estimated cost** on the usage page (tokens × the prices on your models). |
+| both | Everything, plus **estimated cost** on the usage page (tokens × the prices on your models; estimates use standard in/out prices and do not account for peak or batch rates). |
 
 The sidebar shows a green or red dot per backend, so a wrong address or a revoked key is visible at once.
 

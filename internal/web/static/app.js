@@ -183,7 +183,7 @@ function dailyChart(days) {
 }
 
 // ----- models -----
-const VENDORS = ['openai', 'google', 'deepseek', 'typesafe'];
+const VENDORS = ['openai', 'google', 'deepseek', 'ollama', 'typesafe'];
 const CAPS = ['google_search', 'no_structured_output', 'tts', 'image', 'judge'];
 
 pages.models = async (root) => {
@@ -207,7 +207,7 @@ pages.models = async (root) => {
 
   function editModel(m) {
     const isNew = !m;
-    m = m || { id: '', vendor: 'openai', endpoint: '', efforts: ['EFFORT_LOW', 'EFFORT_MEDIUM', 'EFFORT_HIGH'], capabilities: [], rpm: 0, price_in_per_mtok: 0, price_out_per_mtok: 0, price_in_peak_per_mtok: 0, price_out_peak_per_mtok: 0, daily_tokens_per_key: 0, daily_tokens_per_user: 0, enabled: true };
+    m = m || { id: '', vendor: 'openai', endpoint: '', efforts: ['EFFORT_LOW', 'EFFORT_MEDIUM', 'EFFORT_HIGH'], capabilities: [], rpm: 0, price_in_per_mtok: 0, price_out_per_mtok: 0, price_in_peak_per_mtok: 0, price_out_peak_per_mtok: 0, price_in_batch_per_mtok: 0, price_out_batch_per_mtok: 0, daily_tokens_per_key: 0, daily_tokens_per_user: 0, enabled: true };
     const ef = (e) => check('effort_' + e, e.toLowerCase(), m.efforts.includes('EFFORT_' + e));
     const form = h('div', { style: 'display:grid;gap:12px' },
       h('div', { class: 'row' }, field('Model id', h('input', { name: 'id', value: m.id, required: true, disabled: !isNew }), 'Sent to the vendor and referenced by rules'),
@@ -220,6 +220,8 @@ pages.models = async (root) => {
         field('Price out ($/Mtok)', h('input', { name: 'price_out_per_mtok', type: 'number', step: 'any', min: 0, value: m.price_out_per_mtok }))),
       h('div', { class: 'row' }, field('Peak price in', h('input', { name: 'price_in_peak_per_mtok', type: 'number', step: 'any', min: 0, value: m.price_in_peak_per_mtok })),
         field('Peak price out', h('input', { name: 'price_out_peak_per_mtok', type: 'number', step: 'any', min: 0, value: m.price_out_peak_per_mtok }))),
+      h('div', { class: 'row' }, field('Batch price in', h('input', { name: 'price_in_batch_per_mtok', type: 'number', step: 'any', min: 0, value: m.price_in_batch_per_mtok })),
+        field('Batch price out', h('input', { name: 'price_out_batch_per_mtok', type: 'number', step: 'any', min: 0, value: m.price_out_batch_per_mtok }))),
       h('div', { class: 'row' }, field('Requests / min per key', h('input', { name: 'rpm', type: 'number', min: 0, value: num(m.rpm) }), '0 = unlimited'),
         field('Daily tokens per key', h('input', { name: 'daily_tokens_per_key', type: 'number', min: 0, value: num(m.daily_tokens_per_key) }), '0 = unlimited')),
       field('Daily tokens per user', h('input', { name: 'daily_tokens_per_user', type: 'number', min: 0, value: num(m.daily_tokens_per_user) })),
@@ -232,6 +234,7 @@ pages.models = async (root) => {
         capabilities: String(fd.get('capabilities')).split(',').map((s) => s.trim()).filter(Boolean),
         rpm: num(fd.get('rpm')), price_in_per_mtok: num(fd.get('price_in_per_mtok')), price_out_per_mtok: num(fd.get('price_out_per_mtok')),
         price_in_peak_per_mtok: num(fd.get('price_in_peak_per_mtok')), price_out_peak_per_mtok: num(fd.get('price_out_peak_per_mtok')),
+        price_in_batch_per_mtok: num(fd.get('price_in_batch_per_mtok')), price_out_batch_per_mtok: num(fd.get('price_out_batch_per_mtok')),
         daily_tokens_per_key: num(fd.get('daily_tokens_per_key')), daily_tokens_per_user: num(fd.get('daily_tokens_per_user')),
         enabled: !!fd.get('enabled'),
       };

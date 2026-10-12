@@ -11,7 +11,7 @@ option go_package = "github.com/ai-process/llm-proxy-admin/internal/gen/llmproxy
 // they are per-client rows managed via SetVendorKey.
 message ModelSpec {
   string id = 1; // unique registry id, referenced by rules and model_override
-  string vendor = 2; // openai | google | deepseek
+  string vendor = 2; // openai | google | deepseek | ollama | typesafe
   string endpoint = 3; // optional base-URL override
   repeated Effort efforts = 4; // tiers this model may serve
   repeated string capabilities = 5; // e.g. "google_search"
@@ -22,8 +22,10 @@ message ModelSpec {
   // for two windows daily, so a single price understates its cost.
   double price_in_peak_per_mtok = 12;
   double price_out_peak_per_mtok = 13;
+  double price_in_batch_per_mtok = 14;
+  double price_out_batch_per_mtok = 15;
   int64 daily_tokens_per_key = 9; // per api key per UTC day, 0 = unlimited
-  int64 daily_tokens_per_user = 10; // per attributes["user_id"] per UTC day
+  int64 daily_tokens_per_user = 10; // per attributes["user_id"] (or svc:<key_name> fallback) per UTC day
   bool enabled = 11;
 }
 
