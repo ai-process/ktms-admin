@@ -413,8 +413,8 @@ pages.nodes = async (root) => {
             await api('POST', `/api/proxy/nodes/${encodeURIComponent(n.node_id)}/drain`);
             toast('Node marked for drain');
             await render();
-          }, 'Drain') }, 'Drain'))
-      )) : [emptyRow(9, 'No local nodes connected.')]));
+          }, 'Drain') }, 'Drain'))))
+      ) : [emptyRow(9, 'No local nodes connected.')]));
     }
     if (keys && keys.keys) {
       nodeKeysBody.replaceChildren(...(keys.keys.length ? keys.keys.map((k) => h('tr', { class: k.disabled ? 'off' : '' },
@@ -427,8 +427,8 @@ pages.nodes = async (root) => {
             await api('POST', '/api/proxy/node-keys/revoke', { id: k.id });
             toast('Node key revoked');
             await render();
-          }, 'Revoke') }, 'Revoke'))
-      )) : [emptyRow(5, 'No node keys minted.')]));
+          }, 'Revoke') }, 'Revoke'))))
+      ) : [emptyRow(5, 'No node keys minted.')]));
     }
   };
 
