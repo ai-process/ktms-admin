@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"time"
@@ -191,6 +192,72 @@ func (s *Server) proxyPlayground(w http.ResponseWriter, r *http.Request, u *auth
 		return
 	}
 	writeProto(w, resp)
+}
+
+func (s *Server) proxyListNodes(w http.ResponseWriter, r *http.Request, _ *auth.User) {
+	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
+	defer cancel()
+	resp, err := s.admin.ListNodes(ctx, &pb.ListNodesRequest{})
+	if err != nil {
+		backendErr(w, err)
+		return
+	}
+	writeProto(w, resp)
+}
+
+func (s *Server) proxyDrainNode(w http.ResponseWriter, r *http.Request, _ *auth.User) {
+	nodeID := r.PathValue("id")
+	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
+	defer cancel()
+	if _, err := s.admin.DrainNode(ctx, &pb.DrainNodeRequest{NodeId: nodeID}); err != nil {
+		backendErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) proxyListNodeKeys(w http.ResponseWriter, r *http.Request, _ *auth.User) {
+	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
+	defer cancel()
+	resp, err := s.admin.ListNodeKeys(ctx, &pb.ListNodeKeysRequest{})
+	if err != nil {
+		backendErr(w, err)
+		return
+	}
+	writeProto(w, resp)
+}
+
+func (s *Server) proxyMintNodeKey(w http.ResponseWriter, r *http.Request, _ *auth.User) {
+	var req pb.MintNodeKeyRequest
+	if err := readProto(r, &req); err != nil {
+		backendErr(w, badBody(err))
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
+	defer cancel()
+	resp, err := s.admin.MintNodeKey(ctx, &req)
+	if err != nil {
+		backendErr(w, err)
+		return
+	}
+	writeProto(w, resp)
+}
+
+func (s *Server) proxyRevokeNodeKey(w http.ResponseWriter, r *http.Request, _ *auth.User) {
+	var req struct {
+		ID int64 `json:"id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		backendErr(w, badBody(err))
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
+	defer cancel()
+	if _, err := s.admin.RevokeNodeKey(ctx, &pb.RevokeNodeKeyRequest{Id: req.ID}); err != nil {
+		backendErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 // ---- prices (for cost estimates in the usage view) ----

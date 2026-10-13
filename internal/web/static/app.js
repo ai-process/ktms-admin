@@ -183,7 +183,7 @@ function dailyChart(days) {
 }
 
 // ----- models -----
-const VENDORS = ['openai', 'google', 'deepseek', 'ollama', 'typesafe'];
+const VENDORS = ['openai', 'google', 'deepseek', 'ollama', 'typesafe', 'local'];
 const CAPS = ['google_search', 'no_structured_output', 'tts', 'image', 'judge'];
 
 pages.models = async (root) => {
@@ -390,6 +390,95 @@ pages.playground = async (root) => {
       field('System', system), field('Prompt', prompt), h('div', {}, run), out));
 };
 
+// ----- nodes -----
+pages.nodes = async (root) => {
+  const nodesBody = h('tbody'), nodeKeysBody = h('tbody');
+  const render = async () => {
+    const [nodes, keys] = await Promise.all([
+      guarded(() => api('GET', '/api/proxy/nodes')),
+      guarded(() => api('GET', '/api/proxy/node-keys')),
+    ]);
+    if (nodes && nodes.nodes) {
+      nodesBody.replaceChildren(...(nodes.nodes.length ? nodes.nodes.map((n) => h('tr', { class: n.state !== 'NODE_STATE_HEALTHY' ? 'off' : '' },
+        h('td', {}, h('span', { class: 'mono' }, n.node_id)),
+        h('td', {}, n.name),
+        h('td', {}, h('span', { class: 'chip ' + (n.state === 'NODE_STATE_HEALTHY' ? 'ok' : 'bad') }, n.state.replace('NODE_STATE_', ''))),
+        h('td', {}, (n.models || []).join(', ')),
+        h('td', { class: 'num' }, `${n.active_requests} / ${n.max_concurrent}`),
+        h('td', { class: 'num' }, n.vram_total_mb ? `${Math.round(n.vram_free_mb / 1024)}G / ${Math.round(n.vram_total_mb / 1024)}G` : '—'),
+        h('td', { class: 'num' }, n.tps_ema ? `${n.tps_ema.toFixed(1)} tps` : '—'),
+        h('td', {}, when(n.last_heartbeat)),
+        h('td', {}, canWrite() && n.state !== 'NODE_STATE_DRAINING' && n.state !== 'NODE_STATE_OFFLINE' && h('div', { class: 'actions' },
+          h('button', { class: 'sm danger', onclick: () => confirmBox('Drain node', `Drain ${n.name}? It will stop accepting new requests.`, async () => {
+            await api('POST', `/api/proxy/nodes/${encodeURIComponent(n.node_id)}/drain`);
+            toast('Node marked for drain');
+            await render();
+          }, 'Drain') }, 'Drain'))))
+      ) : [emptyRow(9, 'No local nodes connected.')]));
+    }
+    if (keys && keys.keys) {
+      nodeKeysBody.replaceChildren(...(keys.keys.length ? keys.keys.map((k) => h('tr', { class: k.disabled ? 'off' : '' },
+        h('td', {}, h('span', { class: 'mono' }, k.name)),
+        h('td', {}, h('span', { class: 'mono' }, k.node_id)),
+        h('td', {}, when(k.created_at)),
+        h('td', {}, k.disabled ? 'revoked' : 'active'),
+        h('td', {}, canWrite() && !k.disabled && h('div', { class: 'actions' },
+          h('button', { class: 'sm danger', onclick: () => confirmBox('Revoke node key', `Revoke key for node ${k.node_id}?`, async () => {
+            await api('POST', '/api/proxy/node-keys/revoke', { id: k.id });
+            toast('Node key revoked');
+            await render();
+          }, 'Revoke') }, 'Revoke'))))
+      ) : [emptyRow(5, 'No node keys minted.')]));
+    }
+  };
+
+  const mint = () => modal('Mint node key', h('div', { style: 'display:grid;gap:12px' },
+    field('Key Name', h('input', { name: 'name', required: true, placeholder: 'desktop-rtx4090' })),
+    field('Node ID', h('input', { name: 'node_id', required: true, placeholder: 'worker-1' }), 'Bound to this specific node ID'),
+    field('Allowed CIDRs', h('input', { name: 'allowed_cidrs', placeholder: 'comma separated, optional' })),
+    field('Allowed Models', h('input', { name: 'allowed_models', placeholder: 'comma separated, optional' })),
+    h('div', { class: 'row' },
+      field('Max Base Weight', h('input', { name: 'max_base_weight', type: 'number', value: '1000' })),
+      field('Max Concurrency', h('input', { name: 'max_concurrency', type: 'number', value: '16' }))
+    )), {
+    submit: 'Mint',
+    onSubmit: async (fd) => {
+      const cidrs = String(fd.get('allowed_cidrs') || '').split(',').map((s) => s.trim()).filter(Boolean);
+      const models = String(fd.get('allowed_models') || '').split(',').map((s) => s.trim()).filter(Boolean);
+      const res = await api('POST', '/api/proxy/node-keys', {
+        name: String(fd.get('name')).trim(),
+        node_id: String(fd.get('node_id')).trim(),
+        allowed_cidrs: cidrs,
+        allowed_models: models,
+        max_base_weight: num(fd.get('max_base_weight')) || 1000,
+        max_concurrency: num(fd.get('max_concurrency')) || 16,
+      });
+      await render();
+      modal('Copy node authentication key', h('div', { style: 'display:grid;gap:10px' },
+        h('p', {}, 'Pass this to the node via NODE_KEY. This is the only time it is shown:'),
+        h('div', { class: 'secret mono' }, res.plain_key),
+        h('button', { type: 'button', onclick: async () => { await navigator.clipboard?.writeText(res.plain_key); toast('Copied'); } }, 'Copy')
+      ));
+    }
+  });
+
+  root.append(
+    h('div', { class: 'head' },
+      h('div', {}, h('h1', {}, 'Local Nodes'), h('p', { class: 'sub' }, 'Self-registering inference machines and their authentication keys.'))),
+    h('div', { class: 'panel' },
+      h('div', { class: 'head' }, h('h2', {}, 'Active Nodes'), h('button', { onclick: render }, 'Refresh')),
+      h('div', { style: 'overflow-x:auto' }, h('table', {},
+        h('thead', {}, h('tr', {}, ['Node ID', 'Name', 'State', 'Models', 'Slots', 'VRAM', 'Speed', 'Heartbeat'].map((x) => h('th', {}, x)), h('th'))),
+        nodesBody))),
+    h('div', { class: 'panel' },
+      h('div', { class: 'head' }, h('h2', {}, 'Node Keys'), canWrite() && h('button', { class: 'primary', onclick: mint }, 'Mint node key')),
+      h('div', { style: 'overflow-x:auto' }, h('table', {},
+        h('thead', {}, h('tr', {}, ['Name', 'Node ID', 'Created', 'State'].map((x) => h('th', {}, x)), h('th'))),
+        nodeKeysBody)))
+  );
+  render();
+};
+
 // ---------- shell ----------
 function route() {
   const name = (location.hash.replace(/^#\/?/, '') || defaultPage()).split('/')[0];
@@ -413,7 +502,7 @@ function shell() {
     h('nav', { class: 'side' }, h('div', { class: 'brand' }, h('i'), 'llm-proxy admin'),
       h('div', { class: 'nav' },
         f.usage && [h('div', { class: 'grp' }, 'Spend'), link('usage', 'Usage')],
-        f.proxy && [h('div', { class: 'grp' }, 'Gateway'), link('models', 'Models'), link('rules', 'Rules'), link('keys', 'Keys'), link('playground', 'Playground')]),
+        f.proxy && [h('div', { class: 'grp' }, 'Gateway'), link('models', 'Models'), link('rules', 'Rules'), link('keys', 'Keys'), link('nodes', 'Nodes'), link('playground', 'Playground')]),
       h('div', { class: 'spacer' }),
       statusBox,
       h('div', { class: 'who' }, u.picture && h('img', { src: u.picture, alt: '', referrerpolicy: 'no-referrer' }),

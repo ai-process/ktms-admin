@@ -4,7 +4,7 @@ package llmproxy.v1;
 
 import "google/protobuf/timestamp.proto";
 
-option go_package = "github.com/ai-process/llm-proxy-admin/internal/gen/llmproxy/v1;llmproxyv1";
+option go_package = "github.com/ai-process/llm-proxy/gen/llmproxy/v1;llmproxyv1";
 
 // Effort is the only routing field the proxy is guaranteed to understand.
 // Everything else about a request's purpose travels in opaque attributes.
