@@ -98,7 +98,7 @@ The console shows only the pages whose backend you configured.
 | You set | You get |
 | --- | --- |
 | `TOKENMETER_URL` | **Usage** page. Nothing else. |
-| `LLM_PROXY_ADDR` + `LLM_PROXY_ADMIN_KEY` | **Models, Rules, Keys, Playground**. |
+| `LLM_PROXY_ADDR` + `LLM_PROXY_ADMIN_KEY` | **Models, Rules, Keys, Nodes, Playground, Judge**. |
 | both | Everything, plus **estimated cost** on the usage page (tokens × the prices on your models; estimates use standard in/out prices and do not account for peak or batch rates). |
 
 The sidebar shows a green or red dot per backend, so a wrong address or a revoked key is visible at once.
@@ -165,8 +165,9 @@ missing catch-all rule, duplicate priority) is rejected with its message and not
 (write-only: stored encrypted by llm-proxy and never shown again) and re-encrypt all credentials after
 adding a new encryption key version.
 
-**Playground.** Send a prompt through the same routing your clients use, with a chosen effort, model and
-attributes. The call is attributed to `console.playground` and your e-mail.
+**Playground.** Send a prompt or multi-turn conversation through the same routing your clients use, with SSE streaming, tool definitions, interactive tool result responses, effort selection, and attributes. The call is attributed to `console.playground` and your e-mail.
+
+**Judge.** Evaluate state (dialogue, agent memory, or system state JSON) against calibrated NOUL (probability of condition being true), CHOICE (classification across options with confidence), and SCORE (ordered levels) criteria via the Judge RPC.
 
 ## Security model
 

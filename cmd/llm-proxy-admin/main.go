@@ -64,7 +64,7 @@ func main() {
 	httpSrv := &http.Server{
 		Addr: cfg.ListenAddr, Handler: srv.Handler(),
 		ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second,
-		WriteTimeout: 3 * time.Minute, IdleTimeout: 2 * time.Minute,
+		WriteTimeout: 15 * time.Minute, IdleTimeout: 2 * time.Minute,
 	}
 	errCh := make(chan error, 1)
 	go func() {
