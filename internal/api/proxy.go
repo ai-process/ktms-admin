@@ -3,9 +3,15 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
+
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/ai-process/llm-proxy-admin/internal/auth"
 	pb "github.com/ai-process/llm-proxy-admin/internal/gen/llmproxy/v1"
@@ -142,23 +148,27 @@ func (s *Server) proxyRotate(w http.ResponseWriter, r *http.Request, _ *auth.Use
 	writeProto(w, resp)
 }
 
-type playgroundReq struct {
-	Model      string            `json:"model"` // "", "auto", or an exact model id
-	Effort     string            `json:"effort"`
-	System     string            `json:"system"`
-	Prompt     string            `json:"prompt"`
-	Attributes map[string]string `json:"attributes"`
-	MaxTokens  int32             `json:"max_tokens"`
+type playgroundMessage struct {
+	Role       string         `json:"role"` // "user", "assistant", "tool"
+	Text       string         `json:"text"`
+	ToolCallID string         `json:"tool_call_id,omitempty"`
+	ToolCalls  []*pb.ToolCall `json:"tool_calls,omitempty"`
 }
 
-// proxyPlayground sends one prompt through the data plane using the console's
-// admin key, which the proxy accepts for every scope.
-func (s *Server) proxyPlayground(w http.ResponseWriter, r *http.Request, u *auth.User) {
-	var req playgroundReq
-	if err := readJSON(r, &req); err != nil || strings.TrimSpace(req.Prompt) == "" {
-		writeErr(w, http.StatusBadRequest, "bad_request", "a prompt is required")
-		return
-	}
+type playgroundReq struct {
+	Model      string              `json:"model"` // "", "auto", or an exact model id
+	Effort     string              `json:"effort"`
+	System     string              `json:"system"`
+	Prompt     string              `json:"prompt"`
+	Messages   []playgroundMessage `json:"messages"`
+	Tools      []*pb.Tool          `json:"tools"`
+	Attributes map[string]string   `json:"attributes"`
+	MaxTokens  int32               `json:"max_tokens"`
+}
+
+// buildPlaygroundReq normalizes the playground payload into a gRPC request,
+// resolving user attribution and multi-turn messages or tool calls.
+func (s *Server) buildPlaygroundReq(req playgroundReq, u *auth.User) (*pb.GenerateTextRequest, error) {
 	effort := pb.Effort_EFFORT_MEDIUM
 	switch strings.ToLower(req.Effort) {
 	case "low":
@@ -180,12 +190,240 @@ func (s *Server) proxyPlayground(w http.ResponseWriter, r *http.Request, u *auth
 	if attrs["user_id"] == "" {
 		attrs["user_id"] = u.Email
 	}
+
+	var msgs []*pb.ChatMessage
+	if len(req.Messages) > 0 {
+		for _, m := range req.Messages {
+			role := pb.MessageRole_MESSAGE_ROLE_USER
+			switch strings.ToLower(m.Role) {
+			case "assistant":
+				role = pb.MessageRole_MESSAGE_ROLE_ASSISTANT
+			case "tool":
+				role = pb.MessageRole_MESSAGE_ROLE_TOOL
+			}
+			msgs = append(msgs, &pb.ChatMessage{
+				Role:       role,
+				Text:       m.Text,
+				ToolCallId: m.ToolCallID,
+				ToolCalls:  m.ToolCalls,
+			})
+		}
+	} else if strings.TrimSpace(req.Prompt) != "" {
+		msgs = []*pb.ChatMessage{{Role: pb.MessageRole_MESSAGE_ROLE_USER, Text: req.Prompt}}
+	} else {
+		return nil, errors.New("a prompt or message history is required")
+	}
+
+	return &pb.GenerateTextRequest{
+		Effort:                effort,
+		Attributes:            attrs,
+		ActionId:              "console.playground",
+		ModelOverride:         override,
+		BaseSystemInstruction: req.System,
+		MaxOutputTokens:       req.MaxTokens,
+		Messages:              msgs,
+		Tools:                 req.Tools,
+	}, nil
+}
+
+// proxyPlayground sends one prompt or conversation through the data plane using the console's
+// admin key, which the proxy accepts for every scope.
+func (s *Server) proxyPlayground(w http.ResponseWriter, r *http.Request, u *auth.User) {
+	if s.data == nil {
+		writeErr(w, http.StatusNotFound, "not_found", "llm-proxy data client not available")
+		return
+	}
+	var req playgroundReq
+	if err := readJSON(r, &req); err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_request", "invalid request body")
+		return
+	}
+	genReq, err := s.buildPlaygroundReq(req, u)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
 	defer cancel()
-	resp, err := s.data.GenerateText(ctx, &pb.GenerateTextRequest{
-		Effort: effort, Attributes: attrs, ActionId: "console.playground", ModelOverride: override,
-		BaseSystemInstruction: req.System, MaxOutputTokens: req.MaxTokens,
-		Messages: []*pb.ChatMessage{{Role: pb.MessageRole_MESSAGE_ROLE_USER, Text: req.Prompt}},
+	resp, err := s.data.GenerateText(ctx, genReq)
+	if err != nil {
+		backendErr(w, err)
+		return
+	}
+	writeProto(w, resp)
+}
+
+// proxyPlaygroundStream proxies SSE chunks from GenerateTextStream to the browser,
+// keeping the connection alive and flushing increments as they arrive.
+func (s *Server) proxyPlaygroundStream(w http.ResponseWriter, r *http.Request, u *auth.User) {
+	if s.data == nil {
+		writeErr(w, http.StatusNotFound, "not_found", "llm-proxy data client not available")
+		return
+	}
+	var req playgroundReq
+	if err := readJSON(r, &req); err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_request", "invalid request body")
+		return
+	}
+	genReq, err := s.buildPlaygroundReq(req, u)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeErr(w, http.StatusInternalServerError, "internal", "streaming unsupported")
+		return
+	}
+
+	// Disable write deadline for this response so long streams don't time out.
+	rc := http.NewResponseController(w)
+	_ = rc.SetWriteDeadline(time.Time{})
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache, no-transform")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
+	flusher.Flush()
+
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Minute)
+	defer cancel()
+
+	stream, err := s.data.GenerateTextStream(ctx, &pb.GenerateTextStreamRequest{Request: genReq})
+	if err != nil {
+		st, _ := status.FromError(err)
+		errData, _ := json.Marshal(map[string]any{"error": map[string]string{"code": strings.ToLower(st.Code().String()), "message": st.Message()}})
+		_, _ = fmt.Fprintf(w, "event: error\ndata: %s\n\n", errData)
+		flusher.Flush()
+		return
+	}
+
+	marshaler := protojson.MarshalOptions{UseProtoNames: true, EmitUnpopulated: false}
+	for {
+		chunk, err := stream.Recv()
+		if errors.Is(err, io.EOF) {
+			_, _ = fmt.Fprint(w, "event: done\ndata: {}\n\n")
+			flusher.Flush()
+			return
+		}
+		if err != nil {
+			if errors.Is(err, context.Canceled) || errors.Is(r.Context().Err(), context.Canceled) {
+				return
+			}
+			st, _ := status.FromError(err)
+			errData, _ := json.Marshal(map[string]any{"error": map[string]string{"code": strings.ToLower(st.Code().String()), "message": st.Message()}})
+			_, _ = fmt.Fprintf(w, "event: error\ndata: %s\n\n", errData)
+			flusher.Flush()
+			return
+		}
+		b, err := marshaler.Marshal(chunk)
+		if err != nil {
+			continue
+		}
+		_, _ = fmt.Fprintf(w, "event: chunk\ndata: %s\n\n", b)
+		flusher.Flush()
+	}
+}
+
+type judgeQuestionReq struct {
+	Type          string            `json:"type"` // "NOUL" | "CHOICE" | "SCORE"
+	Instructions  string            `json:"instructions"`
+	Options       map[string]string `json:"options,omitempty"`
+	Levels        []string          `json:"levels,omitempty"`
+	TrueCriteria  string            `json:"true_criteria,omitempty"`
+	FalseCriteria string            `json:"false_criteria,omitempty"`
+}
+
+type judgeReq struct {
+	StateJSON     json.RawMessage             `json:"state_json"`
+	StateText     string                      `json:"state_text,omitempty"`
+	Questions     map[string]judgeQuestionReq `json:"questions"`
+	ModelOverride string                      `json:"model_override,omitempty"`
+	Attributes    map[string]string           `json:"attributes,omitempty"`
+}
+
+// proxyJudge evaluates typed criteria against an arbitrary JSON state via the Judge RPC.
+func (s *Server) proxyJudge(w http.ResponseWriter, r *http.Request, u *auth.User) {
+	if s.data == nil {
+		writeErr(w, http.StatusNotFound, "not_found", "llm-proxy data client not available")
+		return
+	}
+	var req judgeReq
+	if err := readJSON(r, &req); err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_request", "invalid request body")
+		return
+	}
+
+	stateStr := req.StateText
+	if len(req.StateJSON) > 0 {
+		stateStr = string(req.StateJSON)
+	}
+	if strings.TrimSpace(stateStr) == "" {
+		writeErr(w, http.StatusBadRequest, "bad_request", "state_json or state_text is required")
+		return
+	}
+	if !json.Valid([]byte(stateStr)) {
+		b, _ := json.Marshal(stateStr)
+		stateStr = string(b)
+	}
+
+	if len(req.Questions) == 0 {
+		writeErr(w, http.StatusBadRequest, "bad_request", "at least one question is required")
+		return
+	}
+
+	questions := make(map[string]*pb.JudgeQuestion, len(req.Questions))
+	for id, q := range req.Questions {
+		qType := pb.JudgeType_JUDGE_TYPE_UNSPECIFIED
+		switch strings.ToUpper(q.Type) {
+		case "NOUL", "JUDGE_TYPE_NOUL", "1":
+			qType = pb.JudgeType_JUDGE_TYPE_NOUL
+		case "CHOICE", "JUDGE_TYPE_CHOICE", "2":
+			qType = pb.JudgeType_JUDGE_TYPE_CHOICE
+		case "SCORE", "JUDGE_TYPE_SCORE", "3":
+			qType = pb.JudgeType_JUDGE_TYPE_SCORE
+		default:
+			writeErr(w, http.StatusBadRequest, "bad_request", "unknown question type for "+id)
+			return
+		}
+		if strings.TrimSpace(q.Instructions) == "" {
+			writeErr(w, http.StatusBadRequest, "bad_request", "instructions required for "+id)
+			return
+		}
+		questions[id] = &pb.JudgeQuestion{
+			Type:          qType,
+			Instructions:  q.Instructions,
+			Options:       q.Options,
+			Levels:        q.Levels,
+			TrueCriteria:  q.TrueCriteria,
+			FalseCriteria: q.FalseCriteria,
+		}
+	}
+
+	attrs := req.Attributes
+	if attrs == nil {
+		attrs = map[string]string{}
+	}
+	if attrs["user_id"] == "" {
+		attrs["user_id"] = u.Email
+	}
+
+	override := ""
+	if req.ModelOverride != "" && req.ModelOverride != "auto" {
+		override = req.ModelOverride
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
+	defer cancel()
+
+	resp, err := s.data.Judge(ctx, &pb.JudgeRequest{
+		StateJson:     stateStr,
+		Questions:     questions,
+		Attributes:    attrs,
+		ActionId:      "console.judge",
+		ModelOverride: override,
 	})
 	if err != nil {
 		backendErr(w, err)

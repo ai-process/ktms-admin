@@ -54,7 +54,10 @@ func New(cfg *config.Config, a *auth.Handler) (*Server, func(), error) {
 		if !cfg.ProxyTLS {
 			creds = nil
 		}
-		opts := []grpc.DialOption{grpc.WithUnaryInterceptor(attachKey(cfg.ProxyAdminKey))}
+		opts := []grpc.DialOption{
+			grpc.WithUnaryInterceptor(attachKey(cfg.ProxyAdminKey)),
+			grpc.WithStreamInterceptor(attachStreamKey(cfg.ProxyAdminKey)),
+		}
 		if creds == nil {
 			opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		} else {
@@ -79,6 +82,13 @@ func attachKey(key string) grpc.UnaryClientInterceptor {
 	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, inv grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		ctx = metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+key)
 		return inv(ctx, method, req, reply, cc, opts...)
+	}
+}
+
+func attachStreamKey(key string) grpc.StreamClientInterceptor {
+	return func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
+		ctx = metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+key)
+		return streamer(ctx, desc, cc, method, opts...)
 	}
 }
 
@@ -111,6 +121,8 @@ func (s *Server) Handler() http.Handler {
 		api("DELETE /api/proxy/vendor-keys", s.proxyDeleteVendorKey)
 		api("POST /api/proxy/rotate", s.proxyRotate)
 		api("POST /api/proxy/playground", s.proxyPlayground)
+		api("POST /api/proxy/playground/stream", s.proxyPlaygroundStream)
+		api("POST /api/proxy/judge", s.proxyJudge)
 	}
 	if s.usage != nil {
 		api("GET /api/usage", s.usageReport)

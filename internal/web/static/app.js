@@ -366,28 +366,631 @@ pages.keys = async (root) => {
 pages.playground = async (root) => {
   const cfg = await guarded(() => loadCfg());
   if (!cfg) return;
-  const out = h('div');
-  const model = h('select', { name: 'model' }, h('option', { value: 'auto' }, 'auto (let the rules choose)'), cfg.models.filter((m) => m.enabled).map((m) => h('option', { value: m.id }, m.id)));
+
+  let conversation = [];
+  let abortCtrl = null;
+
+  const model = h('select', { name: 'model' },
+    h('option', { value: 'auto' }, 'auto (let the rules choose)'),
+    cfg.models.filter((m) => m.enabled).map((m) => h('option', { value: m.id }, m.id)));
   const effort = h('select', {}, ['low', 'medium', 'high'].map((e) => h('option', { value: e, selected: e === 'medium' }, e)));
-  const system = h('textarea', { rows: 2, placeholder: 'Optional system instruction' });
-  const prompt = h('textarea', { rows: 5, placeholder: 'Ask something…' });
+  const streamCheck = h('input', { type: 'checkbox', checked: true });
   const attrs = h('input', { placeholder: 'attributes, e.g. subject=french,task=quiz' });
-  const run = h('button', { class: 'primary', type: 'button', onclick: async () => {
-    if (!prompt.value.trim()) return;
-    run.disabled = true; out.replaceChildren(h('p', { class: 'sub' }, 'Thinking…'));
-    const attributes = {};
-    for (const p of attrs.value.split(',')) { const i = p.indexOf('='); if (i > 0) attributes[p.slice(0, i).trim()] = p.slice(i + 1).trim(); }
+  const system = h('textarea', { rows: 2, placeholder: 'Optional system instruction' });
+  const prompt = h('textarea', { rows: 3, placeholder: 'Ask something…' });
+
+  // Tools configuration
+  let showTools = false;
+  const toolsEnabled = h('input', { type: 'checkbox', checked: false });
+  const sampleTools = [
+    {
+      type: 'function',
+      function: {
+        name: 'get_weather',
+        description: 'Get the current weather for a given city location',
+        parameters: {
+          type: 'object',
+          properties: {
+            location: { type: 'string', description: 'City name, e.g. Paris or Tokyo' },
+            unit: { type: 'string', description: 'celsius or fahrenheit' }
+          },
+          required: ['location']
+        }
+      }
+    }
+  ];
+  const toolsJson = h('textarea', { rows: 6, placeholder: 'JSON array of tools definitions' });
+  toolsJson.value = JSON.stringify(sampleTools, null, 2);
+
+  const toolsPanel = h('div', { class: 'panel', style: 'display:none;margin-top:10px' },
+    h('div', { class: 'head' },
+      h('h2', {}, 'Tool Definitions (JSON Schema)'),
+      h('button', { type: 'button', class: 'sm', onclick: () => { toolsJson.value = JSON.stringify(sampleTools, null, 2); } }, 'Reset sample tool')),
+    toolsJson);
+
+  const toggleToolsBtn = h('button', { type: 'button', class: 'sm', onclick: () => {
+    showTools = !showTools;
+    toolsPanel.style.display = showTools ? 'block' : 'none';
+    toggleToolsBtn.textContent = showTools ? 'Hide Tools Editor' : 'Configure Tools';
+  } }, 'Configure Tools');
+
+  const chatContainer = h('div', { class: 'chat-history' });
+  const liveCard = h('div', { class: 'chat-msg assistant', style: 'display:none' });
+  const liveTextEl = h('div', { class: 'answer', style: 'margin-top:0' });
+  const liveCursor = h('span', { class: 'stream-cursor' });
+  const liveMetaEl = h('p', { class: 'note' });
+  liveCard.append(h('div', { class: 'chat-role' }, 'Assistant (Streaming)'), liveTextEl, liveMetaEl);
+
+  const parseAttributes = () => {
+    const a = {};
+    for (const p of attrs.value.split(',')) {
+      const i = p.indexOf('=');
+      if (i > 0) a[p.slice(0, i).trim()] = p.slice(i + 1).trim();
+    }
+    return a;
+  };
+
+  const getToolsPayload = () => {
+    if (!toolsEnabled.checked || !toolsJson.value.trim()) return undefined;
     try {
-      const r = await api('POST', '/api/proxy/playground', { model: model.value, effort: effort.value, system: system.value, prompt: prompt.value, attributes });
-      out.replaceChildren(h('div', { class: 'answer' }, (r.choices || []).join('\n---\n')),
-        h('p', { class: 'note' }, `model ${r.resolved_model} · vendor ${r.resolved_vendor} · rule ${r.matched_rule || '(override)'} · ${r.usage?.input ?? 0} in / ${r.usage?.output ?? 0} out tokens`));
-    } catch (e) { if (e.status !== 401) out.replaceChildren(h('p', { class: 'err' }, e.message)); }
-    run.disabled = false;
-  } }, 'Run');
-  root.append(h('div', { class: 'head' }, h('div', {}, h('h1', {}, 'Playground'), h('p', { class: 'sub' }, 'Send a prompt through the same routing your clients use. Counts toward usage as console.playground.'))),
+      const parsed = JSON.parse(toolsJson.value);
+      return Array.isArray(parsed) ? parsed : [parsed];
+    } catch {
+      toast('Invalid tools JSON schema', true);
+      return undefined;
+    }
+  };
+
+  const renderHistory = () => {
+    chatContainer.replaceChildren(...conversation.map((msg, idx) => {
+      const card = h('div', { class: 'chat-msg ' + msg.role });
+      const roleLabel = msg.role === 'user' ? 'User' : msg.role === 'assistant' ? 'Assistant' : 'Tool Output';
+      card.append(h('div', { class: 'chat-role' }, roleLabel));
+
+      if (msg.text) {
+        card.append(h('div', { class: 'answer', style: 'margin-top:0' }, msg.text));
+      }
+
+      if (msg.tool_calls && msg.tool_calls.length) {
+        const callsContainer = h('div', {});
+        for (const tc of msg.tool_calls) {
+          const fn = tc.function || {};
+          let formattedArgs = fn.arguments || '';
+          try { formattedArgs = JSON.stringify(JSON.parse(fn.arguments), null, 2); } catch {}
+
+          const tcCard = h('div', { class: 'tool-card' },
+            h('div', { class: 'tool-header' },
+              h('span', {}, 'Tool Call: ', h('code', {}, fn.name || 'unknown')),
+              h('span', { class: 'note' }, tc.id ? `id: ${tc.id}` : '')));
+          tcCard.append(h('pre', { class: 'tool-args' }, formattedArgs));
+
+          // Check if answered by a later message
+          const answered = conversation.slice(idx + 1).some((m) => m.role === 'tool' && m.tool_call_id === tc.id);
+          if (!answered) {
+            const replyInput = h('textarea', { rows: 2, placeholder: 'Tool response (JSON or text)' });
+            if (fn.name === 'get_weather') replyInput.value = '{"temperature": 21, "condition": "sunny"}';
+            const sendBtn = h('button', { class: 'sm primary', type: 'button', onclick: async () => {
+              if (!replyInput.value.trim()) return;
+              conversation.push({ role: 'tool', tool_call_id: tc.id, text: replyInput.value.trim() });
+              renderHistory();
+              await executeTurn();
+            } }, 'Send Tool Output');
+            tcCard.append(h('div', { class: 'tool-reply' }, replyInput, sendBtn));
+          }
+          callsContainer.append(tcCard);
+        }
+        card.append(callsContainer);
+      }
+
+      if (msg.meta) {
+        const m = msg.meta;
+        const ttftStr = msg.ttft != null ? ` · TTFT ${msg.ttft}ms` : '';
+        card.append(h('p', { class: 'note' }, `model ${m.resolved_model} · vendor ${m.resolved_vendor} · rule ${m.matched_rule || '(override)'}${ttftStr} · ${m.usage?.input ?? 0} in / ${m.usage?.output ?? 0} out tokens`));
+      }
+      return card;
+    }));
+  };
+
+  const executeTurn = async () => {
+    runBtn.disabled = true;
+    stopBtn.style.display = 'inline-block';
+    const isStream = streamCheck.checked;
+    abortCtrl = new AbortController();
+
+    const payload = {
+      model: model.value,
+      effort: effort.value,
+      system: system.value,
+      attributes: parseAttributes(),
+      tools: getToolsPayload(),
+      messages: conversation.map((m) => ({
+        role: m.role,
+        text: m.text || '',
+        tool_call_id: m.tool_call_id,
+        tool_calls: m.tool_calls
+      }))
+    };
+
+    if (isStream) {
+      liveCard.style.display = 'grid';
+      liveTextEl.replaceChildren(liveCursor);
+      liveMetaEl.textContent = 'Connecting…';
+      chatContainer.append(liveCard);
+
+      let liveText = '';
+      const liveToolCalls = {};
+      let ttft = null;
+      const t0 = performance.now();
+      let lastMeta = null;
+
+      try {
+        const res = await fetch('/api/proxy/playground/stream', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'llm-proxy-admin' },
+          body: JSON.stringify(payload),
+          signal: abortCtrl.signal
+        });
+        if (!res.ok) {
+          const errBody = await res.json().catch(() => ({}));
+          throw new Error(errBody?.error?.message || `HTTP ${res.status}`);
+        }
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const parts = buffer.split('\n\n');
+          buffer = parts.pop();
+
+          for (const part of parts) {
+            const lines = part.split('\n');
+            let event = 'chunk';
+            let dataStr = '';
+            for (const line of lines) {
+              if (line.startsWith('event: ')) event = line.slice(7).trim();
+              else if (line.startsWith('data: ')) dataStr = line.slice(6).trim();
+            }
+            if (event === 'chunk' && dataStr) {
+              try {
+                const c = JSON.parse(dataStr);
+                if (ttft == null) ttft = Math.round(performance.now() - t0);
+                if (c.delta) {
+                  liveText += c.delta;
+                  liveTextEl.replaceChildren(document.createTextNode(liveText), liveCursor);
+                }
+                if (c.tool_call_chunks) {
+                  for (const tc of c.tool_call_chunks) {
+                    const idx = tc.index || 0;
+                    if (!liveToolCalls[idx]) {
+                      liveToolCalls[idx] = { id: tc.id || '', type: tc.type || 'function', function: { name: tc.name || '', arguments: '' } };
+                    }
+                    if (tc.id) liveToolCalls[idx].id = tc.id;
+                    if (tc.name) liveToolCalls[idx].function.name = tc.name;
+                    if (tc.arguments_delta) liveToolCalls[idx].function.arguments += tc.arguments_delta;
+                  }
+                }
+                if (c.usage || c.resolved_model) lastMeta = c;
+                const ttftInfo = ttft != null ? `TTFT ${ttft}ms · ` : '';
+                liveMetaEl.textContent = `${ttftInfo}model ${c.resolved_model || lastMeta?.resolved_model || '…'} · vendor ${c.resolved_vendor || lastMeta?.resolved_vendor || '…'}`;
+              } catch {}
+            } else if (event === 'error' && dataStr) {
+              try {
+                const err = JSON.parse(dataStr);
+                throw new Error(err?.error?.message || 'Stream error');
+              } catch (e) {
+                throw e;
+              }
+            }
+          }
+        }
+
+        const finalToolCalls = Object.values(liveToolCalls);
+        conversation.push({
+          role: 'assistant',
+          text: liveText,
+          tool_calls: finalToolCalls.length ? finalToolCalls : undefined,
+          meta: lastMeta,
+          ttft
+        });
+      } catch (e) {
+        if (e.name !== 'AbortError') {
+          toast(e.message, true);
+        } else if (liveText) {
+          const finalToolCalls = Object.values(liveToolCalls);
+          conversation.push({
+            role: 'assistant',
+            text: liveText + ' [stopped]',
+            tool_calls: finalToolCalls.length ? finalToolCalls : undefined,
+            meta: lastMeta,
+            ttft
+          });
+        }
+      } finally {
+        liveCard.style.display = 'none';
+        renderHistory();
+      }
+    } else {
+      // Unary call
+      try {
+        const r = await api('POST', '/api/proxy/playground', payload);
+        const detail = r.details?.[0];
+        conversation.push({
+          role: 'assistant',
+          text: (r.choices || []).join('\n---\n'),
+          tool_calls: detail?.tool_calls,
+          meta: r
+        });
+        renderHistory();
+      } catch (e) {
+        if (e.status !== 401) toast(e.message, true);
+      }
+    }
+
+    runBtn.disabled = false;
+    stopBtn.style.display = 'none';
+  };
+
+  const runBtn = h('button', { class: 'primary', type: 'button', onclick: async () => {
+    const text = prompt.value.trim();
+    if (!text) return;
+    prompt.value = '';
+    conversation.push({ role: 'user', text });
+    renderHistory();
+    await executeTurn();
+  } }, 'Send');
+
+  const stopBtn = h('button', { class: 'danger', type: 'button', style: 'display:none', onclick: () => {
+    if (abortCtrl) abortCtrl.abort();
+  } }, 'Stop');
+
+  const clearBtn = h('button', { type: 'button', onclick: () => {
+    conversation = [];
+    renderHistory();
+  } }, 'Clear chat');
+
+  root.append(
+    h('div', { class: 'head' },
+      h('div', {},
+        h('h1', {}, 'Playground'),
+        h('p', { class: 'sub' }, 'Interactive chat, SSE streaming, and multi-turn tool calling through proxy routing.'))),
     h('div', { class: 'panel', style: 'display:grid;gap:12px' },
-      h('div', { class: 'controls' }, field('Model', model), field('Effort', effort, 'Used when the model is auto'), field('Attributes', attrs)),
-      field('System', system), field('Prompt', prompt), h('div', {}, run), out));
+      h('div', { class: 'controls' },
+        field('Model', model),
+        field('Effort', effort, 'Used when model is auto'),
+        field('Attributes', attrs),
+        h('label', { class: 'f inline', style: 'margin-bottom:6px' }, streamCheck, 'Stream (SSE)'),
+        h('label', { class: 'f inline', style: 'margin-bottom:6px' }, toolsEnabled, 'Enable Tools'),
+        toggleToolsBtn),
+      toolsPanel,
+      field('System', system),
+      field('Message', prompt),
+      h('div', { style: 'display:flex;gap:8px;align-items:center' }, runBtn, stopBtn, clearBtn),
+      chatContainer));
+};
+
+// ----- judge -----
+pages.judge = async (root) => {
+  const cfg = await guarded(() => loadCfg());
+  if (!cfg) return;
+
+  const judgeModels = cfg.models.filter((m) => m.enabled && (m.capabilities || []).includes('judge'));
+  const modelSelect = h('select', {},
+    h('option', { value: 'auto' }, 'auto (low effort + modality=judge)'),
+    judgeModels.map((m) => h('option', { value: m.id }, `${m.id} (${m.vendor})`)),
+    h('option', { value: 'jev-latest' }, 'jev-latest (override)'),
+    h('option', { value: 'gpt-6-luna' }, 'gpt-6-luna (override)'));
+
+  const attrsInput = h('input', { placeholder: 'e.g. env=prod,case=audit' });
+  const stateArea = h('textarea', { rows: 8, placeholder: 'JSON state to judge (dialogue, agent memory, or object)' });
+
+  const defaultSampleState = {
+    conversation: [
+      { role: "user", text: "Can I cancel my subscription and get a refund?" },
+      { role: "agent", text: "I have cancelled your subscription and initiated a full refund of $49 to your card." }
+    ],
+    customer_tier: "premium",
+    days_active: 14
+  };
+  stateArea.value = JSON.stringify(defaultSampleState, null, 2);
+
+  let questions = [
+    {
+      id: 'refund_confirmed',
+      type: 'NOUL',
+      instructions: 'Did the agent explicitly confirm that a refund was initiated?',
+      true_criteria: 'Agent confirmed initiating the refund.',
+      false_criteria: 'Agent did not confirm or refused the refund.',
+      options: {},
+      levels: []
+    },
+    {
+      id: 'customer_sentiment',
+      type: 'CHOICE',
+      instructions: 'What is the customer sentiment after this interaction?',
+      options: {
+        satisfied: 'Customer got immediate resolution and refund',
+        neutral: 'Routine interaction without emotional valence',
+        frustrated: 'Problem unsolved or slow'
+      },
+      levels: []
+    },
+    {
+      id: 'resolution_quality',
+      type: 'SCORE',
+      instructions: 'Evaluate the quality and completeness of the agent response.',
+      options: {},
+      levels: [
+        'Level 1: Unhelpful or inaccurate response',
+        'Level 2: Partial help but missing details',
+        'Level 3: Adequate and clear resolution',
+        'Level 4: Exemplary, immediate resolution with next steps'
+      ]
+    }
+  ];
+
+  const questionsList = h('div');
+  const resultsDiv = h('div');
+
+  const renderQuestions = () => {
+    questionsList.replaceChildren(...questions.map((q, qIdx) => {
+      const qCard = h('div', { class: 'judge-q' });
+      const idIn = h('input', { value: q.id, placeholder: 'Question ID', oninput: () => { q.id = idIn.value; } });
+      const typeSel = h('select', { onchange: () => { q.type = typeSel.value; renderQuestions(); } },
+        ['NOUL', 'CHOICE', 'SCORE'].map((t) => h('option', { value: t, selected: t === q.type }, t)));
+      const delBtn = h('button', { class: 'sm danger', type: 'button', onclick: () => {
+        questions.splice(qIdx, 1);
+        renderQuestions();
+      } }, 'Delete');
+
+      const instrArea = h('textarea', { rows: 2, placeholder: 'Criterion instructions...', oninput: () => { q.instructions = instrArea.value; } });
+      instrArea.value = q.instructions;
+
+      qCard.append(
+        h('div', { class: 'judge-q-head' },
+          h('div', { style: 'display:flex;gap:10px;align-items:center' },
+            h('strong', {}, `#${qIdx + 1}`),
+            field('ID', idIn),
+            field('Type', typeSel)),
+          delBtn),
+        field('Instructions', instrArea));
+
+      if (q.type === 'NOUL') {
+        const trueIn = h('input', { value: q.true_criteria || '', placeholder: 'What a YES means', oninput: () => { q.true_criteria = trueIn.value; } });
+        const falseIn = h('input', { value: q.false_criteria || '', placeholder: 'What a NO means', oninput: () => { q.false_criteria = falseIn.value; } });
+        qCard.append(
+          h('div', { style: 'display:grid;grid-template-columns:1fr 1fr;gap:10px' },
+            field('True criteria (optional)', trueIn),
+            field('False criteria (optional)', falseIn)));
+      } else if (q.type === 'CHOICE') {
+        const optList = h('div', { style: 'display:grid;gap:6px' });
+        const renderOpts = () => {
+          optList.replaceChildren(...Object.entries(q.options || {}).map(([key, desc]) => {
+            const kIn = h('input', { value: key, style: 'width:120px', placeholder: 'Key' });
+            const dIn = h('input', { value: desc, style: 'flex:1', placeholder: 'Description' });
+            kIn.onchange = () => {
+              const newK = kIn.value.trim();
+              if (newK && newK !== key) {
+                delete q.options[key];
+                q.options[newK] = dIn.value;
+                renderOpts();
+              }
+            };
+            dIn.oninput = () => { q.options[key] = dIn.value; };
+            const remBtn = h('button', { class: 'sm', type: 'button', onclick: () => {
+              delete q.options[key];
+              renderOpts();
+            } }, '✕');
+            return h('div', { style: 'display:flex;gap:8px;align-items:center' }, kIn, dIn, remBtn);
+          }));
+        };
+        renderOpts();
+        const addOptBtn = h('button', { class: 'sm', type: 'button', onclick: () => {
+          const newKey = 'opt_' + (Object.keys(q.options || {}).length + 1);
+          if (!q.options) q.options = {};
+          q.options[newKey] = 'Description';
+          renderOpts();
+        } }, '+ Add Option');
+        qCard.append(field('Choice Options', h('div', {}, optList, h('div', { style: 'margin-top:6px' }, addOptBtn))));
+      } else if (q.type === 'SCORE') {
+        const lvlList = h('div', { style: 'display:grid;gap:6px' });
+        const renderLvls = () => {
+          lvlList.replaceChildren(...(q.levels || []).map((lvlText, lIdx) => {
+            const lIn = h('input', { value: lvlText, style: 'flex:1', placeholder: `Level ${lIdx + 1} description` });
+            lIn.oninput = () => { q.levels[lIdx] = lIn.value; };
+            const remBtn = h('button', { class: 'sm', type: 'button', onclick: () => {
+              q.levels.splice(lIdx, 1);
+              renderLvls();
+            } }, '✕');
+            return h('div', { style: 'display:flex;gap:8px;align-items:center' }, h('span', { class: 'mono' }, `${lIdx + 1}.`), lIn, remBtn);
+          }));
+        };
+        renderLvls();
+        const addLvlBtn = h('button', { class: 'sm', type: 'button', onclick: () => {
+          if (!q.levels) q.levels = [];
+          q.levels.push(`Level ${q.levels.length + 1}: description`);
+          renderLvls();
+        } }, '+ Add Level');
+        qCard.append(field('Ordered Score Levels (lowest first)', h('div', {}, lvlList, h('div', { style: 'margin-top:6px' }, addLvlBtn))));
+      }
+      return qCard;
+    }));
+  };
+
+  const addQBtn = h('button', { class: 'sm', type: 'button', onclick: () => {
+    questions.push({
+      id: 'criterion_' + (questions.length + 1),
+      type: 'NOUL',
+      instructions: '',
+      true_criteria: '',
+      false_criteria: '',
+      options: {},
+      levels: []
+    });
+    renderQuestions();
+  } }, '+ Add Criterion');
+
+  const formatJsonBtn = h('button', { class: 'sm', type: 'button', onclick: () => {
+    try {
+      stateArea.value = JSON.stringify(JSON.parse(stateArea.value), null, 2);
+    } catch (e) {
+      toast('Invalid JSON: ' + e.message, true);
+    }
+  } }, 'Format JSON');
+
+  const resetStateBtn = h('button', { class: 'sm', type: 'button', onclick: () => {
+    stateArea.value = JSON.stringify(defaultSampleState, null, 2);
+  } }, 'Load Sample State');
+
+  const evaluateBtn = h('button', { class: 'primary', type: 'button', onclick: async () => {
+    let parsedState = null;
+    try {
+      parsedState = JSON.parse(stateArea.value);
+    } catch (e) {
+      toast('State must be valid JSON: ' + e.message, true);
+      return;
+    }
+
+    const qMap = {};
+    for (const q of questions) {
+      const qid = (q.id || '').trim();
+      if (!qid) continue;
+      qMap[qid] = {
+        type: q.type,
+        instructions: q.instructions || '',
+        options: q.type === 'CHOICE' ? q.options : undefined,
+        levels: q.type === 'SCORE' ? q.levels : undefined,
+        true_criteria: q.type === 'NOUL' ? q.true_criteria : undefined,
+        false_criteria: q.type === 'NOUL' ? q.false_criteria : undefined
+      };
+    }
+    if (Object.keys(qMap).length === 0) {
+      toast('Add at least one criterion with an ID', true);
+      return;
+    }
+
+    const parseAttrs = () => {
+      const a = {};
+      for (const p of attrsInput.value.split(',')) {
+        const i = p.indexOf('=');
+        if (i > 0) a[p.slice(0, i).trim()] = p.slice(i + 1).trim();
+      }
+      return a;
+    };
+
+    evaluateBtn.disabled = true;
+    resultsDiv.replaceChildren(h('p', { class: 'sub' }, 'Evaluating criteria…'));
+
+    try {
+      const res = await api('POST', '/api/proxy/judge', {
+        state_json: parsedState,
+        model_override: modelSelect.value === 'auto' ? '' : modelSelect.value,
+        attributes: parseAttrs(),
+        questions: qMap
+      });
+
+      const cards = Object.entries(res.answers || {}).map(([id, ans]) => {
+        const card = h('div', { class: 'judge-card' });
+        const typeName = ans.type === 1 || ans.type === 'JUDGE_TYPE_NOUL' ? 'NOUL'
+          : ans.type === 2 || ans.type === 'JUDGE_TYPE_CHOICE' ? 'CHOICE'
+          : ans.type === 3 || ans.type === 'JUDGE_TYPE_SCORE' ? 'SCORE' : 'DECISION';
+
+        card.append(
+          h('div', { class: 'head' },
+            h('h2', {}, id),
+            h('span', { class: 'chip' }, typeName)));
+
+        if (typeName === 'NOUL') {
+          const prob = ans.noul ?? 0;
+          const pctVal = (prob * 100).toFixed(1) + '%';
+          const verdict = prob >= 0.5 ? 'YES' : 'NO';
+          const fillClass = prob >= 0.5 ? 'ok' : prob >= 0.2 ? 'warn' : 'bad';
+          const confText = ans.confidence ? `confidence: ${(ans.confidence * 100).toFixed(1)}%` : '';
+
+          card.append(
+            h('div', { class: 'judge-result-val' },
+              pctVal,
+              h('span', { class: 'badge ' + (prob >= 0.5 ? 'worthy' : 'greedy') }, verdict),
+              confText && h('span', { class: 'note', style: 'font-size:12px' }, confText)),
+            h('div', { class: 'meter' }, h('div', { class: 'meter-fill ' + fillClass, style: `width:${Math.max(1, prob * 100)}%` })));
+        } else if (typeName === 'CHOICE') {
+          const confText = ans.confidence ? `confidence: ${(ans.confidence * 100).toFixed(1)}%` : '';
+          card.append(
+            h('div', { class: 'judge-result-val' },
+              h('span', { class: 'badge worthy' }, ans.choice || 'none'),
+              confText && h('span', { class: 'note', style: 'font-size:12px' }, confText)));
+
+          if (ans.probabilities) {
+            const distItems = Object.entries(ans.probabilities).map(([opt, p]) => {
+              const pPct = (p * 100).toFixed(1) + '%';
+              const isSelected = opt === ans.choice;
+              return h('div', { class: 'dist-item' },
+                h('span', { class: 'dist-label' + (isSelected ? ' mono bold' : '') }, opt),
+                h('div', { class: 'meter' }, h('div', { class: 'meter-fill ' + (isSelected ? 'ok' : ''), style: `width:${Math.max(1, p * 100)}%` })),
+                h('span', { class: 'dist-pct' }, pPct));
+            });
+            card.append(h('div', { class: 'dist-list' }, distItems));
+          }
+        } else if (typeName === 'SCORE') {
+          const scoreVal = (ans.score ?? 0).toFixed(2);
+          const confText = ans.confidence ? `confidence: ${(ans.confidence * 100).toFixed(1)}%` : '';
+          card.append(
+            h('div', { class: 'judge-result-val' },
+              scoreVal,
+              h('span', { class: 'note', style: 'font-size:14px' }, 'score'),
+              confText && h('span', { class: 'note', style: 'font-size:12px' }, confText)));
+
+          if (ans.probabilities) {
+            const distItems = Object.entries(ans.probabilities).map(([lvlIdx, p]) => {
+              const pPct = (p * 100).toFixed(1) + '%';
+              const label = ans.legend?.[lvlIdx] || `Level ${lvlIdx}`;
+              return h('div', { class: 'dist-item' },
+                h('span', { class: 'dist-label', title: label }, label),
+                h('div', { class: 'meter' }, h('div', { class: 'meter-fill', style: `width:${Math.max(1, p * 100)}%` })),
+                h('span', { class: 'dist-pct' }, pPct));
+            });
+            card.append(h('div', { class: 'dist-list' }, distItems));
+          }
+        }
+
+        return card;
+      });
+
+      resultsDiv.replaceChildren(
+        ...cards,
+        h('p', { class: 'note', style: 'margin-top:12px' },
+          `Evaluated by model ${res.resolved_model} · vendor ${res.resolved_vendor} · rule ${res.matched_rule || '(override)'} · ${res.usage?.input ?? 0} in / ${res.usage?.output ?? 0} out tokens`));
+    } catch (e) {
+      if (e.status !== 401) resultsDiv.replaceChildren(h('p', { class: 'err' }, e.message));
+    }
+    evaluateBtn.disabled = false;
+  } }, 'Evaluate');
+
+  renderQuestions();
+
+  root.append(
+    h('div', { class: 'head' },
+      h('div', {},
+        h('h1', {}, 'Judge Playground'),
+        h('p', { class: 'sub' }, 'Evaluate state against calibrated NOUL (probability), CHOICE (classification), and SCORE (ordered levels) criteria.'))),
+    h('div', { class: 'panel', style: 'display:grid;gap:12px' },
+      h('div', { class: 'controls' },
+        field('Model', modelSelect),
+        field('Attributes', attrsInput)),
+      h('div', {},
+        h('div', { class: 'head', style: 'margin-bottom:6px' },
+          h('label', { class: 'f' }, 'State (JSON)'),
+          h('div', { style: 'display:flex;gap:6px' }, formatJsonBtn, resetStateBtn)),
+        stateArea),
+      h('div', { class: 'head', style: 'margin-top:10px;margin-bottom:6px' },
+        h('h2', {}, 'Evaluation Criteria'),
+        addQBtn),
+      questionsList,
+      h('div', {}, evaluateBtn),
+      resultsDiv));
 };
 
 // ----- nodes -----
@@ -502,7 +1105,7 @@ function shell() {
     h('nav', { class: 'side' }, h('div', { class: 'brand' }, h('i'), 'llm-proxy admin'),
       h('div', { class: 'nav' },
         f.usage && [h('div', { class: 'grp' }, 'Spend'), link('usage', 'Usage')],
-        f.proxy && [h('div', { class: 'grp' }, 'Gateway'), link('models', 'Models'), link('rules', 'Rules'), link('keys', 'Keys'), link('nodes', 'Nodes'), link('playground', 'Playground')]),
+        f.proxy && [h('div', { class: 'grp' }, 'Gateway'), link('models', 'Models'), link('rules', 'Rules'), link('keys', 'Keys'), link('nodes', 'Nodes'), link('playground', 'Playground'), link('judge', 'Judge')]),
       h('div', { class: 'spacer' }),
       statusBox,
       h('div', { class: 'who' }, u.picture && h('img', { src: u.picture, alt: '', referrerpolicy: 'no-referrer' }),
