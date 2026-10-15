@@ -183,7 +183,7 @@ function dailyChart(days) {
 }
 
 // ----- models -----
-const VENDORS = ['openai', 'anthropic', 'google', 'deepseek', 'groq', 'mistral', 'ollama', 'typesafe', 'local'];
+const VENDORS = ['openai', 'anthropic', 'google', 'deepseek', 'groq', 'mistral', 'azure', 'ollama', 'typesafe', 'local'];
 const CAPS = ['google_search', 'no_structured_output', 'tts', 'image', 'judge'];
 
 pages.models = async (root) => {
