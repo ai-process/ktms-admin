@@ -68,15 +68,55 @@ func (s *Server) proxyRevokeKey(w http.ResponseWriter, r *http.Request, _ *auth.
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
+func hasField(m map[string]json.RawMessage, keys ...string) bool {
+	for _, k := range keys {
+		if _, ok := m[k]; ok {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Server) proxyUpsertModel(w http.ResponseWriter, r *http.Request, _ *auth.User) {
-	var m pb.ModelSpec
-	if err := readProto(r, &m); err != nil {
+	raw, err := io.ReadAll(http.MaxBytesReader(nil, r.Body, 1<<20))
+	if err != nil {
 		backendErr(w, badBody(err))
 		return
 	}
-	m.Id = r.PathValue("id")
+	var m pb.ModelSpec
+	if err := (protojson.UnmarshalOptions{DiscardUnknown: false}).Unmarshal(raw, &m); err != nil {
+		backendErr(w, badBody(err))
+		return
+	}
+	var rawMap map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &rawMap); err != nil {
+		backendErr(w, badBody(err))
+		return
+	}
+	id := r.PathValue("id")
+	m.Id = id
+
 	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
 	defer cancel()
+
+	// Preserves omitted fields so partial updates or older clients don't zero them.
+	if cfg, err := s.admin.GetConfig(ctx, &pb.GetConfigRequest{}); err == nil && cfg != nil {
+		for _, em := range cfg.Models {
+			if em.GetId() == id {
+				if !hasField(rawMap, "rpm_burst", "rpmBurst") {
+					m.RpmBurst = em.GetRpmBurst()
+				}
+				if !hasField(rawMap, "queue_timeout_ms", "queueTimeoutMs") {
+					m.QueueTimeoutMs = em.GetQueueTimeoutMs()
+				}
+				if !hasField(rawMap, "budget_grace_margin", "budgetGraceMargin") {
+					m.BudgetGraceMargin = em.GetBudgetGraceMargin()
+				}
+				break
+			}
+		}
+	}
+
 	if _, err := s.admin.UpsertModel(ctx, &pb.UpsertModelRequest{Model: &m}); err != nil {
 		backendErr(w, err)
 		return
@@ -97,13 +137,45 @@ func (s *Server) proxyDeleteModel(w http.ResponseWriter, r *http.Request, _ *aut
 }
 
 func (s *Server) proxyReplaceRules(w http.ResponseWriter, r *http.Request, _ *auth.User) {
-	var req pb.ReplaceRulesRequest
-	if err := readProto(r, &req); err != nil {
+	raw, err := io.ReadAll(http.MaxBytesReader(nil, r.Body, 1<<20))
+	if err != nil {
 		backendErr(w, badBody(err))
 		return
 	}
+	var req pb.ReplaceRulesRequest
+	if err := (protojson.UnmarshalOptions{DiscardUnknown: false}).Unmarshal(raw, &req); err != nil {
+		backendErr(w, badBody(err))
+		return
+	}
+	var rawReq struct {
+		Rules []map[string]json.RawMessage `json:"rules"`
+	}
+	if err := json.Unmarshal(raw, &rawReq); err != nil {
+		backendErr(w, badBody(err))
+		return
+	}
+
 	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
 	defer cancel()
+
+	// Preserves existing rule weights if omitted in the update and chain length matches.
+	if cfg, err := s.admin.GetConfig(ctx, &pb.GetConfigRequest{}); err == nil && cfg != nil {
+		existingByName := make(map[string]*pb.RuleSpec, len(cfg.Rules))
+		for _, er := range cfg.Rules {
+			existingByName[er.GetName()] = er
+		}
+		for i, rule := range req.Rules {
+			hasW := i < len(rawReq.Rules) && hasField(rawReq.Rules[i], "weights")
+			if !hasW {
+				if er, ok := existingByName[rule.GetName()]; ok {
+					if len(er.GetWeights()) == len(rule.GetUse()) {
+						rule.Weights = er.GetWeights()
+					}
+				}
+			}
+		}
+	}
+
 	if _, err := s.admin.ReplaceRules(ctx, &req); err != nil {
 		backendErr(w, err)
 		return
