@@ -193,11 +193,17 @@ pages.models = async (root) => {
     if (!cfg) return;
     body.replaceChildren(...(cfg.models.length ? cfg.models.map(modelRow) : [emptyRow(9, 'No models yet. Add one to start routing.')]));
   };
+  const rpmDisplay = (m) => {
+    if (!num(m.rpm)) return '∞';
+    if (num(m.rpm_burst) > 0) return `${m.rpm} (+${m.rpm_burst})`;
+    if (num(m.rpm_burst) < 0) return `${m.rpm} (no burst)`;
+    return String(m.rpm);
+  };
   const modelRow = (m) => h('tr', { class: m.enabled ? '' : 'off' },
     h('td', {}, h('span', { class: 'mono' }, m.id)), h('td', {}, m.vendor),
     h('td', {}, m.efforts.map((e) => h('span', { class: 'chip' }, effortName(e)))),
     h('td', {}, m.capabilities.map((c) => h('span', { class: 'chip' }, c))),
-    h('td', { class: 'num' }, num(m.rpm) || '∞'),
+    h('td', { class: 'num' }, rpmDisplay(m)),
     h('td', { class: 'num' }, `$${m.price_in_per_mtok} / $${m.price_out_per_mtok}`),
     h('td', { class: 'num' }, num(m.daily_tokens_per_key) ? compact(m.daily_tokens_per_key) : '∞'),
     h('td', {}, m.enabled ? 'on' : 'off'),
@@ -207,7 +213,7 @@ pages.models = async (root) => {
 
   function editModel(m) {
     const isNew = !m;
-    m = m || { id: '', vendor: 'openai', endpoint: '', efforts: ['EFFORT_LOW', 'EFFORT_MEDIUM', 'EFFORT_HIGH'], capabilities: [], rpm: 0, price_in_per_mtok: 0, price_out_per_mtok: 0, price_in_peak_per_mtok: 0, price_out_peak_per_mtok: 0, price_in_batch_per_mtok: 0, price_out_batch_per_mtok: 0, daily_tokens_per_key: 0, daily_tokens_per_user: 0, enabled: true };
+    m = m || { id: '', vendor: 'openai', endpoint: '', efforts: ['EFFORT_LOW', 'EFFORT_MEDIUM', 'EFFORT_HIGH'], capabilities: [], rpm: 0, rpm_burst: 0, queue_timeout_ms: 0, budget_grace_margin: 0, price_in_per_mtok: 0, price_out_per_mtok: 0, price_in_peak_per_mtok: 0, price_out_peak_per_mtok: 0, price_in_batch_per_mtok: 0, price_out_batch_per_mtok: 0, daily_tokens_per_key: 0, daily_tokens_per_user: 0, enabled: true };
     const ef = (e) => check('effort_' + e, e.toLowerCase(), m.efforts.includes('EFFORT_' + e));
     const form = h('div', { style: 'display:grid;gap:12px' },
       h('div', { class: 'row' }, field('Model id', h('input', { name: 'id', value: m.id, required: true, disabled: !isNew }), 'Sent to the vendor and referenced by rules'),
@@ -223,16 +229,22 @@ pages.models = async (root) => {
       h('div', { class: 'row' }, field('Batch price in', h('input', { name: 'price_in_batch_per_mtok', type: 'number', step: 'any', min: 0, value: m.price_in_batch_per_mtok })),
         field('Batch price out', h('input', { name: 'price_out_batch_per_mtok', type: 'number', step: 'any', min: 0, value: m.price_out_batch_per_mtok }))),
       h('div', { class: 'row' }, field('Requests / min per key', h('input', { name: 'rpm', type: 'number', min: 0, value: num(m.rpm) }), '0 = unlimited'),
-        field('Daily tokens per key', h('input', { name: 'daily_tokens_per_key', type: 'number', min: 0, value: num(m.daily_tokens_per_key) }), '0 = unlimited')),
-      field('Daily tokens per user', h('input', { name: 'daily_tokens_per_user', type: 'number', min: 0, value: num(m.daily_tokens_per_user) })),
+        field('RPM Burst', h('input', { name: 'rpm_burst', type: 'number', value: num(m.rpm_burst) }), '0 = default (rpm - 1), <0 = disabled')),
+      h('div', { class: 'row' }, field('Queue timeout (ms)', h('input', { name: 'queue_timeout_ms', type: 'number', min: 0, value: num(m.queue_timeout_ms) }), '0 = fallback immediately'),
+        field('Budget grace margin', h('input', { name: 'budget_grace_margin', type: 'number', step: 'any', value: num(m.budget_grace_margin) }), '0 = default 0.05 margin, <0 = disabled')),
+      h('div', { class: 'row' }, field('Daily tokens per key', h('input', { name: 'daily_tokens_per_key', type: 'number', min: 0, value: num(m.daily_tokens_per_key) }), '0 = unlimited'),
+        field('Daily tokens per user', h('input', { name: 'daily_tokens_per_user', type: 'number', min: 0, value: num(m.daily_tokens_per_user) }), '0 = unlimited')),
       check('enabled', 'Enabled', m.enabled));
     modal(isNew ? 'Add model' : 'Edit ' + m.id, form, { onSubmit: async (fd) => {
       const id = isNew ? String(fd.get('id')).trim() : m.id;
       const spec = {
+        ...(m || {}),
         vendor: fd.get('vendor'), endpoint: String(fd.get('endpoint')).trim(),
         efforts: ['LOW', 'MEDIUM', 'HIGH'].filter((e) => fd.get('effort_' + e)).map((e) => 'EFFORT_' + e),
         capabilities: String(fd.get('capabilities')).split(',').map((s) => s.trim()).filter(Boolean),
-        rpm: num(fd.get('rpm')), price_in_per_mtok: num(fd.get('price_in_per_mtok')), price_out_per_mtok: num(fd.get('price_out_per_mtok')),
+        rpm: num(fd.get('rpm')), rpm_burst: num(fd.get('rpm_burst')),
+        queue_timeout_ms: num(fd.get('queue_timeout_ms')), budget_grace_margin: num(fd.get('budget_grace_margin')),
+        price_in_per_mtok: num(fd.get('price_in_per_mtok')), price_out_per_mtok: num(fd.get('price_out_per_mtok')),
         price_in_peak_per_mtok: num(fd.get('price_in_peak_per_mtok')), price_out_peak_per_mtok: num(fd.get('price_out_peak_per_mtok')),
         price_in_batch_per_mtok: num(fd.get('price_in_batch_per_mtok')), price_out_batch_per_mtok: num(fd.get('price_out_batch_per_mtok')),
         daily_tokens_per_key: num(fd.get('daily_tokens_per_key')), daily_tokens_per_user: num(fd.get('daily_tokens_per_user')),
@@ -269,7 +281,11 @@ pages.rules = async (root) => {
     h('td', { class: 'num' }, r.priority), h('td', {}, h('span', { class: 'mono' }, r.name)),
     h('td', {}, effortName(r.effort)),
     h('td', {}, Object.keys(r.attributes || {}).length ? Object.entries(r.attributes).map(([k, v]) => h('span', { class: 'chip mono' }, `${k}=${v}`)) : h('span', { class: 'note' }, 'catch-all')),
-    h('td', {}, r.use.map((u, i) => [i > 0 && ' → ', h('span', { class: 'mono' }, u)])),
+    h('td', {}, r.use.map((u, i) => [
+      i > 0 && ' → ',
+      h('span', { class: 'mono' }, u),
+      r.weights && r.weights[i] ? h('span', { class: 'note' }, ` (${r.weights[i]})`) : '',
+    ])),
     h('td', {}, r.enabled ? 'on' : 'off'),
     h('td', {}, canWrite() && h('div', { class: 'actions' },
       h('button', { class: 'sm', onclick: () => edit(r) }, 'Edit'),
@@ -280,7 +296,7 @@ pages.rules = async (root) => {
     if (!cfg) return;
     const isNew = !r;
     const nextPrio = (rules[0]?.priority || 0) + 10;
-    r = r || { name: '', priority: nextPrio, effort: 'EFFORT_UNSPECIFIED', attributes: {}, use: [], enabled: true };
+    r = r || { name: '', priority: nextPrio, effort: 'EFFORT_UNSPECIFIED', attributes: {}, use: [], weights: [], enabled: true };
     const attrs = Object.entries(r.attributes || {}).map(([k, v]) => `${k}=${v}`).join('\n');
     const form = h('div', { style: 'display:grid;gap:12px' },
       h('div', { class: 'row' }, field('Name', h('input', { name: 'name', value: r.name, required: true, disabled: !isNew })),
@@ -289,6 +305,7 @@ pages.rules = async (root) => {
       field('Attributes (one key=value per line)', h('textarea', { name: 'attributes', rows: 3, placeholder: 'subject=french\nlanguage=es' }, attrs), 'Empty = catch-all for the effort'),
       field('Model chain, cheapest first', h('input', { name: 'use', value: r.use.join(', '), list: 'mids', required: true, placeholder: 'model-a, model-b' }), 'Comma separated registry ids; later ones are fallbacks'),
       h('datalist', { id: 'mids' }, cfg.models.map((m) => h('option', { value: m.id }))),
+      field('Traffic weights (optional)', h('input', { name: 'weights', value: (r.weights || []).join(', '), placeholder: '80, 20' }), 'Comma separated integers matching models count, e.g. 80, 20 (empty = 100% on first)'),
       check('enabled', 'Enabled', r.enabled));
     modal(isNew ? 'Add rule' : 'Edit ' + r.name, form, { onSubmit: async (fd) => {
       const attributes = {};
@@ -298,8 +315,29 @@ pages.rules = async (root) => {
         if (i < 1) throw new Error(`Attribute line "${t}" must look like key=value`);
         attributes[t.slice(0, i).trim()] = t.slice(i + 1).trim();
       }
-      const rule = { name: isNew ? String(fd.get('name')).trim() : r.name, priority: num(fd.get('priority')), effort: fd.get('effort'), attributes,
-        use: String(fd.get('use')).split(',').map((s) => s.trim()).filter(Boolean), enabled: !!fd.get('enabled') };
+      const use = String(fd.get('use')).split(',').map((s) => s.trim()).filter(Boolean);
+      const rawWeights = String(fd.get('weights') || '').split(',').map((s) => s.trim()).filter(Boolean);
+      let weights = [];
+      if (rawWeights.length > 0) {
+        if (rawWeights.length !== use.length) {
+          throw new Error(`Weights count (${rawWeights.length}) must match models in chain (${use.length})`);
+        }
+        weights = rawWeights.map((w) => {
+          const n = parseInt(w, 10);
+          if (isNaN(n) || n <= 0) throw new Error(`Weight "${w}" must be a positive integer`);
+          return n;
+        });
+      }
+      const rule = {
+        ...(r || {}),
+        name: isNew ? String(fd.get('name')).trim() : r.name,
+        priority: num(fd.get('priority')),
+        effort: fd.get('effort'),
+        attributes,
+        use,
+        weights,
+        enabled: !!fd.get('enabled'),
+      };
       const next = isNew ? [...rules, rule] : rules.map((x) => (x.name === r.name ? rule : x));
       await save(next, 'Rules saved');
     } });

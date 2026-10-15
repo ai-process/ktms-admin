@@ -23,6 +23,7 @@ type fakeAdmin struct {
 	pb.LLMProxyAdminServiceClient
 	upserted *pb.ModelSpec
 	rules    *pb.ReplaceRulesRequest
+	config   *pb.GetConfigResponse
 }
 
 type fakeData struct {
@@ -90,6 +91,9 @@ func (s *fakeStream) Recv() (*pb.GenerateTextChunk, error) {
 }
 
 func (f *fakeAdmin) GetConfig(context.Context, *pb.GetConfigRequest, ...grpc.CallOption) (*pb.GetConfigResponse, error) {
+	if f.config != nil {
+		return f.config, nil
+	}
 	return &pb.GetConfigResponse{Models: []*pb.ModelSpec{{Id: "m1", Vendor: "openai", PriceInPerMtok: 1, PriceOutPerMtok: 2, Enabled: true}}}, nil
 }
 func (f *fakeAdmin) UpsertModel(_ context.Context, r *pb.UpsertModelRequest, _ ...grpc.CallOption) (*pb.UpsertModelResponse, error) {
@@ -218,6 +222,112 @@ func TestUpsertModelPreservesBatchPrices(t *testing.T) {
 	}
 	if fa.upserted.PriceOutBatchPerMtok != 1.5 {
 		t.Errorf("expected price_out_batch_per_mtok 1.5, got %f", fa.upserted.PriceOutBatchPerMtok)
+	}
+}
+
+func TestUpsertModelPreservesOperationalFields(t *testing.T) {
+	s, fa, _ := newServer(t, "")
+	h := s.Handler()
+	boss := sessionCookie(t, "boss@x.com")
+
+	fa.config = &pb.GetConfigResponse{
+		Models: []*pb.ModelSpec{
+			{
+				Id:                "m_existing",
+				Vendor:            "openai",
+				Rpm:               100,
+				RpmBurst:          15,
+				QueueTimeoutMs:    250,
+				BudgetGraceMargin: 0.1,
+				Enabled:           true,
+			},
+		},
+	}
+
+	body := `{"vendor":"openai","rpm":120,"enabled":true}`
+	if w := call(h, "PUT", "/api/proxy/models/m_existing", body, boss, csrf); w.Code != 200 {
+		t.Fatalf("upsert model = %d, body = %s", w.Code, w.Body)
+	}
+	if fa.upserted == nil {
+		t.Fatal("expected model to reach proxy")
+	}
+	if fa.upserted.Rpm != 120 {
+		t.Errorf("expected rpm 120, got %d", fa.upserted.Rpm)
+	}
+	if fa.upserted.RpmBurst != 15 {
+		t.Errorf("expected rpm_burst 15 preserved, got %d", fa.upserted.RpmBurst)
+	}
+	if fa.upserted.QueueTimeoutMs != 250 {
+		t.Errorf("expected queue_timeout_ms 250 preserved, got %d", fa.upserted.QueueTimeoutMs)
+	}
+	if fa.upserted.BudgetGraceMargin != 0.1 {
+		t.Errorf("expected budget_grace_margin 0.1 preserved, got %f", fa.upserted.BudgetGraceMargin)
+	}
+
+	bodyZero := `{"vendor":"openai","rpm":120,"rpm_burst":0,"queue_timeout_ms":0,"budget_grace_margin":0,"enabled":true}`
+	if w := call(h, "PUT", "/api/proxy/models/m_existing", bodyZero, boss, csrf); w.Code != 200 {
+		t.Fatalf("upsert model zero = %d, body = %s", w.Code, w.Body)
+	}
+	if fa.upserted.RpmBurst != 0 {
+		t.Errorf("expected rpm_burst 0, got %d", fa.upserted.RpmBurst)
+	}
+	if fa.upserted.QueueTimeoutMs != 0 {
+		t.Errorf("expected queue_timeout_ms 0, got %d", fa.upserted.QueueTimeoutMs)
+	}
+	if fa.upserted.BudgetGraceMargin != 0 {
+		t.Errorf("expected budget_grace_margin 0, got %f", fa.upserted.BudgetGraceMargin)
+	}
+}
+
+func TestReplaceRulesPreservesWeights(t *testing.T) {
+	s, fa, _ := newServer(t, "")
+	h := s.Handler()
+	boss := sessionCookie(t, "boss@x.com")
+
+	fa.config = &pb.GetConfigResponse{
+		Rules: []*pb.RuleSpec{
+			{
+				Name:     "rule_weighted",
+				Priority: 10,
+				Effort:   pb.Effort_EFFORT_LOW,
+				Use:      []string{"m1", "m2"},
+				Weights:  []int32{80, 20},
+				Enabled:  true,
+			},
+		},
+	}
+
+	body := `{"rules":[{"name":"rule_weighted","priority":15,"effort":"EFFORT_LOW","use":["m1","m2"],"enabled":true}]}`
+	if w := call(h, "PUT", "/api/proxy/rules", body, boss, csrf); w.Code != 200 {
+		t.Fatalf("replace rules = %d, body = %s", w.Code, w.Body)
+	}
+	if len(fa.rules.Rules) != 1 {
+		t.Fatalf("expected 1 rule, got %d", len(fa.rules.Rules))
+	}
+	r := fa.rules.Rules[0]
+	if r.Priority != 15 {
+		t.Errorf("expected priority 15, got %d", r.Priority)
+	}
+	if len(r.Weights) != 2 || r.Weights[0] != 80 || r.Weights[1] != 20 {
+		t.Errorf("expected weights [80, 20] preserved, got %v", r.Weights)
+	}
+
+	bodyExplicit := `{"rules":[{"name":"rule_weighted","priority":15,"effort":"EFFORT_LOW","use":["m1","m2"],"weights":[60,40],"enabled":true}]}`
+	if w := call(h, "PUT", "/api/proxy/rules", bodyExplicit, boss, csrf); w.Code != 200 {
+		t.Fatalf("replace rules explicit = %d, body = %s", w.Code, w.Body)
+	}
+	r = fa.rules.Rules[0]
+	if len(r.Weights) != 2 || r.Weights[0] != 60 || r.Weights[1] != 40 {
+		t.Errorf("expected weights [60, 40], got %v", r.Weights)
+	}
+
+	bodyChainChange := `{"rules":[{"name":"rule_weighted","priority":15,"effort":"EFFORT_LOW","use":["m1","m2","m3"],"enabled":true}]}`
+	if w := call(h, "PUT", "/api/proxy/rules", bodyChainChange, boss, csrf); w.Code != 200 {
+		t.Fatalf("replace rules chain change = %d, body = %s", w.Code, w.Body)
+	}
+	r = fa.rules.Rules[0]
+	if len(r.Weights) != 0 {
+		t.Errorf("expected empty weights on chain change, got %v", r.Weights)
 	}
 }
 
