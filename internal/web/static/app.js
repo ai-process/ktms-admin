@@ -351,6 +351,94 @@ pages.rules = async (root) => {
   render();
 };
 
+// ----- user rate limits -----
+pages.limits = async (root) => {
+  const body = h('tbody');
+  let models = [];
+  const render = async (force) => {
+    const [cfg, res] = await Promise.all([
+      guarded(() => loadCfg(force)),
+      guarded(() => api('GET', '/api/proxy/user-rate-limits')),
+    ]);
+    if (!cfg) return;
+    models = cfg.models || [];
+    const limits = res?.rate_limits || cfg.user_rate_limits || [];
+    body.replaceChildren(...(limits.length ? limits.map(limitRow) : [emptyRow(7, 'No user rate limits defined yet.')]));
+  };
+
+  const burstDisplay = (b) => {
+    const n = num(b);
+    if (n > 0) return `+${n}`;
+    if (n < 0) return 'disabled';
+    return 'default';
+  };
+
+  const limitRow = (l) => h('tr', {},
+    h('td', {}, h('span', { class: 'mono' }, l.user_id)),
+    h('td', {}, h('span', { class: 'mono' }, l.model_id)),
+    h('td', { class: 'num' }, num(l.rpm) ? num(l.rpm) : '∞'),
+    h('td', { class: 'num' }, burstDisplay(l.rpm_burst)),
+    h('td', { class: 'num' }, num(l.queue_timeout_ms) ? `${l.queue_timeout_ms} ms` : '0 ms'),
+    h('td', { class: 'num' }, num(l.daily_tokens) ? compact(l.daily_tokens) : '∞'),
+    h('td', {}, canWrite() && h('div', { class: 'actions' },
+      h('button', { class: 'sm', onclick: () => editLimit(l) }, 'Edit'),
+      h('button', { class: 'sm danger', onclick: () => confirmBox(
+        'Delete rate limit',
+        `Delete rate limit override for ${l.user_id} on ${l.model_id}?`,
+        async () => {
+          await api('DELETE', `/api/proxy/user-rate-limits?user_id=${encodeURIComponent(l.user_id)}&model_id=${encodeURIComponent(l.model_id)}`);
+          toast('Rate limit deleted');
+          await render(true);
+        }
+      ) }, 'Delete'))));
+
+  function editLimit(l) {
+    const isNew = !l;
+    l = l || { user_id: '', model_id: '*', rpm: 0, rpm_burst: 0, queue_timeout_ms: 0, daily_tokens: 0 };
+    const form = h('div', { style: 'display:grid;gap:12px' },
+      h('div', { class: 'row' },
+        field('User ID', h('input', { name: 'user_id', value: l.user_id, required: true, disabled: !isNew, placeholder: 'alice@corp.com or *' }), '* = default across all users'),
+        field('Model ID', h('input', { name: 'model_id', value: l.model_id, required: true, disabled: !isNew, list: 'limit-models', placeholder: 'gpt-4o or *' }), '* = all models')),
+      h('datalist', { id: 'limit-models' }, [h('option', { value: '*' }), ...models.map((m) => h('option', { value: m.id }))]),
+      h('div', { class: 'row' },
+        field('Requests / min (RPM)', h('input', { name: 'rpm', type: 'number', min: 0, value: num(l.rpm) }), '0 = unlimited'),
+        field('RPM Burst', h('input', { name: 'rpm_burst', type: 'number', value: num(l.rpm_burst) }), '0 = default (rpm - 1), <0 = disabled')),
+      h('div', { class: 'row' },
+        field('Queue timeout (ms)', h('input', { name: 'queue_timeout_ms', type: 'number', min: 0, value: num(l.queue_timeout_ms) }), '0 = fallback immediately'),
+        field('Daily token budget', h('input', { name: 'daily_tokens', type: 'number', min: 0, value: num(l.daily_tokens) }), '0 = unlimited')));
+
+    modal(isNew ? 'Add user rate limit' : `Edit limit for ${l.user_id} (${l.model_id})`, form, {
+      onSubmit: async (fd) => {
+        const spec = {
+          user_id: isNew ? String(fd.get('user_id')).trim() : l.user_id,
+          model_id: isNew ? String(fd.get('model_id')).trim() : l.model_id,
+          rpm: num(fd.get('rpm')),
+          rpm_burst: num(fd.get('rpm_burst')),
+          queue_timeout_ms: num(fd.get('queue_timeout_ms')),
+          daily_tokens: num(fd.get('daily_tokens')),
+        };
+        if (!spec.user_id || !spec.model_id) throw new Error('user_id and model_id are required');
+        await api('PUT', '/api/proxy/user-rate-limits', spec);
+        toast('Rate limit saved');
+        await render(true);
+      }
+    });
+  }
+
+  root.append(
+    h('div', { class: 'head' },
+      h('div', {}, h('h1', {}, 'User Rate Limits'), h('p', { class: 'sub' }, 'Per-user and wildcard rate limit overrides across models. Checked before model default limits.')),
+      canWrite() && h('button', { class: 'primary', onclick: () => editLimit(null) }, 'Add user limit')),
+    h('div', { class: 'panel flush' }, h('table', {},
+      h('thead', {}, h('tr', {},
+        h('th', {}, 'User ID'), h('th', {}, 'Model ID'),
+        h('th', { class: 'num' }, 'RPM'), h('th', { class: 'num' }, 'Burst'),
+        h('th', { class: 'num' }, 'Queue timeout'), h('th', { class: 'num' }, 'Daily tokens'),
+        h('th'))),
+      body)));
+  render();
+};
+
 // ----- keys -----
 pages.keys = async (root) => {
   const keysBody = h('tbody'), vendorBody = h('tbody');
@@ -1143,7 +1231,7 @@ function shell() {
     h('nav', { class: 'side' }, h('div', { class: 'brand' }, h('i'), 'llm-proxy admin'),
       h('div', { class: 'nav' },
         f.usage && [h('div', { class: 'grp' }, 'Spend'), link('usage', 'Usage')],
-        f.proxy && [h('div', { class: 'grp' }, 'Gateway'), link('models', 'Models'), link('rules', 'Rules'), link('keys', 'Keys'), link('nodes', 'Nodes'), link('playground', 'Playground'), link('judge', 'Judge')]),
+        f.proxy && [h('div', { class: 'grp' }, 'Gateway'), link('models', 'Models'), link('rules', 'Rules'), link('limits', 'Limits'), link('keys', 'Keys'), link('nodes', 'Nodes'), link('playground', 'Playground'), link('judge', 'Judge')]),
       h('div', { class: 'spacer' }),
       statusBox,
       h('div', { class: 'who' }, u.picture && h('img', { src: u.picture, alt: '', referrerpolicy: 'no-referrer' }),

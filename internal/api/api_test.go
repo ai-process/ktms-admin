@@ -21,9 +21,11 @@ import (
 
 type fakeAdmin struct {
 	pb.LLMProxyAdminServiceClient
-	upserted *pb.ModelSpec
-	rules    *pb.ReplaceRulesRequest
-	config   *pb.GetConfigResponse
+	upserted         *pb.ModelSpec
+	rules            *pb.ReplaceRulesRequest
+	config           *pb.GetConfigResponse
+	userLimits       map[string]*pb.UserRateLimitSpec
+	deletedUserLimit *pb.DeleteUserRateLimitRequest
 }
 
 type fakeData struct {
@@ -106,6 +108,30 @@ func (f *fakeAdmin) ReplaceRules(_ context.Context, r *pb.ReplaceRulesRequest, _
 }
 func (f *fakeAdmin) ListAPIKeys(context.Context, *pb.ListAPIKeysRequest, ...grpc.CallOption) (*pb.ListAPIKeysResponse, error) {
 	return &pb.ListAPIKeysResponse{Keys: []*pb.APIKeyInfo{{Name: "k", Scopes: []string{"generate"}}}}, nil
+}
+func (f *fakeAdmin) ListUserRateLimits(_ context.Context, r *pb.ListUserRateLimitsRequest, _ ...grpc.CallOption) (*pb.ListUserRateLimitsResponse, error) {
+	var out []*pb.UserRateLimitSpec
+	for _, l := range f.userLimits {
+		if r.UserId == "" || l.UserId == r.UserId {
+			out = append(out, l)
+		}
+	}
+	return &pb.ListUserRateLimitsResponse{RateLimits: out}, nil
+}
+func (f *fakeAdmin) SetUserRateLimit(_ context.Context, r *pb.SetUserRateLimitRequest, _ ...grpc.CallOption) (*pb.SetUserRateLimitResponse, error) {
+	if f.userLimits == nil {
+		f.userLimits = make(map[string]*pb.UserRateLimitSpec)
+	}
+	key := r.RateLimit.UserId + ":" + r.RateLimit.ModelId
+	f.userLimits[key] = r.RateLimit
+	return &pb.SetUserRateLimitResponse{}, nil
+}
+func (f *fakeAdmin) DeleteUserRateLimit(_ context.Context, r *pb.DeleteUserRateLimitRequest, _ ...grpc.CallOption) (*pb.DeleteUserRateLimitResponse, error) {
+	f.deletedUserLimit = r
+	if f.userLimits != nil {
+		delete(f.userLimits, r.UserId+":"+r.ModelId)
+	}
+	return &pb.DeleteUserRateLimitResponse{}, nil
 }
 
 func newServer(t *testing.T, tokenmeterURL string) (*Server, *fakeAdmin, *auth.Handler) {
@@ -552,5 +578,61 @@ func TestJudgeValidation(t *testing.T) {
 	w = call(h, "POST", "/api/proxy/judge", `{"state_text":"some state","questions":{"q":{"type":"UNKNOWN","instructions":"test"}}}`, boss, csrf)
 	if w.Code != 400 {
 		t.Errorf("expected 400 on unknown question type, got %d", w.Code)
+	}
+}
+
+func TestUserRateLimitsAPI(t *testing.T) {
+	s, fa, _ := newServer(t, "")
+	h := s.Handler()
+	boss := sessionCookie(t, "boss@x.com")
+	viewer := sessionCookie(t, "viewer@view.com")
+
+	// 1. Set user rate limit as boss
+	body := `{"user_id":"alice","model_id":"gpt-4o","rpm":100,"rpm_burst":20,"queue_timeout_ms":250,"daily_tokens":500000}`
+	if w := call(h, "PUT", "/api/proxy/user-rate-limits", body, boss, csrf); w.Code != 200 {
+		t.Fatalf("set rate limit = %d, body = %s", w.Code, w.Body)
+	}
+	key := "alice:gpt-4o"
+	if fa.userLimits[key] == nil || fa.userLimits[key].Rpm != 100 || fa.userLimits[key].RpmBurst != 20 {
+		t.Fatalf("expected rate limit in backend, got %+v", fa.userLimits[key])
+	}
+
+	// 2. Viewer forbidden from PUT
+	if w := call(h, "PUT", "/api/proxy/user-rate-limits", body, viewer, csrf); w.Code != 403 {
+		t.Fatalf("viewer PUT = %d, want 403", w.Code)
+	}
+
+	// 3. Validation: missing user_id or model_id returns 400
+	badBody := `{"user_id":"","model_id":"gpt-4o","rpm":100}`
+	if w := call(h, "PUT", "/api/proxy/user-rate-limits", badBody, boss, csrf); w.Code != 400 {
+		t.Fatalf("empty user_id = %d, want 400", w.Code)
+	}
+
+	// 4. Viewer can read list
+	if w := call(h, "GET", "/api/proxy/user-rate-limits", "", viewer, nil); w.Code != 200 {
+		t.Fatalf("viewer GET = %d, body = %s", w.Code, w.Body)
+	} else if !strings.Contains(w.Body.String(), "alice") {
+		t.Fatalf("expected alice in GET response: %s", w.Body)
+	}
+
+	// 5. Viewer forbidden from DELETE
+	if w := call(h, "DELETE", "/api/proxy/user-rate-limits?user_id=alice&model_id=gpt-4o", "", viewer, csrf); w.Code != 403 {
+		t.Fatalf("viewer DELETE = %d, want 403", w.Code)
+	}
+
+	// 6. Boss deletes user rate limit
+	if w := call(h, "DELETE", "/api/proxy/user-rate-limits?user_id=alice&model_id=gpt-4o", "", boss, csrf); w.Code != 200 {
+		t.Fatalf("boss DELETE = %d, body = %s", w.Code, w.Body)
+	}
+	if fa.deletedUserLimit == nil || fa.deletedUserLimit.UserId != "alice" || fa.deletedUserLimit.ModelId != "gpt-4o" {
+		t.Fatalf("expected delete request in backend, got %+v", fa.deletedUserLimit)
+	}
+	if fa.userLimits[key] != nil {
+		t.Fatalf("expected limit removed from backend")
+	}
+
+	// 7. Delete with missing params returns 400
+	if w := call(h, "DELETE", "/api/proxy/user-rate-limits?user_id=alice", "", boss, csrf); w.Code != 400 {
+		t.Fatalf("missing model_id = %d, want 400", w.Code)
 	}
 }
