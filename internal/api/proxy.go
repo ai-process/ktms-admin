@@ -183,6 +183,60 @@ func (s *Server) proxyReplaceRules(w http.ResponseWriter, r *http.Request, _ *au
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
+func (s *Server) proxyListUserRateLimits(w http.ResponseWriter, r *http.Request, _ *auth.User) {
+	userID := r.URL.Query().Get("user_id")
+	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
+	defer cancel()
+	resp, err := s.admin.ListUserRateLimits(ctx, &pb.ListUserRateLimitsRequest{UserId: userID})
+	if err != nil {
+		backendErr(w, err)
+		return
+	}
+	writeProto(w, resp)
+}
+
+func (s *Server) proxySetUserRateLimit(w http.ResponseWriter, r *http.Request, _ *auth.User) {
+	var spec pb.UserRateLimitSpec
+	if err := readProto(r, &spec); err != nil {
+		backendErr(w, badBody(err))
+		return
+	}
+	spec.UserId = strings.TrimSpace(spec.UserId)
+	spec.ModelId = strings.TrimSpace(spec.ModelId)
+	if spec.UserId == "" || spec.ModelId == "" {
+		writeErr(w, http.StatusBadRequest, "bad_request", "user_id and model_id are required")
+		return
+	}
+	if spec.Rpm < 0 || spec.QueueTimeoutMs < 0 || spec.DailyTokens < 0 {
+		writeErr(w, http.StatusBadRequest, "bad_request", "limits must be non-negative")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
+	defer cancel()
+	if _, err := s.admin.SetUserRateLimit(ctx, &pb.SetUserRateLimitRequest{RateLimit: &spec}); err != nil {
+		backendErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) proxyDeleteUserRateLimit(w http.ResponseWriter, r *http.Request, _ *auth.User) {
+	q := r.URL.Query()
+	userID := strings.TrimSpace(q.Get("user_id"))
+	modelID := strings.TrimSpace(q.Get("model_id"))
+	if userID == "" || modelID == "" {
+		writeErr(w, http.StatusBadRequest, "bad_request", "user_id and model_id query params are required")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
+	defer cancel()
+	if _, err := s.admin.DeleteUserRateLimit(ctx, &pb.DeleteUserRateLimitRequest{UserId: userID, ModelId: modelID}); err != nil {
+		backendErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
 func (s *Server) proxySetVendorKey(w http.ResponseWriter, r *http.Request, _ *auth.User) {
 	var req pb.SetVendorKeyRequest
 	if err := readProto(r, &req); err != nil {
