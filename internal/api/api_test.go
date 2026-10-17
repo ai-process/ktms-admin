@@ -608,11 +608,33 @@ func TestUserRateLimitsAPI(t *testing.T) {
 		t.Fatalf("empty user_id = %d, want 400", w.Code)
 	}
 
-	// 4. Viewer can read list
-	if w := call(h, "GET", "/api/proxy/user-rate-limits", "", viewer, nil); w.Code != 200 {
+	// Negative limits return 400
+	negBody := `{"user_id":"alice","model_id":"gpt-4o","rpm":-5}`
+	if w := call(h, "PUT", "/api/proxy/user-rate-limits", negBody, boss, csrf); w.Code != 400 {
+		t.Fatalf("negative rpm = %d, want 400", w.Code)
+	}
+
+	// Unknown field returns 400
+	unknownBody := `{"user_id":"alice","model_id":"gpt-4o","unknown_field":123}`
+	if w := call(h, "PUT", "/api/proxy/user-rate-limits", unknownBody, boss, csrf); w.Code != 400 {
+		t.Fatalf("unknown field = %d, want 400", w.Code)
+	}
+
+	// Missing CSRF header returns 403
+	if w := call(h, "PUT", "/api/proxy/user-rate-limits", body, boss, nil); w.Code != 403 {
+		t.Fatalf("missing CSRF header = %d, want 403", w.Code)
+	}
+
+	// 4. Viewer can read list and filter by user_id
+	if w := call(h, "GET", "/api/proxy/user-rate-limits?user_id=alice", "", viewer, nil); w.Code != 200 {
 		t.Fatalf("viewer GET = %d, body = %s", w.Code, w.Body)
 	} else if !strings.Contains(w.Body.String(), "alice") {
 		t.Fatalf("expected alice in GET response: %s", w.Body)
+	}
+	if w := call(h, "GET", "/api/proxy/user-rate-limits?user_id=bob", "", viewer, nil); w.Code != 200 {
+		t.Fatalf("viewer GET bob = %d", w.Code)
+	} else if strings.Contains(w.Body.String(), "alice") {
+		t.Fatalf("unexpected alice in bob filter: %s", w.Body)
 	}
 
 	// 5. Viewer forbidden from DELETE
@@ -620,8 +642,8 @@ func TestUserRateLimitsAPI(t *testing.T) {
 		t.Fatalf("viewer DELETE = %d, want 403", w.Code)
 	}
 
-	// 6. Boss deletes user rate limit
-	if w := call(h, "DELETE", "/api/proxy/user-rate-limits?user_id=alice&model_id=gpt-4o", "", boss, csrf); w.Code != 200 {
+	// 6. Boss deletes user rate limit with whitespace trimming
+	if w := call(h, "DELETE", "/api/proxy/user-rate-limits?user_id=%20alice%20&model_id=%20gpt-4o%20", "", boss, csrf); w.Code != 200 {
 		t.Fatalf("boss DELETE = %d, body = %s", w.Code, w.Body)
 	}
 	if fa.deletedUserLimit == nil || fa.deletedUserLimit.UserId != "alice" || fa.deletedUserLimit.ModelId != "gpt-4o" {

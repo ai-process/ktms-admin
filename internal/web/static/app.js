@@ -378,7 +378,7 @@ pages.limits = async (root) => {
     h('td', {}, h('span', { class: 'mono' }, l.model_id)),
     h('td', { class: 'num' }, num(l.rpm) ? num(l.rpm) : '∞'),
     h('td', { class: 'num' }, burstDisplay(l.rpm_burst)),
-    h('td', { class: 'num' }, num(l.queue_timeout_ms) ? `${l.queue_timeout_ms} ms` : '0 ms'),
+    h('td', { class: 'num' }, `${num(l.queue_timeout_ms)} ms`),
     h('td', { class: 'num' }, num(l.daily_tokens) ? compact(l.daily_tokens) : '∞'),
     h('td', {}, canWrite() && h('div', { class: 'actions' },
       h('button', { class: 'sm', onclick: () => editLimit(l) }, 'Edit'),
@@ -404,7 +404,7 @@ pages.limits = async (root) => {
         field('Requests / min (RPM)', h('input', { name: 'rpm', type: 'number', min: 0, value: num(l.rpm) }), '0 = unlimited'),
         field('RPM Burst', h('input', { name: 'rpm_burst', type: 'number', value: num(l.rpm_burst) }), '0 = default (rpm - 1), <0 = disabled')),
       h('div', { class: 'row' },
-        field('Queue timeout (ms)', h('input', { name: 'queue_timeout_ms', type: 'number', min: 0, value: num(l.queue_timeout_ms) }), '0 = fallback immediately'),
+        field('Queue timeout (ms)', h('input', { name: 'queue_timeout_ms', type: 'number', min: 0, value: num(l.queue_timeout_ms) }), '0 = fallback immediately (capped at 250ms for non-svc)'),
         field('Daily token budget', h('input', { name: 'daily_tokens', type: 'number', min: 0, value: num(l.daily_tokens) }), '0 = unlimited')));
 
     modal(isNew ? 'Add user rate limit' : `Edit limit for ${l.user_id} (${l.model_id})`, form, {
@@ -436,7 +436,7 @@ pages.limits = async (root) => {
         h('th', { class: 'num' }, 'Queue timeout'), h('th', { class: 'num' }, 'Daily tokens'),
         h('th'))),
       body)));
-  render();
+  render(true);
 };
 
 // ----- keys -----
