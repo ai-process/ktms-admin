@@ -20,6 +20,10 @@ type Config struct {
 	GoogleClientSecret string
 	AllowedEmails      string
 	ViewerEmails       string
+	TeamMemberships    string // email:team_id:role[:org_id]
+	DevUserRole        string // superadmin | teamlead | member
+	DevUserTeamID      string
+	DevUserOrgID       string
 	SessionSecret      string
 	SessionTTL         time.Duration
 	// OIDCIssuer replaces Google as the identity provider (any OIDC provider that returns verified e-mails).
@@ -47,6 +51,10 @@ func Load() (*Config, error) {
 		GoogleClientSecret: env("GOOGLE_CLIENT_SECRET", ""),
 		AllowedEmails:      env("ALLOWED_EMAILS", ""),
 		ViewerEmails:       env("VIEWER_EMAILS", ""),
+		TeamMemberships:    env("TEAM_MEMBERSHIPS", ""),
+		DevUserRole:        env("DEV_USER_ROLE", ""),
+		DevUserTeamID:      env("DEV_USER_TEAM_ID", ""),
+		DevUserOrgID:       env("DEV_USER_ORG_ID", ""),
 		SessionSecret:      env("SESSION_SECRET", ""),
 		SessionTTL:         ttl,
 		OIDCIssuer:         env("OIDC_ISSUER", ""),

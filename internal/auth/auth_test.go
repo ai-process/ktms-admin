@@ -103,3 +103,34 @@ func TestSafeNext(t *testing.T) {
 		}
 	}
 }
+
+func TestTeamMemberships(t *testing.T) {
+	raw := "lead@corp.com:team-1:teamlead:org-1, dev@corp.com:team-1:member:org-1, solo@corp.com:team-2"
+	m := ParseTeamMemberships(raw)
+	if len(m) != 3 {
+		t.Fatalf("expected 3 entries, got %d", len(m))
+	}
+	if info := m["lead@corp.com"]; info.Role != RoleTeamLead || info.TeamID != "team-1" || info.OrgID != "org-1" {
+		t.Fatalf("unexpected lead info: %+v", info)
+	}
+	if info := m["dev@corp.com"]; info.Role != RoleMember || info.TeamID != "team-1" || info.OrgID != "org-1" {
+		t.Fatalf("unexpected dev info: %+v", info)
+	}
+	if info := m["solo@corp.com"]; info.Role != RoleMember || info.TeamID != "team-2" {
+		t.Fatalf("unexpected solo info: %+v", info)
+	}
+
+	h := New(Options{
+		Signer:          NewSigner("0123456789abcdef0123456789abcdef"),
+		SessionTTL:      time.Hour,
+		TeamMemberships: m,
+	})
+	uLead, ok := h.UserFor(withSession(t, h, "lead@corp.com", time.Now().Add(time.Hour)))
+	if !ok || !uLead.IsTeamLead() || !uLead.CanWrite() || uLead.CanManageGlobal() {
+		t.Fatalf("unexpected lead user: %+v", uLead)
+	}
+	uDev, ok := h.UserFor(withSession(t, h, "dev@corp.com", time.Now().Add(time.Hour)))
+	if !ok || uDev.CanWrite() || uDev.IsTeamLead() || uDev.Role != RoleMember {
+		t.Fatalf("unexpected dev user: %+v", uDev)
+	}
+}
