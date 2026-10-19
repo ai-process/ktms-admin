@@ -1,10 +1,10 @@
 syntax = "proto3";
 
-package llmproxy.v1;
+package ktms.v1;
 
 import "google/protobuf/timestamp.proto";
 
-option go_package = "github.com/ai-process/llm-proxy/gen/llmproxy/v1;llmproxyv1";
+option go_package = "github.com/ai-process/ktms/gen/ktms/v1;ktmsv1";
 
 // Effort is the only routing field the proxy is guaranteed to understand.
 // Everything else about a request's purpose travels in opaque attributes.
@@ -130,10 +130,10 @@ message GenerateTextRequest {
   Effort effort = 1;
   // Opaque routing/usage attributes: "subject", "user_id", "task", ...
   // Matched by equality in rules and forwarded to usage meta.
-  // Two names are reserved: "user_id" attributes the call to an end user, and
-  // "usage_project" names the usage-collector project for callers that front
-  // many tenants (e.g. a chat platform serving many bots from one process).
-  // Without it the project is the api key's name.
+  // Reserved names: "user_id" attributes the call to an end user (and provides default canary stickiness);
+  // "canary_key" overrides the sticky routing key; "canary_mode" set to "random" disables stickiness;
+  // "usage_project" names the usage-collector project for callers that front many tenants.
+  // Internal billing/evaluation attributes "shadow", "is_shadow", "shadow_eval" are reserved and stripped.
   map<string, string> attributes = 2;
   repeated ChatMessage messages = 3;
   string base_system_instruction = 4; // persistent, joined upstream
@@ -145,7 +145,10 @@ message GenerateTextRequest {
   string model_override = 10; // exact registry model id; bypasses rules, not throttles
   repeated Tool tools = 11;
   ToolChoice tool_choice = 12;
-  bool enable_cache = 13; // opt-in prompt/response exact match cache
+  bool enable_cache = 13; // opt-in response cache: exact match, plus latent-similarity match when the proxy enables SEMANTIC_CACHE_ENABLED
+  string placement = 14; // "nodes_first" | "nodes_only" | "cloud_first" | "cloud_only"
+  bool auto_route = 15; // true when smart model routing is enabled
+  bool effort_specified = 16; // true when effort was explicitly pinned by caller
 }
 
 message TokensUsage {
@@ -168,6 +171,10 @@ message GenerateTextResponse {
   string matched_rule = 5; // rule name, "" on model_override
   repeated Choice details = 6;
   bool cached = 7; // true when served from cache
+  string route_mode = 8; // "direct" | "override" | "auto-judge" | "auto-default" | "auto-effort"
+  string placement = 9; // "nodes_first" | "nodes_only" | "cloud_first" | "cloud_only"
+  double judge_score = 10; // score or confidence from judge evaluation
+  string judge_model = 11; // judge model id if judge was invoked
 }
 
 message GenerateTextChunk {
@@ -179,6 +186,10 @@ message GenerateTextChunk {
   string matched_rule = 6;
   repeated ToolCallChunk tool_call_chunks = 7;
   bool cached = 8; // true when served from cache
+  string route_mode = 9; // "direct" | "override" | "auto-judge" | "auto-default" | "auto-effort"
+  string placement = 10; // "nodes_first" | "nodes_only" | "cloud_first" | "cloud_only"
+  double judge_score = 11; // score or confidence from judge evaluation
+  string judge_model = 12; // judge model id if judge was invoked
 }
 
 message ListModelsRequest {}
@@ -196,7 +207,7 @@ message ModelInfo {
 }
 
 message ListModelsResponse {
-  // Only models the calling client holds a vendor key for.
+  // Models the calling client can call: those it holds a vendor key for, plus every local model (no key needed).
   repeated ModelInfo models = 1;
 }
 
@@ -204,16 +215,20 @@ message GenerateTextStreamRequest {
   GenerateTextRequest request = 1;
 }
 
-// Error contract: retry only on UNAVAILABLE ("vendors_unavailable").
+// Error contract: retry only on UNAVAILABLE ("vendors_unavailable", or
+// "throttled:spend_unavailable" when spend limits fail closed).
 // RESOURCE_EXHAUSTED = throttled ("throttled:rpm" | "throttled:budget_key" |
-// "throttled:budget_user") — back off, do not hot-retry.
+// "throttled:budget_user") — back off, do not hot-retry; or a spend limit
+// ("throttled:spend_<key|user>_<daily|monthly>") with ErrorInfo
+// "insufficient_quota" and RetryInfo until the UTC period resets.
 // FAILED_PRECONDITION: "output_truncated" (raise max_output_tokens, do not
 // retry as-is), "no_capable_model", "no_vendor_key", "not_configured",
 // "batch not configured".
 // INVALID_ARGUMENT: "guardrail_violation" (PII or prompt injection detected),
 // "bad_request: <message>" (validation errors, empty batch, duplicate custom_id).
+// UNIMPLEMENTED: "ffmpeg_missing: <hint>" (Gemini speech synthesis without ffmpeg).
 // INTERNAL "vendor_error" = terminal vendor failure.
-service LLMProxyService {
+service GatewayService {
   rpc GenerateText(GenerateTextRequest) returns (GenerateTextResponse);
   rpc GenerateTextStream(GenerateTextStreamRequest) returns (stream GenerateTextChunk);
   // Speech and images route by the same rules as text. They carry no effort of
@@ -229,6 +244,15 @@ service LLMProxyService {
   // EFFORT_LOW plus a reserved attributes["modality"] of "judge", chain
   // filtered to models declaring the "judge" capability.
   rpc Judge(JudgeRequest) returns (JudgeResponse);
+  // Embeddings generates vector representations of text. Vector space isolation
+  // is strictly preserved: cross-model fallbacks are disallowed.
+  rpc GetEmbeddings(GetEmbeddingsRequest) returns (GetEmbeddingsResponse);
+  // JudgeStream provides bidirectional streaming decisions for real-time
+  // agent evaluation and robotics control loops.
+  rpc JudgeStream(stream JudgeRequest) returns (stream JudgeResponse);
+  // EvaluateRollouts scores candidate trajectories against state and criteria
+  // for speculative decoding and Best-of-N selection.
+  rpc EvaluateRollouts(EvaluateRolloutsRequest) returns (EvaluateRolloutsResponse);
   rpc ListModels(ListModelsRequest) returns (ListModelsResponse);
 
   // Batch generation RPCs.
@@ -300,15 +324,37 @@ message JudgeAnswer {
   map<string, string> legend = 7; // SCORE: level index -> its description
 }
 
+// EmbeddingPart is a latent state vector (JEPA, CLIP, ...) judged as-is, so a
+// caller with an encoder never has to decode it back to text first.
+message EmbeddingPart {
+  repeated float values = 1;
+  string model = 2; // encoder that produced the vector, e.g. "v-jepa-2"
+}
+
+// MediaPart is one non-JSON piece of judge state. Image URLs must be https;
+// they are forwarded to the vendor, not fetched by the proxy.
+message MediaPart {
+  oneof part {
+    TextPart text = 1;
+    ImagePart image = 2;
+    AudioPart audio = 3;
+    EmbeddingPart embedding = 4;
+  }
+}
+
 message JudgeRequest {
   // The state to judge, as JSON: an object, array or bare string. Passed to the
   // vendor verbatim, so the caller owns its shape; the proxy only checks that
-  // it parses.
+  // it parses. Optional when state_media is set.
   string state_json = 1;
   map<string, JudgeQuestion> questions = 2; // caller's ids; answers come back under them
   map<string, string> attributes = 3; // same routing/usage attributes as text
   string action_id = 4;
   string model_override = 5; // exact registry model id; bypasses rules
+  // Multimodal state judged alongside state_json. Images, audio and embeddings
+  // narrow the chain to judge models that also declare "vision", "audio_input"
+  // or "embedding_input"; guardrails inspect text parts only.
+  repeated MediaPart state_media = 6;
 }
 
 message JudgeResponse {
@@ -317,6 +363,65 @@ message JudgeResponse {
   string resolved_model = 3;
   string resolved_vendor = 4;
   string matched_rule = 5;
+}
+
+message Embedding {
+  int32 index = 1;
+  repeated float values = 2;
+}
+
+message GetEmbeddingsRequest {
+  repeated string inputs = 1;
+  string model = 2;
+  int32 dimensions = 3;
+  string input_type = 4; // "query" | "document"
+  string action_id = 5;
+  map<string, string> attributes = 6;
+}
+
+message GetEmbeddingsResponse {
+  repeated Embedding data = 1;
+  TokensUsage usage = 2;
+  string resolved_model = 3;
+  string resolved_vendor = 4;
+  string matched_rule = 5;
+}
+
+// RolloutCandidate is one speculative action or trajectory to evaluate.
+message RolloutCandidate {
+  string id = 1; // unique candidate identifier
+  string action_json = 2; // structured action payload or state transition
+  repeated MediaPart action_media = 3; // multimodal parts for action (vision, audio, embeddings)
+  string action_text = 4; // textual action summary or command
+}
+
+// CandidateEvaluation carries the calibrated evaluation and rank for one candidate.
+message CandidateEvaluation {
+  string id = 1;
+  map<string, JudgeAnswer> answers = 2; // answers to criteria questions
+  double composite_score = 3; // normalized score in [0.0, 1.0]; higher is better
+  int32 rank = 4; // 1-based candidate rank sorted by composite score
+}
+
+// EvaluateRolloutsRequest specifies batch candidates to evaluate against state and criteria.
+message EvaluateRolloutsRequest {
+  string state_json = 1; // current environmental state JSON
+  repeated MediaPart state_media = 2; // state media parts (vision, audio, embeddings)
+  repeated RolloutCandidate candidates = 3; // candidate rollouts (up to 64)
+  map<string, JudgeQuestion> criteria = 4; // evaluation criteria (defaults to reward predicate if omitted)
+  map<string, string> attributes = 5;
+  string action_id = 6;
+  string model_override = 7;
+}
+
+// EvaluateRolloutsResponse returns ranked evaluations and identifies the best candidate.
+message EvaluateRolloutsResponse {
+  repeated CandidateEvaluation evaluations = 1; // evaluations in ranked order (best first)
+  string best_candidate_id = 2; // candidate with rank 1
+  TokensUsage usage = 3;
+  string resolved_model = 4;
+  string resolved_vendor = 5;
+  string matched_rule = 6;
 }
 
 enum BatchState {

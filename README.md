@@ -191,7 +191,7 @@ make dev     # run on :8080 without Google sign-in (set LLM_PROXY_* and/or TOKEN
 make proto   # regenerate internal/gen from proto/ (needs buf)
 ```
 
-`internal/web/static` is plain HTML, CSS and ES modules served as-is. `proto/` is a copy of llm-proxy's
+`internal/web/static` is plain HTML, CSS and ES modules served as-is. `proto/` is a copy of KTMS's
 protocol, so the console talks to it over gRPC without importing its code.
 
 Layout: `cmd/llm-proxy-admin` (entrypoint), `internal/auth` (Google sign-in, sessions, allowlists),

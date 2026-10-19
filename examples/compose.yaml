@@ -1,10 +1,10 @@
-# The whole family: llm-proxy, light-tokenmeter and this console on one Postgres.
+# The whole family: KTMS (formerly llm-proxy), light-tokenmeter and this console on one Postgres.
 # Copy env.example to .env, fill in the Google and key values, then:
 #   docker compose -f examples/compose.yaml --env-file .env up -d
 #
 # First run: mint the console's key, then restart the console:
 #   grpcurl -plaintext -H "authorization: Bearer $BOOTSTRAP_ADMIN_KEY" -d '{"name":"console","scopes":["admin"]}' \
-#     localhost:9090 llmproxy.v1.LLMProxyAdminService/MintAPIKey
+#     localhost:9090 ktms.v1.AdminService/MintAPIKey
 # Put the returned key in .env as LLM_PROXY_ADMIN_KEY.
 
 services:
@@ -22,7 +22,7 @@ services:
       retries: 20
 
   llm-proxy:
-    image: coyl/llm-proxy:latest
+    image: coyl/ktms:latest
     depends_on: { db: { condition: service_healthy } }
     environment:
       DATABASE_URL: postgres://postgres:${DB_PASSWORD:-postgres}@db:5432/llmproxy?sslmode=disable

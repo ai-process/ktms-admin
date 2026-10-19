@@ -18,7 +18,7 @@ The UI lives in `internal/web/static` and is served as-is: edit, restart, refres
 
 - Comments stay short (three lines at most, ideally one) and explain *why*, not *what*.
 - UI code builds DOM with `h()`; never assign API data to `innerHTML`.
-- `proto/` is a copy of [llm-proxy](https://github.com/ai-process/llm-proxy)'s admin and data-plane
+- `proto/` is a copy of [KTMS](https://github.com/ai-process/ktms)'s admin and data-plane
   definitions. Keep field names and numbers identical, and only copy forward.
 - Add tests for auth, roles and anything that changes state.
 - Open a pull request against `main`; CI must be green.

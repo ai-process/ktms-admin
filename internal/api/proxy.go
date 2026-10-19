@@ -14,7 +14,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/ai-process/llm-proxy-admin/internal/auth"
-	pb "github.com/ai-process/llm-proxy-admin/internal/gen/llmproxy/v1"
+	pb "github.com/ai-process/llm-proxy-admin/internal/gen/ktms/v1"
 	"github.com/ai-process/llm-proxy-admin/internal/usage"
 )
 

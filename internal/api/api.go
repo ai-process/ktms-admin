@@ -24,7 +24,7 @@ import (
 
 	"github.com/ai-process/llm-proxy-admin/internal/auth"
 	"github.com/ai-process/llm-proxy-admin/internal/config"
-	pb "github.com/ai-process/llm-proxy-admin/internal/gen/llmproxy/v1"
+	pb "github.com/ai-process/llm-proxy-admin/internal/gen/ktms/v1"
 	"github.com/ai-process/llm-proxy-admin/internal/usage"
 	"github.com/ai-process/llm-proxy-admin/internal/web"
 )
@@ -35,8 +35,8 @@ const csrfValue = "llm-proxy-admin"
 type Server struct {
 	cfg   *config.Config
 	auth  *auth.Handler
-	admin pb.LLMProxyAdminServiceClient
-	data  pb.LLMProxyServiceClient
+	admin pb.AdminServiceClient
+	data  pb.GatewayServiceClient
 	usage *usage.Client
 
 	priceMu    sync.Mutex
@@ -68,8 +68,8 @@ func New(cfg *config.Config, a *auth.Handler) (*Server, func(), error) {
 			return nil, nil, err
 		}
 		closer = func() { _ = conn.Close() }
-		s.admin = pb.NewLLMProxyAdminServiceClient(conn)
-		s.data = pb.NewLLMProxyServiceClient(conn)
+		s.admin = pb.NewAdminServiceClient(conn)
+		s.data = pb.NewGatewayServiceClient(conn)
 		s.priceFetch = s.fetchPrices
 	}
 	if cfg.UsageEnabled() {
