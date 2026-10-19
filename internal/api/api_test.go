@@ -15,12 +15,12 @@ import (
 
 	"github.com/ai-process/llm-proxy-admin/internal/auth"
 	"github.com/ai-process/llm-proxy-admin/internal/config"
-	pb "github.com/ai-process/llm-proxy-admin/internal/gen/llmproxy/v1"
+	pb "github.com/ai-process/llm-proxy-admin/internal/gen/ktms/v1"
 	"github.com/ai-process/llm-proxy-admin/internal/usage"
 )
 
 type fakeAdmin struct {
-	pb.LLMProxyAdminServiceClient
+	pb.AdminServiceClient
 	upserted         *pb.ModelSpec
 	rules            *pb.ReplaceRulesRequest
 	config           *pb.GetConfigResponse
@@ -29,7 +29,7 @@ type fakeAdmin struct {
 }
 
 type fakeData struct {
-	pb.LLMProxyServiceClient
+	pb.GatewayServiceClient
 	lastGenerateReq *pb.GenerateTextRequest
 	lastJudgeReq    *pb.JudgeRequest
 	streamChunks    []*pb.GenerateTextChunk
