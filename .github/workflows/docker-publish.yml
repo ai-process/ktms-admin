@@ -1,6 +1,7 @@
 name: Publish Docker image
 
-# Every pushed tag becomes an image on Docker Hub: coyl/llm-proxy-admin:<tag>.
+# Every pushed tag becomes an image on Docker Hub: coyl/ktms-admin:<tag>, also pushed as the
+# pre-rename coyl/llm-proxy-admin:<tag> so existing deployments keep receiving updates.
 # Needs the repository secrets DOCKER_USERNAME and DOCKER_PASSWORD (an access token).
 on:
   push:
@@ -26,7 +27,9 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: coyl/llm-proxy-admin
+          images: |
+            coyl/ktms-admin
+            coyl/llm-proxy-admin
           tags: |
             type=ref,event=tag
             type=semver,pattern={{version}}

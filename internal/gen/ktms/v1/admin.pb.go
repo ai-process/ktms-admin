@@ -2990,9 +2990,9 @@ const file_ktms_v1_admin_proto_rawDesc = "" +
 	"\x12ListUserRateLimits\x12\".ktms.v1.ListUserRateLimitsRequest\x1a#.ktms.v1.ListUserRateLimitsResponse\x12N\n" +
 	"\rSetSpendLimit\x12\x1d.ktms.v1.SetSpendLimitRequest\x1a\x1e.ktms.v1.SetSpendLimitResponse\x12W\n" +
 	"\x10DeleteSpendLimit\x12 .ktms.v1.DeleteSpendLimitRequest\x1a!.ktms.v1.DeleteSpendLimitResponse\x12T\n" +
-	"\x0fListSpendLimits\x12\x1f.ktms.v1.ListSpendLimitsRequest\x1a .ktms.v1.ListSpendLimitsResponseB\x99\x01\n" +
+	"\x0fListSpendLimits\x12\x1f.ktms.v1.ListSpendLimitsRequest\x1a .ktms.v1.ListSpendLimitsResponseB\x94\x01\n" +
 	"\vcom.ktms.v1B\n" +
-	"AdminProtoP\x01ZAgithub.com/ai-process/llm-proxy-admin/internal/gen/ktms/v1;ktmsv1\xa2\x02\x03KXX\xaa\x02\aKtms.V1\xca\x02\aKtms\\V1\xe2\x02\x13Ktms\\V1\\GPBMetadata\xea\x02\bKtms::V1b\x06proto3"
+	"AdminProtoP\x01Z<github.com/ai-process/ktms-admin/internal/gen/ktms/v1;ktmsv1\xa2\x02\x03KXX\xaa\x02\aKtms.V1\xca\x02\aKtms\\V1\xe2\x02\x13Ktms\\V1\\GPBMetadata\xea\x02\bKtms::V1b\x06proto3"
 
 var (
 	file_ktms_v1_admin_proto_rawDescOnce sync.Once

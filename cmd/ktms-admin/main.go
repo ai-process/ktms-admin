@@ -12,9 +12,9 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
-	"github.com/ai-process/llm-proxy-admin/internal/api"
-	"github.com/ai-process/llm-proxy-admin/internal/auth"
-	"github.com/ai-process/llm-proxy-admin/internal/config"
+	"github.com/ai-process/ktms-admin/internal/api"
+	"github.com/ai-process/ktms-admin/internal/auth"
+	"github.com/ai-process/ktms-admin/internal/config"
 )
 
 func main() {
@@ -69,7 +69,7 @@ func main() {
 	errCh := make(chan error, 1)
 	go func() {
 		log.Info().Str("addr", cfg.ListenAddr).Bool("proxy", cfg.ProxyEnabled()).Bool("usage", cfg.UsageEnabled()).
-			Int("admins", admins.Len()).Int("viewers", viewers.Len()).Msg("llm-proxy-admin started")
+			Int("admins", admins.Len()).Int("viewers", viewers.Len()).Msg("ktms-admin started")
 		errCh <- httpSrv.ListenAndServe()
 	}()
 

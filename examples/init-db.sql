@@ -1,2 +1,2 @@
-CREATE DATABASE llmproxy;
+CREATE DATABASE ktms;
 CREATE DATABASE tokenmeter;

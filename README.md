@@ -1,10 +1,10 @@
-# llm-proxy-admin
+# ktms-admin
 
-[![Test](https://github.com/ai-process/llm-proxy-admin/actions/workflows/test.yml/badge.svg)](https://github.com/ai-process/llm-proxy-admin/actions/workflows/test.yml)
-[![Docker image](https://img.shields.io/docker/v/coyl/llm-proxy-admin?label=docker%20hub&sort=semver)](https://hub.docker.com/r/coyl/llm-proxy-admin)
+[![Test](https://github.com/ai-process/ktms-admin/actions/workflows/test.yml/badge.svg)](https://github.com/ai-process/ktms-admin/actions/workflows/test.yml)
+[![Docker image](https://img.shields.io/docker/v/coyl/ktms-admin?label=docker%20hub&sort=semver)](https://hub.docker.com/r/coyl/ktms-admin)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-A small web console for [**llm-proxy**](https://github.com/ai-process/llm-proxy) (the LLM gateway) and
+A small web console for [**KTMS**](https://github.com/ai-process/ktms) (the LLM gateway) and
 [**light-tokenmeter**](https://github.com/ai-process/light-tokenmeter) (the usage meter). Use it with both,
 or with either one alone.
 
@@ -29,29 +29,29 @@ or with either one alone.
 
 ## Quick start
 
-You need a Google OAuth client ([how](#setting-up-google-sign-in)) and, for the gateway pages, an llm-proxy
+You need a Google OAuth client ([how](#setting-up-google-sign-in)) and, for the gateway pages, a KTMS
 admin key (`MintAPIKey` with scope `admin`).
 
 ```bash
-docker run -d --name llm-proxy-admin -p 8080:8080 \
+docker run -d --name ktms-admin -p 8080:8080 \
   -e PUBLIC_URL=https://admin.example.com \
   -e GOOGLE_CLIENT_ID=… -e GOOGLE_CLIENT_SECRET=… \
   -e ALLOWED_EMAILS='*@example.com' \
   -e SESSION_SECRET="$(openssl rand -base64 36)" \
-  -e LLM_PROXY_ADDR=llm-proxy:9090 -e LLM_PROXY_ADMIN_KEY=llm_… \
+  -e KTMS_ADDR=ktms:9090 -e KTMS_ADMIN_KEY=llm_… \
   -e TOKENMETER_URL=http://light-tokenmeter:8080 \
-  coyl/llm-proxy-admin:latest
+  coyl/ktms-admin:latest
 ```
 
 Open `PUBLIC_URL`, sign in with a Google account that matches `ALLOWED_EMAILS`, and you are in.
-[`examples/compose.yaml`](examples/compose.yaml) starts the whole family (llm-proxy, light-tokenmeter and
+[`examples/compose.yaml`](examples/compose.yaml) starts the whole family (KTMS, light-tokenmeter and
 this console on one Postgres) with the first-run steps in its header.
 
 **Just looking around on your machine?** Skip Google entirely, on localhost only:
 
 ```bash
 docker run --rm -p 8081:8080 -e PUBLIC_URL=http://localhost:8081 -e INSECURE_NO_AUTH=true \
-  -e TOKENMETER_URL=http://host.docker.internal:8080 coyl/llm-proxy-admin:latest
+  -e TOKENMETER_URL=http://host.docker.internal:8080 coyl/ktms-admin:latest
 ```
 
 `INSECURE_NO_AUTH` is refused unless `PUBLIC_URL` host is `localhost`, `127.0.0.1`, or `[::1]`.
@@ -98,7 +98,7 @@ The console shows only the pages whose backend you configured.
 | You set | You get |
 | --- | --- |
 | `TOKENMETER_URL` | **Usage** page. Nothing else. |
-| `LLM_PROXY_ADDR` + `LLM_PROXY_ADMIN_KEY` | **Models, Rules, Keys, Nodes, Playground, Judge**. |
+| `KTMS_ADDR` + `KTMS_ADMIN_KEY` | **Models, Rules, Keys, Nodes, Playground, Judge**. |
 | both | Everything, plus **estimated cost** on the usage page (tokens × the prices on your models; estimates use standard in/out prices and do not account for peak or batch rates). |
 
 The sidebar shows a green or red dot per backend, so a wrong address or a revoked key is visible at once.
@@ -115,14 +115,17 @@ All settings are environment variables; see [`env.example`](env.example).
 | `VIEWER_EMAILS` | empty | Read-only patterns. |
 | `SESSION_SECRET` | random | 32+ characters; signs the session cookie. Set it, or sessions end at every restart and cannot be shared between replicas. |
 | `SESSION_TTL` | `12h` | Session lifetime. |
-| `LLM_PROXY_ADDR` | empty | `host:port` of llm-proxy's gRPC endpoint. |
-| `LLM_PROXY_ADMIN_KEY` | – | Key with the `admin` scope. Required with `LLM_PROXY_ADDR`. |
-| `LLM_PROXY_TLS` | `false` | Use TLS to reach llm-proxy. |
+| `KTMS_ADDR` | empty | `host:port` of KTMS's gRPC endpoint. |
+| `KTMS_ADMIN_KEY` | – | Key with the `admin` scope. Required with `KTMS_ADDR`. |
+| `KTMS_TLS` | `false` | Use TLS to reach KTMS. |
 | `TOKENMETER_URL` | empty | Base URL of light-tokenmeter's HTTP port. |
 | `LISTEN_ADDR` | `:8080` | Listen address. |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error`. |
 | `INSECURE_NO_AUTH` | `false` | Skip sign-in. Localhost `PUBLIC_URL` only. |
 | `OIDC_ISSUER` | Google | Advanced: another OpenID Connect issuer that returns verified e-mails. |
+
+The pre-rename names `LLM_PROXY_ADDR`, `LLM_PROXY_ADMIN_KEY` and `LLM_PROXY_TLS` still work; the `KTMS_*` name wins
+when both are set.
 
 ## Deployment
 
@@ -130,14 +133,14 @@ All settings are environment variables; see [`env.example`](env.example).
   balancer) and set `PUBLIC_URL` to the `https://` address. Cookies get the `Secure` flag from that scheme.
 - **Replicas.** It is stateless. Run several if you like, with the same `SESSION_SECRET`.
 - **Health.** `GET /healthz` returns `200` without authentication (used by the image's `HEALTHCHECK`).
-- **Network.** The console must reach llm-proxy's gRPC port and light-tokenmeter's HTTP port; neither needs
+- **Network.** The console must reach KTMS's gRPC port and light-tokenmeter's HTTP port; neither needs
   to be public. Prefer keeping them private and exposing only the console.
 
 A minimal Caddy front:
 
 ```
 admin.example.com {
-    reverse_proxy llm-proxy-admin:8080
+    reverse_proxy ktms-admin:8080
 }
 ```
 
@@ -157,12 +160,12 @@ Rows are labelled:
 These are heuristics for spotting where to look, not accounting. They need two or more groups and at least
 five requests in the group.
 
-**Models** and **Rules** (need llm-proxy). Add, edit and delete the registry entries and the routing rules
-that choose between them. Saves go through llm-proxy's own validation, so an invalid change (unknown model,
+**Models** and **Rules** (need KTMS). Add, edit and delete the registry entries and the routing rules
+that choose between them. Saves go through KTMS's own validation, so an invalid change (unknown model,
 missing catch-all rule, duplicate priority) is rejected with its message and nothing changes.
 
 **Keys.** Mint client API keys (the secret is shown once), revoke them, assign vendor credentials to clients
-(write-only: stored encrypted by llm-proxy and never shown again) and re-encrypt all credentials after
+(write-only: stored encrypted by KTMS and never shown again) and re-encrypt all credentials after
 adding a new encryption key version.
 
 **Playground.** Send a prompt or multi-turn conversation through the same routing your clients use, with SSE streaming, tool definitions, interactive tool result responses, effort selection, and attributes. The call is attributed to `console.playground` and your e-mail.
@@ -171,7 +174,7 @@ adding a new encryption key version.
 
 ## Security model
 
-- The console holds llm-proxy's admin key **on the server**; it never reaches the browser, and vendor keys are
+- The console holds KTMS's admin key **on the server**; it never reaches the browser, and vendor keys are
   write-only.
 - Session cookies are signed (HMAC-SHA256), `HttpOnly`, `SameSite=Lax` and `Secure` over HTTPS. They carry
   only name, e-mail and expiry; the role is recomputed from the allowlists on every request.
@@ -187,21 +190,22 @@ adding a new encryption key version.
 
 ```bash
 make test    # go test -race ./...
-make dev     # run on :8080 without Google sign-in (set LLM_PROXY_* and/or TOKENMETER_URL)
+make dev     # run on :8080 without Google sign-in (set KTMS_* and/or TOKENMETER_URL)
 make proto   # regenerate internal/gen from proto/ (needs buf)
 ```
 
 `internal/web/static` is plain HTML, CSS and ES modules served as-is. `proto/` is a copy of KTMS's
 protocol, so the console talks to it over gRPC without importing its code.
 
-Layout: `cmd/llm-proxy-admin` (entrypoint), `internal/auth` (Google sign-in, sessions, allowlists),
+Layout: `cmd/ktms-admin` (entrypoint), `internal/auth` (Google sign-in, sessions, allowlists),
 `internal/api` (JSON API and guards), `internal/usage` (light-tokenmeter client and the greedy/worthy
 analysis), `internal/config`, `internal/web` (embedded UI).
 
 ### Releasing
 
-Pushing a git tag publishes a multi-arch image to Docker Hub as `coyl/llm-proxy-admin:<tag>` (and `latest`
-for semver tags). The repository needs the secrets `DOCKER_USERNAME` and `DOCKER_PASSWORD`.
+Pushing a git tag publishes a multi-arch image to Docker Hub as `coyl/ktms-admin:<tag>` (and `latest`
+for semver tags), and under the pre-rename name `coyl/llm-proxy-admin` too. The repository needs the
+secrets `DOCKER_USERNAME` and `DOCKER_PASSWORD`.
 
 ```bash
 git tag 0.1.0 && git push origin 0.1.0

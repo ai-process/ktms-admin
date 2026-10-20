@@ -1,11 +1,11 @@
-# The whole family: KTMS (formerly llm-proxy), light-tokenmeter and this console on one Postgres.
+# The whole family: KTMS, light-tokenmeter and this console on one Postgres.
 # Copy env.example to .env, fill in the Google and key values, then:
 #   docker compose -f examples/compose.yaml --env-file .env up -d
 #
 # First run: mint the console's key, then restart the console:
 #   grpcurl -plaintext -H "authorization: Bearer $BOOTSTRAP_ADMIN_KEY" -d '{"name":"console","scopes":["admin"]}' \
 #     localhost:9090 ktms.v1.AdminService/MintAPIKey
-# Put the returned key in .env as LLM_PROXY_ADMIN_KEY.
+# Put the returned key in .env as KTMS_ADMIN_KEY.
 
 services:
   db:
@@ -21,12 +21,12 @@ services:
       interval: 3s
       retries: 20
 
-  llm-proxy:
+  ktms:
     image: coyl/ktms:latest
     depends_on: { db: { condition: service_healthy } }
     environment:
-      DATABASE_URL: postgres://postgres:${DB_PASSWORD:-postgres}@db:5432/llmproxy?sslmode=disable
-      LLMPROXY_ENCRYPTION_KEYS: "${LLMPROXY_ENCRYPTION_KEYS:?generate with echo '1:...' (see comments above)}"
+      DATABASE_URL: postgres://postgres:${DB_PASSWORD:-postgres}@db:5432/ktms?sslmode=disable
+      KTMS_ENCRYPTION_KEYS: "${KTMS_ENCRYPTION_KEYS:?generate with echo '1:...' (see comments above)}"
       BOOTSTRAP_ADMIN_KEY: ${BOOTSTRAP_ADMIN_KEY:-}
       USAGE_COLLECTOR_HOST: light-tokenmeter:9090
     ports: ["9090:9090"]
@@ -38,9 +38,9 @@ services:
       DATABASE_URL: postgres://postgres:${DB_PASSWORD:-postgres}@db:5432/tokenmeter?sslmode=disable
 
   console:
-    image: coyl/llm-proxy-admin:latest
+    image: coyl/ktms-admin:latest
     restart: unless-stopped
-    depends_on: [llm-proxy, light-tokenmeter]
+    depends_on: [ktms, light-tokenmeter]
     environment:
       PUBLIC_URL: ${PUBLIC_URL:?set PUBLIC_URL in .env}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?set GOOGLE_CLIENT_ID in .env}
@@ -48,8 +48,8 @@ services:
       ALLOWED_EMAILS: ${ALLOWED_EMAILS:?set ALLOWED_EMAILS in .env}
       VIEWER_EMAILS: ${VIEWER_EMAILS:-}
       SESSION_SECRET: ${SESSION_SECRET:-}
-      LLM_PROXY_ADDR: llm-proxy:9090
-      LLM_PROXY_ADMIN_KEY: ${LLM_PROXY_ADMIN_KEY:-}
+      KTMS_ADDR: ktms:9090
+      KTMS_ADMIN_KEY: ${KTMS_ADMIN_KEY:-}
       TOKENMETER_URL: http://light-tokenmeter:8080
     ports: ["8080:8080"]
 

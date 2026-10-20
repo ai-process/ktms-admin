@@ -1,4 +1,4 @@
-// llm-proxy admin console: a dependency-free SPA. All DOM is built with h(),
+// ktms-admin console: a dependency-free SPA. All DOM is built with h(),
 // which only ever sets text and attributes, so API data can never inject markup.
 
 const SVG = 'http://www.w3.org/2000/svg';
@@ -24,7 +24,7 @@ function h(tag, attrs, ...kids) {
 class ApiError extends Error { constructor(msg, status, code) { super(msg); this.status = status; this.code = code; } }
 
 async function api(method, path, body) {
-  const opts = { method, headers: { 'X-Requested-With': 'llm-proxy-admin' }, credentials: 'same-origin' };
+  const opts = { method, headers: { 'X-Requested-With': 'ktms-admin' }, credentials: 'same-origin' };
   if (body !== undefined) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
   const res = await fetch(path, opts);
   if (res.status === 401) { location.href = '/auth/login?next=' + encodeURIComponent(location.pathname); throw new ApiError('signed out', 401); }
@@ -475,7 +475,7 @@ pages.keys = async (root) => {
       { onSubmit: async (fd) => { await api('PUT', '/api/proxy/vendor-keys', { api_key_name: fd.get('api_key_name'), vendor: fd.get('vendor'), plain_key: fd.get('plain_key') }); toast('Credential saved'); await render(true); } });
   };
 
-  const rotate = () => confirmBox('Re-encrypt vendor keys', 'Re-encrypts every stored vendor credential with the newest key in LLMPROXY_ENCRYPTION_KEYS. Do this after adding a new key version.', async () => {
+  const rotate = () => confirmBox('Re-encrypt vendor keys', 'Re-encrypts every stored vendor credential with the newest key in KTMS_ENCRYPTION_KEYS. Do this after adding a new key version.', async () => {
     const r = await api('POST', '/api/proxy/rotate'); toast(`Re-encrypted ${r.reencrypted ?? 0} credentials`);
   }, 'Re-encrypt');
 
@@ -652,7 +652,7 @@ pages.playground = async (root) => {
       try {
         const res = await fetch('/api/proxy/playground/stream', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'llm-proxy-admin' },
+          headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'ktms-admin' },
           body: JSON.stringify(payload),
           signal: abortCtrl.signal
         });
@@ -1222,13 +1222,13 @@ function shell() {
   const f = S.me.features;
   const chip = (label, st) => st?.enabled && h('span', { class: 'chip', title: st.error || 'reachable' }, h('span', { class: 'dot ' + (st.ok ? 'ok' : 'bad') }), label);
   const statusBox = h('div', { class: 'status', id: 'status' });
-  const paintStatus = () => statusBox.replaceChildren(chip('llm-proxy', S.health?.proxy) || '', chip('tokenmeter', S.health?.usage) || '');
+  const paintStatus = () => statusBox.replaceChildren(chip('ktms', S.health?.proxy) || '', chip('tokenmeter', S.health?.usage) || '');
   paintStatus(); S.paintStatus = () => document.getElementById('status') && (statusBox.isConnected ? paintStatus() : null);
   const main = h('main', { class: 'main' });
   const u = S.me.user;
   const app = document.getElementById('app');
   app.replaceChildren(h('div', { class: 'shell' },
-    h('nav', { class: 'side' }, h('div', { class: 'brand' }, h('i'), 'llm-proxy admin'),
+    h('nav', { class: 'side' }, h('div', { class: 'brand' }, h('i'), 'ktms admin'),
       h('div', { class: 'nav' },
         f.usage && [h('div', { class: 'grp' }, 'Spend'), link('usage', 'Usage')],
         f.proxy && [h('div', { class: 'grp' }, 'Gateway'), link('models', 'Models'), link('rules', 'Rules'), link('limits', 'Limits'), link('keys', 'Keys'), link('nodes', 'Nodes'), link('playground', 'Playground'), link('judge', 'Judge')]),
@@ -1236,7 +1236,7 @@ function shell() {
       statusBox,
       h('div', { class: 'who' }, u.picture && h('img', { src: u.picture, alt: '', referrerpolicy: 'no-referrer' }),
         h('span', { class: 'name', title: u.email }, u.name || u.email), u.role === 'viewer' && h('span', { class: 'chip' }, 'read-only'),
-        h('button', { class: 'sm', onclick: async () => { await fetch('/auth/logout', { method: 'POST', headers: { 'X-Requested-With': 'llm-proxy-admin' } }); location.href = '/'; } }, 'Sign out'))),
+        h('button', { class: 'sm', onclick: async () => { await fetch('/auth/logout', { method: 'POST', headers: { 'X-Requested-With': 'ktms-admin' } }); location.href = '/'; } }, 'Sign out'))),
     main));
   Promise.resolve(pages[cur](main)).catch((e) => toast(e.message, true));
 }

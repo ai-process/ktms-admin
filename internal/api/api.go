@@ -22,15 +22,15 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/ai-process/llm-proxy-admin/internal/auth"
-	"github.com/ai-process/llm-proxy-admin/internal/config"
-	pb "github.com/ai-process/llm-proxy-admin/internal/gen/ktms/v1"
-	"github.com/ai-process/llm-proxy-admin/internal/usage"
-	"github.com/ai-process/llm-proxy-admin/internal/web"
+	"github.com/ai-process/ktms-admin/internal/auth"
+	"github.com/ai-process/ktms-admin/internal/config"
+	pb "github.com/ai-process/ktms-admin/internal/gen/ktms/v1"
+	"github.com/ai-process/ktms-admin/internal/usage"
+	"github.com/ai-process/ktms-admin/internal/web"
 )
 
 const csrfHeader = "X-Requested-With"
-const csrfValue = "llm-proxy-admin"
+const csrfValue = "ktms-admin"
 
 type Server struct {
 	cfg   *config.Config
@@ -257,10 +257,10 @@ func backendErr(w http.ResponseWriter, err error) {
 	}
 	msg := st.Message()
 	if st.Code() == codes.Unauthenticated || st.Code() == codes.PermissionDenied {
-		msg = "llm-proxy rejected the console's admin key: " + msg
+		msg = "KTMS rejected the console's admin key: " + msg
 	}
 	if st.Code() == codes.Unavailable {
-		msg = "llm-proxy is unreachable: " + msg
+		msg = "KTMS is unreachable: " + msg
 	}
 	log.Warn().Str("grpc", st.Code().String()).Str("msg", st.Message()).Msg("backend error")
 	writeErr(w, code, strings.ToLower(st.Code().String()), msg)

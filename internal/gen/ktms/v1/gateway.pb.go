@@ -4502,8 +4502,8 @@ const file_ktms_v1_gateway_proto_rawDesc = "" +
 	"\vSubmitBatch\x12\x1b.ktms.v1.SubmitBatchRequest\x1a\x1c.ktms.v1.SubmitBatchResponse\x124\n" +
 	"\bGetBatch\x12\x18.ktms.v1.GetBatchRequest\x1a\x0e.ktms.v1.Batch\x12W\n" +
 	"\x10ListBatchResults\x12 .ktms.v1.ListBatchResultsRequest\x1a!.ktms.v1.ListBatchResultsResponse\x12H\n" +
-	"\vCancelBatch\x12\x1b.ktms.v1.CancelBatchRequest\x1a\x1c.ktms.v1.CancelBatchResponseB\x9b\x01\n" +
-	"\vcom.ktms.v1B\fGatewayProtoP\x01ZAgithub.com/ai-process/llm-proxy-admin/internal/gen/ktms/v1;ktmsv1\xa2\x02\x03KXX\xaa\x02\aKtms.V1\xca\x02\aKtms\\V1\xe2\x02\x13Ktms\\V1\\GPBMetadata\xea\x02\bKtms::V1b\x06proto3"
+	"\vCancelBatch\x12\x1b.ktms.v1.CancelBatchRequest\x1a\x1c.ktms.v1.CancelBatchResponseB\x96\x01\n" +
+	"\vcom.ktms.v1B\fGatewayProtoP\x01Z<github.com/ai-process/ktms-admin/internal/gen/ktms/v1;ktmsv1\xa2\x02\x03KXX\xaa\x02\aKtms.V1\xca\x02\aKtms\\V1\xe2\x02\x13Ktms\\V1\\GPBMetadata\xea\x02\bKtms::V1b\x06proto3"
 
 var (
 	file_ktms_v1_gateway_proto_rawDescOnce sync.Once

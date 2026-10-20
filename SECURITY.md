@@ -3,12 +3,12 @@
 ## Reporting a vulnerability
 
 Please do **not** open a public issue. Use GitHub's
-[private vulnerability reporting](https://github.com/ai-process/llm-proxy-admin/security/advisories/new)
+[private vulnerability reporting](https://github.com/ai-process/ktms-admin/security/advisories/new)
 for this repository. You will get a first answer within a few days.
 
 ## What this console protects
 
-The console holds an **admin key for llm-proxy**, which can read and change routing and mint API
+The console holds an **admin key for KTMS**, which can read and change routing and mint API
 keys. Treat access to it accordingly:
 
 - Only people matching `ALLOWED_EMAILS` (full access) or `VIEWER_EMAILS` (read-only) can sign in, and

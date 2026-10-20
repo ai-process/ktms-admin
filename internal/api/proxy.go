@@ -13,9 +13,9 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 
-	"github.com/ai-process/llm-proxy-admin/internal/auth"
-	pb "github.com/ai-process/llm-proxy-admin/internal/gen/ktms/v1"
-	"github.com/ai-process/llm-proxy-admin/internal/usage"
+	"github.com/ai-process/ktms-admin/internal/auth"
+	pb "github.com/ai-process/ktms-admin/internal/gen/ktms/v1"
+	"github.com/ai-process/ktms-admin/internal/usage"
 )
 
 const rpcTimeout = 20 * time.Second
@@ -356,7 +356,7 @@ func (s *Server) buildPlaygroundReq(req playgroundReq, u *auth.User) (*pb.Genera
 // admin key, which the proxy accepts for every scope.
 func (s *Server) proxyPlayground(w http.ResponseWriter, r *http.Request, u *auth.User) {
 	if s.data == nil {
-		writeErr(w, http.StatusNotFound, "not_found", "llm-proxy data client not available")
+		writeErr(w, http.StatusNotFound, "not_found", "KTMS data client not available")
 		return
 	}
 	var req playgroundReq
@@ -383,7 +383,7 @@ func (s *Server) proxyPlayground(w http.ResponseWriter, r *http.Request, u *auth
 // keeping the connection alive and flushing increments as they arrive.
 func (s *Server) proxyPlaygroundStream(w http.ResponseWriter, r *http.Request, u *auth.User) {
 	if s.data == nil {
-		writeErr(w, http.StatusNotFound, "not_found", "llm-proxy data client not available")
+		writeErr(w, http.StatusNotFound, "not_found", "KTMS data client not available")
 		return
 	}
 	var req playgroundReq
@@ -473,7 +473,7 @@ type judgeReq struct {
 // proxyJudge evaluates typed criteria against an arbitrary JSON state via the Judge RPC.
 func (s *Server) proxyJudge(w http.ResponseWriter, r *http.Request, u *auth.User) {
 	if s.data == nil {
-		writeErr(w, http.StatusNotFound, "not_found", "llm-proxy data client not available")
+		writeErr(w, http.StatusNotFound, "not_found", "KTMS data client not available")
 		return
 	}
 	var req judgeReq
@@ -648,7 +648,7 @@ func (s *Server) fetchPrices(ctx context.Context) (map[string]usage.Price, error
 	return out, nil
 }
 
-// modelPrices returns cached prices, or nil when llm-proxy is not configured
+// modelPrices returns cached prices, or nil when KTMS is not configured
 // or unreachable; the usage view then simply omits cost.
 func (s *Server) modelPrices(ctx context.Context) map[string]usage.Price {
 	if s.priceFetch == nil {

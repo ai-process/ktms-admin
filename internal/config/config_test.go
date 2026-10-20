@@ -31,3 +31,17 @@ func TestValidate(t *testing.T) {
 		t.Errorf("backend flags wrong")
 	}
 }
+
+func TestKTMSEnvFallback(t *testing.T) {
+	t.Setenv("LLM_PROXY_ADDR", "old:9090")
+	if got := envFirst("", "KTMS_ADDR", "LLM_PROXY_ADDR"); got != "old:9090" {
+		t.Errorf("legacy name ignored: got %q", got)
+	}
+	t.Setenv("KTMS_ADDR", "new:9090")
+	if got := envFirst("", "KTMS_ADDR", "LLM_PROXY_ADDR"); got != "new:9090" {
+		t.Errorf("KTMS_ADDR must win over LLM_PROXY_ADDR: got %q", got)
+	}
+	if got := envFirst("d", "KTMS_UNSET_X", "LLM_PROXY_UNSET_X"); got != "d" {
+		t.Errorf("default not used: got %q", got)
+	}
+}

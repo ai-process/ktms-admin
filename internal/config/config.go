@@ -51,9 +51,9 @@ func Load() (*Config, error) {
 		SessionTTL:         ttl,
 		OIDCIssuer:         env("OIDC_ISSUER", ""),
 		InsecureNoAuth:     env("INSECURE_NO_AUTH", "") == "true",
-		ProxyAddr:          env("LLM_PROXY_ADDR", ""),
-		ProxyAdminKey:      env("LLM_PROXY_ADMIN_KEY", ""),
-		ProxyTLS:           env("LLM_PROXY_TLS", "") == "true",
+		ProxyAddr:          envFirst("", "KTMS_ADDR", "LLM_PROXY_ADDR"),
+		ProxyAdminKey:      envFirst("", "KTMS_ADMIN_KEY", "LLM_PROXY_ADMIN_KEY"),
+		ProxyTLS:           envFirst("", "KTMS_TLS", "LLM_PROXY_TLS") == "true",
 		TokenmeterURL:      strings.TrimRight(env("TOKENMETER_URL", ""), "/"),
 	}
 	return c, c.Validate()
@@ -64,10 +64,10 @@ func (c *Config) UsageEnabled() bool { return c.TokenmeterURL != "" }
 
 func (c *Config) Validate() error {
 	if !c.ProxyEnabled() && !c.UsageEnabled() {
-		return errors.New("configure at least one backend: LLM_PROXY_ADDR (+ LLM_PROXY_ADMIN_KEY) and/or TOKENMETER_URL")
+		return errors.New("configure at least one backend: KTMS_ADDR (+ KTMS_ADMIN_KEY) and/or TOKENMETER_URL")
 	}
 	if c.ProxyEnabled() && c.ProxyAdminKey == "" {
-		return errors.New("LLM_PROXY_ADDR is set but LLM_PROXY_ADMIN_KEY is empty")
+		return errors.New("KTMS_ADDR is set but KTMS_ADMIN_KEY is empty")
 	}
 	if c.UsageEnabled() {
 		u, err := url.Parse(c.TokenmeterURL)
@@ -113,6 +113,16 @@ func (c *Config) SecureCookies() bool { return strings.HasPrefix(c.PublicURL, "h
 func env(key, def string) string {
 	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
 		return v
+	}
+	return def
+}
+
+// envFirst returns the first non-empty variable; later keys are pre-rename names kept for old deployments.
+func envFirst(def string, keys ...string) string {
+	for _, k := range keys {
+		if v := env(k, ""); v != "" {
+			return v
+		}
 	}
 	return def
 }

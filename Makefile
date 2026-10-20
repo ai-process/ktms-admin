@@ -1,7 +1,7 @@
 .PHONY: build run test proto fmt dev
 
 build:
-	go build -trimpath -ldflags="-s -w" -o bin/llm-proxy-admin ./cmd/llm-proxy-admin
+	go build -trimpath -ldflags="-s -w" -o bin/ktms-admin ./cmd/ktms-admin
 
 test:
 	go test -race ./...
@@ -13,6 +13,6 @@ proto:
 fmt:
 	go fmt ./...
 
-# Local run without Google sign-in (localhost only). Needs LLM_PROXY_ADDR + LLM_PROXY_ADMIN_KEY and/or TOKENMETER_URL.
+# Local run without Google sign-in (localhost only). Needs KTMS_ADDR + KTMS_ADMIN_KEY and/or TOKENMETER_URL.
 dev:
-	PUBLIC_URL=http://localhost:8080 INSECURE_NO_AUTH=true go run ./cmd/llm-proxy-admin
+	PUBLIC_URL=http://localhost:8080 INSECURE_NO_AUTH=true go run ./cmd/ktms-admin
