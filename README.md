@@ -12,8 +12,8 @@ or with either one alone.
   with failure rates, latency, estimated cost and a *greedy / worthy* verdict.
 - **Gateway:** manage models, routing rules, client API keys and vendor credentials, and try a prompt in the
   playground. No more `grpcurl`.
-- **Sign-in** with a password, Google, or the access proxy you already run (oauth2-proxy, Authelia,
-  Authentik, Pomerium, Cloudflare Access), limited to an allowlist with wildcards such as `*@example.com`. Optional
+- **Sign-in** with a password, Google or any OpenID Connect provider, GitHub, or the access proxy you already
+  run (oauth2-proxy, Authelia, Authentik, Pomerium, Cloudflare Access), limited to an allowlist with wildcards such as `*@example.com`. Optional
   read-only users.
 - **One binary:** a static Go binary with the UI embedded: Preact and htm as vendored ES modules, no
   front-end build step, light and dark themes, usable from a phone.
@@ -22,7 +22,8 @@ or with either one alone.
 
 - [Quick start](#quick-start)
 - [Password sign-in](#password-sign-in)
-- [Setting up Google sign-in](#setting-up-google-sign-in)
+- [Google and other OpenID Connect providers](#google-and-other-openid-connect-providers)
+- [GitHub sign-in](#github-sign-in)
 - [Sign-in behind an access proxy](#sign-in-behind-an-access-proxy)
 - [Who may sign in](#who-may-sign-in)
 - [Compatibility](#compatibility)
@@ -36,8 +37,9 @@ or with either one alone.
 ## Quick start
 
 You need a sign-in method and, for the gateway pages, a KTMS admin key (`MintAPIKey` with scope `admin`).
-The quickest method is a password ([more](#password-sign-in)); Google ([how](#setting-up-google-sign-in)) and
-access proxies ([how](#sign-in-behind-an-access-proxy)) work too, alone or together.
+The quickest method is a password ([more](#password-sign-in)). Google and other OpenID Connect providers
+([how](#google-and-other-openid-connect-providers)), GitHub ([how](#github-sign-in)) and access proxies
+([how](#sign-in-behind-an-access-proxy)) work too, alone or together.
 
 ```bash
 # Prints you@example.com:$argon2id$… after asking for a password twice.
@@ -85,17 +87,50 @@ each further failure up to 5 minutes. One client address gets 30 tries before a 
 The counters are kept in memory per replica. Sign-in forms carry a token tied to a cookie, so another site
 cannot post one.
 
-## Setting up Google sign-in
+## Google and other OpenID Connect providers
+
+**Google:**
 
 1. In the [Google Cloud console](https://console.cloud.google.com/apis/credentials) create an
    **OAuth client ID** of type **Web application** (configure the consent screen first; *Internal* works
    if everyone is in your Google Workspace, otherwise *External*).
 2. Under **Authorized redirect URIs** add `PUBLIC_URL` + `/auth/callback`, for example
    `https://admin.example.com/auth/callback` (and `http://localhost:8080/auth/callback` for local tests).
-3. Put the client id and secret into `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
+3. Put the client id and secret into `OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET`.
 
-The console uses the authorization-code flow with PKCE, state and nonce, and requires a **verified** e-mail.
-Only the `openid email profile` scopes are requested.
+**Another provider** works the same way: register a confidential web client with the redirect URI
+`PUBLIC_URL/auth/callback`, then set `OIDC_ISSUER` and, for the button, `OIDC_NAME`:
+
+| Provider | `OIDC_ISSUER` |
+| --- | --- |
+| Keycloak | `https://keycloak.example.com/realms/<realm>` |
+| Zitadel | `https://<instance>.zitadel.cloud` |
+| GitLab | `https://gitlab.com` or your instance |
+| Authentik | `https://authentik.example.com/application/o/<slug>/` (the `email` scope mapping must return `email_verified: true`) |
+| Okta | `https://<org>.okta.com` |
+
+**Several providers at once:** list names in `OIDC_PROVIDERS` (lower-case letters, digits and dashes) and
+give each one `OIDC_<NAME>_ISSUER`, `OIDC_<NAME>_CLIENT_ID`, `OIDC_<NAME>_CLIENT_SECRET` and optionally
+`OIDC_<NAME>_NAME`. A dash in the name becomes `_` in the variables. Their redirect URI is
+`PUBLIC_URL/auth/oidc-<name>/callback`. For example, `OIDC_PROVIDERS=corp-sso` with `OIDC_CORP_SSO_ISSUER=…` and
+the redirect URI `https://admin.example.com/auth/oidc-corp-sso/callback`. They can sit next to the unnamed
+provider above.
+
+The console uses the authorization-code flow with PKCE, state and nonce, requests only the
+`openid email profile` scopes, and requires the provider to mark the e-mail **verified**
+(`email_verified`). Microsoft Entra ID does not send that claim, so put it behind an
+[access proxy](#sign-in-behind-an-access-proxy) such as oauth2-proxy instead. The older
+`GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` names still work with a startup warning until 2.0.
+
+## GitHub sign-in
+
+1. Under GitHub **Settings → Developer settings → OAuth Apps** (or your organization's), create an app with the
+   **Authorization callback URL** `PUBLIC_URL/auth/github/callback`.
+2. Generate a client secret and set `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`. For GitHub Enterprise
+   Server also set `GITHUB_URL`, such as `https://github.example.com`.
+
+The console asks for `read:user user:email` and uses the account's **primary, verified** e-mail. To limit
+access to your organization, list its people or its domain in the allowlists.
 
 ## Sign-in behind an access proxy
 
@@ -131,7 +166,7 @@ Serve, or Caddy `forward_auth` / nginx `auth_request` in front of one of them):
 `Cf-Access-Jwt-Assertion` token on every request (signature, issuer, audience, expiry), so it needs no trusted
 network path. Service tokens carry no e-mail and are refused.
 
-Proxy sign-in works alongside Google. Without the proxy, the sign-in page offers the other methods. Signing out
+Proxy sign-in works alongside the other methods. Without the proxy, the sign-in page offers the other methods. Signing out
 happens at the proxy, so the console hides its own *Sign out* button for these users.
 
 ## Who may sign in
@@ -200,7 +235,12 @@ All settings are environment variables; see [`env.example`](env.example).
 | `PUBLIC_URL` | – | **Required.** External base URL, e.g. `https://admin.example.com`. |
 | `ADMIN_USERS` | empty | Turns on [password sign-in](#password-sign-in): `email:hash` entries from `hash-password`. |
 | `ADMIN_USERS_FILE` | empty | A file with one `email:hash` entry per line, merged with `ADMIN_USERS`. |
-| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | – | Turns on Google sign-in. At least one sign-in method is required unless `INSECURE_NO_AUTH` is set. |
+| `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` | – | Turns on [OpenID Connect sign-in](#google-and-other-openid-connect-providers), Google unless `OIDC_ISSUER` says otherwise. At least one sign-in method is required unless `INSECURE_NO_AUTH` is set. (`GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` still work, deprecated.) |
+| `OIDC_ISSUER` | Google | Another OpenID Connect issuer that returns verified e-mails. |
+| `OIDC_NAME` | Google or SSO | The provider's name on the sign-in button. |
+| `OIDC_PROVIDERS` | empty | More providers by name, each with `OIDC_<NAME>_ISSUER`, `_CLIENT_ID`, `_CLIENT_SECRET` and optionally `_NAME`. |
+| `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | – | Turn on [GitHub sign-in](#github-sign-in). |
+| `GITHUB_URL` | `https://github.com` | GitHub Enterprise Server address. |
 | `TRUSTED_PROXY_CIDRS` | empty | Turns on [proxy sign-in](#sign-in-behind-an-access-proxy): the addresses or CIDRs of the access proxy. |
 | `AUTH_HEADER_EMAIL` | `X-Forwarded-Email` | The header the proxy names the user's e-mail in. |
 | `AUTH_HEADER_NAME` | empty | Optional header with the user's display name. |
@@ -218,7 +258,6 @@ All settings are environment variables; see [`env.example`](env.example).
 | `LISTEN_ADDR` | `:8080` | Listen address. |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error`. |
 | `INSECURE_NO_AUTH` | `false` | Skip sign-in. Localhost `PUBLIC_URL` only. |
-| `OIDC_ISSUER` | Google | Advanced: another OpenID Connect issuer that returns verified e-mails. |
 
 ## Deployment
 
@@ -315,7 +354,7 @@ unmodified except that hooks import `./preact.mjs`). Restart the server after ed
 at build time. `proto/` is a copy of KTMS's
 protocol, so the console talks to it over gRPC without importing its code.
 
-Layout: `cmd/llm-proxy-admin` (entrypoint), `internal/auth` (Google sign-in, sessions, allowlists),
+Layout: `cmd/llm-proxy-admin` (entrypoint), `internal/auth` (sessions, allowlists, sign-in page; one package per sign-in method below it),
 `internal/api` (JSON API and guards), `internal/usage` (light-tokenmeter client and the greedy/worthy
 analysis), `internal/config`, `internal/web` (embedded UI).
 

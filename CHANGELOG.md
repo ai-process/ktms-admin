@@ -7,6 +7,9 @@ Notable changes to ktms-admin. The format follows
 ## [Unreleased]
 
 ### Added
+- Any OpenID Connect provider by its generic settings (`OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_ISSUER`,
+  `OIDC_NAME`), several at once through `OIDC_PROVIDERS`, and GitHub sign-in (`GITHUB_CLIENT_ID`,
+  `GITHUB_CLIENT_SECRET`, `GITHUB_URL` for Enterprise Server).
 - Password sign-in: `ADMIN_USERS` or `ADMIN_USERS_FILE` hold `email:hash` entries made by the new
   `ktms-admin hash-password` command (argon2id; bcrypt from `htpasswd -nB` works too). Failed attempts
   back off per account and per client address.
@@ -18,7 +21,12 @@ Notable changes to ktms-admin. The format follows
 - Sign-in methods are pluggable adapters behind one core that owns sessions, roles and the
   sign-in page. Google sign-in works as before, with the same redirect URI.
 
+### Deprecated
+- `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`: use `OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET`. The old names
+  keep working with a startup warning and are removed in 2.0.
+
 ### Fixed
+- A profile picture the CSP blocks no longer shows as a broken image.
 - Sign-in error pages are styled again: the CSP blocked their inline styles.
 
 ## [0.4.0] - 2026-10-22

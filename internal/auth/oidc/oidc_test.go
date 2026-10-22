@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -194,5 +195,57 @@ func TestFlowCookieIsSingleUse(t *testing.T) {
 	}
 	if w.Code != 302 || !cleared {
 		t.Fatalf("callback = %d, flow cookie cleared = %v", w.Code, cleared)
+	}
+}
+
+func TestNamedProviders(t *testing.T) {
+	google, corp := newIdP(t), newIdP(t)
+	admins, _ := auth.ParseAllowlist("boss@x.com")
+	h := auth.New(auth.Options{PublicURL: "http://localhost:8085", Admins: admins, SessionTTL: time.Hour,
+		Signer: auth.NewSigner("0123456789abcdef0123456789abcdef"),
+		Methods: []auth.Method{
+			New(Options{Issuer: google.srv.URL, ClientID: "client-id", ClientSecret: "s", Name: "Google"}),
+			New(Options{ID: "oidc-corp", Issuer: corp.srv.URL, ClientID: "client-id", ClientSecret: "s", Name: "Corp SSO"}),
+		}})
+	mux := http.NewServeMux()
+	h.Mount(mux)
+	g := &rig{h: h, mux: mux}
+	page := g.get("/auth/login?next=/")
+	if page.Code != 200 || !strings.Contains(page.Body.String(), "Sign in with Corp SSO") || !strings.Contains(page.Body.String(), `href="/auth/oidc-corp/start?next=%2F"`) {
+		t.Fatalf("sign-in page = %d\n%s", page.Code, page.Body)
+	}
+	w := g.get("/auth/oidc-corp/start?next=/")
+	loc, _ := url.Parse(w.Header().Get("Location"))
+	if !strings.HasPrefix(loc.String(), corp.srv.URL) || loc.Query().Get("redirect_uri") != "http://localhost:8085/auth/oidc-corp/callback" {
+		t.Fatalf("named provider redirect = %s", loc)
+	}
+	var flow *http.Cookie
+	for _, c := range w.Result().Cookies() {
+		if c.Name == "lpa_login" {
+			flow = c
+		}
+	}
+	corp.claim = map[string]any{"nonce": loc.Query().Get("nonce"), "email": "boss@x.com", "email_verified": true}
+	// The unnamed provider's callback must not finish the named one's flow.
+	if w := g.get("/auth/callback?code=x&state="+url.QueryEscape(loc.Query().Get("state")), flow); w.Code != 400 {
+		t.Fatalf("cross-provider callback = %d", w.Code)
+	}
+	w = g.get("/auth/oidc-corp/start?next=/")
+	loc, _ = url.Parse(w.Header().Get("Location"))
+	for _, c := range w.Result().Cookies() {
+		if c.Name == "lpa_login" {
+			flow = c
+		}
+	}
+	corp.claim["nonce"] = loc.Query().Get("nonce")
+	w = g.get("/auth/oidc-corp/callback?code=x&state="+url.QueryEscape(loc.Query().Get("state")), flow)
+	r := httptest.NewRequest("GET", "/", nil)
+	for _, c := range w.Result().Cookies() {
+		if c.Name == "lpa_session" {
+			r.AddCookie(c)
+		}
+	}
+	if u, ok := h.UserFor(r); w.Code != 302 || !ok || u.Method != "oidc-corp" {
+		t.Fatalf("named provider sign-in = %d, %+v %v", w.Code, u, ok)
 	}
 }

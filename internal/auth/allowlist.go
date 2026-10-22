@@ -16,7 +16,7 @@ type pattern struct{ local, domain string }
 
 // ParseAllowlist reads comma- or whitespace-separated patterns. Every pattern
 // needs exactly one "@" so a stray "*" can never allow everyone by accident;
-// "*@*" is the explicit way to admit any verified Google account.
+// "*@*" is the explicit way to admit anyone who can sign in.
 func ParseAllowlist(list string) (*Allowlist, error) {
 	a := &Allowlist{}
 	for _, raw := range strings.FieldsFunc(list, func(r rune) bool { return r == ',' || r == ' ' || r == '\n' || r == '\t' || r == ';' }) {

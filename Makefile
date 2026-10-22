@@ -13,6 +13,6 @@ proto:
 fmt:
 	go fmt ./...
 
-# Local run without Google sign-in (localhost only). Needs KTMS_ADDR + KTMS_ADMIN_KEY and/or TOKENMETER_URL.
+# Local run without sign-in (localhost only). Needs KTMS_ADDR + KTMS_ADMIN_KEY and/or TOKENMETER_URL.
 dev:
 	PUBLIC_URL=http://localhost:8080 INSECURE_NO_AUTH=true go run ./cmd/llm-proxy-admin
