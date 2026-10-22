@@ -215,12 +215,11 @@ type pageData struct {
 // The console's CSP forbids inline styles, so the page links /auth.css.
 var pageTmpl = template.Must(template.New("page").Parse(`<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Sign in · KTMS admin</title><link rel="stylesheet" href="/auth.css"></head>
-<body><main class="card"><h1>Sign in</h1>
+<title>Sign in · KTMS admin</title><link rel="icon" type="image/svg+xml" href="/logo.svg"><link rel="stylesheet" href="/auth.css"></head>
+<body><main class="card"><div class="brand"><img src="/logo.svg" alt="" width="32" height="32"><span>KTMS admin</span></div><h1>Sign in</h1>
 {{- if .Error}}
 <p class="error">{{.Error}}</p><p><a href="/auth/login">Try again</a></p>
 {{- else}}
-<p class="muted">KTMS admin console</p>
 {{- with .Message}}
 <p class="error" role="alert">{{.}}</p>
 {{- end}}

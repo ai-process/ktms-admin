@@ -91,7 +91,7 @@ function Shell() {
 
   return html`<div class="shell">
     <nav class=${cx('side', open && 'open')} aria-label="Main">
-      <div class="brand"><div class="logo"><${Icon} name="logo" /></div><div><b>KTMS</b><span>Admin console</span></div></div>
+      <div class="brand"><img class="logo" src="/logo.svg" alt="" /><div><b>KTMS</b><span>Admin console</span></div></div>
       <button type="button" class="ghost icon menu-btn" aria-expanded=${open ? 'true' : 'false'} aria-label="Menu" onClick=${() => setOpen(!open)}><${Icon} name="menu" /></button>
       <div class="collapsible stack" style=${{ gap: '22px' }}>
         ${GROUPS().map(([label, items]) => {
