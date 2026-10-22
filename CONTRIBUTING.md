@@ -11,7 +11,7 @@ make dev       # run on :8080 without Google sign-in (localhost only)
 make proto     # regenerate internal/gen after changing proto/ (needs buf)
 ```
 
-`make dev` needs `LLM_PROXY_ADDR` + `LLM_PROXY_ADMIN_KEY` and/or `TOKENMETER_URL` in the environment.
+`make dev` needs `KTMS_ADDR` + `KTMS_ADMIN_KEY` and/or `TOKENMETER_URL` in the environment.
 The UI lives in `internal/web/static` and is served as-is: edit, restart, refresh.
 
 ## Rules

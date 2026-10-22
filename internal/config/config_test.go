@@ -36,3 +36,24 @@ func TestValidate(t *testing.T) {
 		t.Errorf("backend flags wrong")
 	}
 }
+
+func TestLegacyProxyEnvStillWorks(t *testing.T) {
+	for _, k := range []string{"KTMS_ADDR", "KTMS_ADMIN_KEY", "KTMS_TLS"} {
+		t.Setenv(k, "")
+	}
+	t.Setenv("PUBLIC_URL", "https://a.example.com")
+	t.Setenv("GOOGLE_CLIENT_ID", "i")
+	t.Setenv("GOOGLE_CLIENT_SECRET", "s")
+	t.Setenv("ALLOWED_EMAILS", "*@x.com")
+	t.Setenv("LLM_PROXY_ADDR", "old:9090")
+	t.Setenv("LLM_PROXY_ADMIN_KEY", "k")
+	c, err := Load()
+	if err != nil || c.ProxyAddr != "old:9090" || c.ProxyAdminKey != "k" || len(c.Notices) != 2 {
+		t.Fatalf("legacy names: %+v, %v", c, err)
+	}
+	t.Setenv("KTMS_ADDR", "new:9090")
+	t.Setenv("KTMS_ADMIN_KEY", "k2")
+	if c, err := Load(); err != nil || c.ProxyAddr != "new:9090" || c.ProxyAdminKey != "k2" || len(c.Notices) != 0 {
+		t.Fatalf("new names win without notices: %+v, %v", c, err)
+	}
+}

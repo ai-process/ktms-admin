@@ -23,6 +23,9 @@ func main() {
 	if err != nil {
 		log.Fatal().Err(err).Msg("invalid configuration")
 	}
+	for _, n := range cfg.Notices {
+		log.Warn().Msg(n)
+	}
 	if lvl, err := zerolog.ParseLevel(cfg.LogLevel); err == nil {
 		zerolog.SetGlobalLevel(lvl)
 	}

@@ -36,6 +36,17 @@ type Config struct {
 	ProxyTLS      bool
 
 	TokenmeterURL string
+
+	// Notices name deprecated settings in use, for a startup warning; they
+	// keep working through 1.x.
+	Notices []string
+}
+
+// legacyEnv maps llm-proxy-era names to the KTMS ones that replace them.
+var legacyEnv = [][2]string{
+	{"LLM_PROXY_ADDR", "KTMS_ADDR"},
+	{"LLM_PROXY_ADMIN_KEY", "KTMS_ADMIN_KEY"},
+	{"LLM_PROXY_TLS", "KTMS_TLS"},
 }
 
 func Load() (*Config, error) {
@@ -59,10 +70,15 @@ func Load() (*Config, error) {
 		SessionTTL:         ttl,
 		OIDCIssuer:         env("OIDC_ISSUER", ""),
 		InsecureNoAuth:     env("INSECURE_NO_AUTH", "") == "true",
-		ProxyAddr:          env("LLM_PROXY_ADDR", ""),
-		ProxyAdminKey:      env("LLM_PROXY_ADMIN_KEY", ""),
-		ProxyTLS:           env("LLM_PROXY_TLS", "") == "true",
+		ProxyAddr:          env("KTMS_ADDR", env("LLM_PROXY_ADDR", "")),
+		ProxyAdminKey:      env("KTMS_ADMIN_KEY", env("LLM_PROXY_ADMIN_KEY", "")),
+		ProxyTLS:           env("KTMS_TLS", env("LLM_PROXY_TLS", "")) == "true",
 		TokenmeterURL:      strings.TrimRight(env("TOKENMETER_URL", ""), "/"),
+	}
+	for _, p := range legacyEnv {
+		if env(p[0], "") != "" && env(p[1], "") == "" {
+			c.Notices = append(c.Notices, p[0]+" is deprecated: rename it to "+p[1])
+		}
 	}
 	return c, c.Validate()
 }
@@ -72,10 +88,10 @@ func (c *Config) UsageEnabled() bool { return c.TokenmeterURL != "" }
 
 func (c *Config) Validate() error {
 	if !c.ProxyEnabled() && !c.UsageEnabled() {
-		return errors.New("configure at least one backend: LLM_PROXY_ADDR (+ LLM_PROXY_ADMIN_KEY) and/or TOKENMETER_URL")
+		return errors.New("configure at least one backend: KTMS_ADDR (+ KTMS_ADMIN_KEY) and/or TOKENMETER_URL")
 	}
 	if c.ProxyEnabled() && c.ProxyAdminKey == "" {
-		return errors.New("LLM_PROXY_ADDR is set but LLM_PROXY_ADMIN_KEY is empty")
+		return errors.New("KTMS_ADDR is set but KTMS_ADMIN_KEY is empty")
 	}
 	if c.UsageEnabled() {
 		u, err := url.Parse(c.TokenmeterURL)
