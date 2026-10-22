@@ -47,12 +47,16 @@ func main() {
 		log.Fatal().Msg("SESSION_SECRET must be at least 32 characters")
 	}
 	if cfg.InsecureNoAuth {
-		log.Warn().Msg("INSECURE_NO_AUTH is on: everyone who can reach this port is an admin")
+		log.Warn().Msg("INSECURE_NO_AUTH is on: local dev mode without authentication")
 	}
+
+	memberships := auth.ParseTeamMemberships(cfg.TeamMemberships)
 
 	handler := auth.New(auth.Options{
 		PublicURL: cfg.PublicURL, ClientID: cfg.GoogleClientID, ClientSecret: cfg.GoogleClientSecret,
-		Admins: admins, Viewers: viewers, Signer: auth.NewSigner(secret), SessionTTL: cfg.SessionTTL,
+		Admins: admins, Viewers: viewers, TeamMemberships: memberships,
+		DevUserRole: cfg.DevUserRole, DevUserTeamID: cfg.DevUserTeamID, DevUserOrgID: cfg.DevUserOrgID,
+		Signer: auth.NewSigner(secret), SessionTTL: cfg.SessionTTL,
 		SecureCookies: cfg.SecureCookies(), InsecureNoAuth: cfg.InsecureNoAuth, Issuer: cfg.OIDCIssuer,
 	})
 	srv, closeBackends, err := api.New(cfg, handler)

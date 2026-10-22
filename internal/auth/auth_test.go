@@ -78,10 +78,10 @@ func withSession(t *testing.T, h *Handler, email string, exp time.Time) *http.Re
 
 func TestSessionRolesAndExpiry(t *testing.T) {
 	h := newHandler(t)
-	if u, ok := h.UserFor(withSession(t, h, "admin@x.com", time.Now().Add(time.Hour))); !ok || !u.CanWrite() {
+	if u, ok := h.UserFor(withSession(t, h, "admin@x.com", time.Now().Add(time.Hour))); !ok || !u.IsSuperAdmin() {
 		t.Errorf("admin: %+v %v", u, ok)
 	}
-	if u, ok := h.UserFor(withSession(t, h, "p@view.com", time.Now().Add(time.Hour))); !ok || u.CanWrite() || u.Role != RoleViewer {
+	if u, ok := h.UserFor(withSession(t, h, "p@view.com", time.Now().Add(time.Hour))); !ok || u.IsSuperAdmin() || !u.CanReadGlobal() || u.Role != RoleViewer {
 		t.Errorf("viewer: %+v %v", u, ok)
 	}
 	if _, ok := h.UserFor(withSession(t, h, "admin@x.com", time.Now().Add(-time.Minute))); ok {
@@ -101,5 +101,36 @@ func TestSafeNext(t *testing.T) {
 		if got := safeNext(in); got != want {
 			t.Errorf("safeNext(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestTeamMemberships(t *testing.T) {
+	raw := "lead@corp.com:team-1:teamlead:org-1, dev@corp.com:team-1:member:org-1, solo@corp.com:team-2"
+	m := ParseTeamMemberships(raw)
+	if len(m) != 3 {
+		t.Fatalf("expected 3 entries, got %d", len(m))
+	}
+	if info := m["lead@corp.com"]; info.Role != RoleTeamLead || info.TeamID != "team-1" || info.OrgID != "org-1" {
+		t.Fatalf("unexpected lead info: %+v", info)
+	}
+	if info := m["dev@corp.com"]; info.Role != RoleMember || info.TeamID != "team-1" || info.OrgID != "org-1" {
+		t.Fatalf("unexpected dev info: %+v", info)
+	}
+	if info := m["solo@corp.com"]; info.Role != RoleMember || info.TeamID != "team-2" {
+		t.Fatalf("unexpected solo info: %+v", info)
+	}
+
+	h := New(Options{
+		Signer:          NewSigner("0123456789abcdef0123456789abcdef"),
+		SessionTTL:      time.Hour,
+		TeamMemberships: m,
+	})
+	uLead, ok := h.UserFor(withSession(t, h, "lead@corp.com", time.Now().Add(time.Hour)))
+	if !ok || !uLead.IsTeamLead() || uLead.IsSuperAdmin() || uLead.CanReadGlobal() {
+		t.Fatalf("unexpected lead user: %+v", uLead)
+	}
+	uDev, ok := h.UserFor(withSession(t, h, "dev@corp.com", time.Now().Add(time.Hour)))
+	if !ok || uDev.IsSuperAdmin() || uDev.IsTeamLead() || !uDev.InTeam() || uDev.Role != RoleMember {
+		t.Fatalf("unexpected dev user: %+v", uDev)
 	}
 }

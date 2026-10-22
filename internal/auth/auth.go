@@ -21,9 +21,59 @@ const (
 	flowCookie    = "lpa_login"
 	flowTTL       = 10 * time.Minute
 
-	RoleAdmin  = "admin"
-	RoleViewer = "viewer"
+	RoleAdmin    = "admin"
+	RoleTeamLead = "teamlead"
+	RoleMember   = "member"
+	RoleViewer   = "viewer"
 )
+
+type TeamMemberInfo struct {
+	TeamID string
+	OrgID  string
+	Role   string
+}
+
+// ParseTeamMemberships reads email:team_id[:teamlead|member[:org_id]] entries.
+// A malformed entry is skipped and logged: a typo must never grant powers.
+func ParseTeamMemberships(raw string) map[string]TeamMemberInfo {
+	out := make(map[string]TeamMemberInfo)
+	if strings.TrimSpace(raw) == "" {
+		return out
+	}
+	parts := strings.FieldsFunc(raw, func(r rune) bool {
+		return r == ',' || r == ';' || r == ' ' || r == '\n' || r == '\t' || r == '\r'
+	})
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		fields := strings.Split(p, ":")
+		if len(fields) < 2 {
+			continue
+		}
+		email := strings.ToLower(strings.TrimSpace(fields[0]))
+		teamID := strings.TrimSpace(fields[1])
+		role := RoleMember
+		if len(fields) >= 3 && strings.TrimSpace(fields[2]) != "" {
+			role = strings.ToLower(strings.TrimSpace(fields[2]))
+		}
+		if email == "" || teamID == "" || (role != RoleTeamLead && role != RoleMember) {
+			log.Warn().Str("entry", p).Msg("TEAM_MEMBERSHIPS: entry skipped (want email:team_id[:teamlead|member[:org_id]])")
+			continue
+		}
+		var orgID string
+		if len(fields) >= 4 {
+			orgID = strings.TrimSpace(fields[3])
+		}
+		out[email] = TeamMemberInfo{
+			TeamID: teamID,
+			OrgID:  orgID,
+			Role:   role,
+		}
+	}
+	return out
+}
 
 // User is the authenticated caller.
 type User struct {
@@ -31,9 +81,27 @@ type User struct {
 	Name    string `json:"name"`
 	Picture string `json:"picture"`
 	Role    string `json:"role"`
+	OrgID   string `json:"org_id,omitempty"`
+	TeamID  string `json:"team_id,omitempty"`
 }
 
-func (u *User) CanWrite() bool { return u.Role == RoleAdmin }
+func (u *User) IsSuperAdmin() bool {
+	return u.Role == RoleAdmin
+}
+
+func (u *User) IsTeamLead() bool {
+	return u.Role == RoleTeamLead && u.TeamID != ""
+}
+
+func (u *User) IsViewer() bool { return u.Role == RoleViewer }
+
+// InTeam reports a team-scoped user: they see their own team, nothing global.
+func (u *User) InTeam() bool {
+	return (u.Role == RoleTeamLead || u.Role == RoleMember) && u.TeamID != ""
+}
+
+// CanReadGlobal: config, usage, nodes and every tenant's keys.
+func (u *User) CanReadGlobal() bool { return u.IsSuperAdmin() || u.IsViewer() }
 
 type sessionData struct {
 	Email   string `json:"e"`
@@ -51,15 +119,19 @@ type flowData struct {
 }
 
 type Options struct {
-	PublicURL      string
-	ClientID       string
-	ClientSecret   string
-	Admins         *Allowlist
-	Viewers        *Allowlist
-	Signer         *Signer
-	SessionTTL     time.Duration
-	SecureCookies  bool
-	InsecureNoAuth bool
+	PublicURL       string
+	ClientID        string
+	ClientSecret    string
+	Admins          *Allowlist
+	Viewers         *Allowlist
+	TeamMemberships map[string]TeamMemberInfo
+	DevUserRole     string
+	DevUserTeamID   string
+	DevUserOrgID    string
+	Signer          *Signer
+	SessionTTL      time.Duration
+	SecureCookies   bool
+	InsecureNoAuth  bool
 	// Issuer is the OIDC issuer; empty means Google.
 	Issuer string
 }
@@ -100,21 +172,42 @@ func (h *Handler) oauthConfig(ctx context.Context) (*oauth2.Config, *oidc.Provid
 	}, h.provider, nil
 }
 
-// roleFor is evaluated on every request so list changes apply at once.
-func (h *Handler) roleFor(email string) string {
-	switch {
-	case h.o.Admins.Match(email):
-		return RoleAdmin
-	case h.o.Viewers.Match(email):
-		return RoleViewer
+// memberFor is evaluated on every request so list changes apply at once.
+func (h *Handler) memberFor(email string) (role, teamID, orgID string) {
+	email = strings.ToLower(strings.TrimSpace(email))
+	// An explicit membership names one person, so it beats an allowlist
+	// pattern such as *@example.com that would otherwise make them admin.
+	if info, ok := h.o.TeamMemberships[email]; ok {
+		return info.Role, info.TeamID, info.OrgID
 	}
-	return ""
+	if h.o.Admins != nil && h.o.Admins.Match(email) {
+		return RoleAdmin, "", ""
+	}
+	if h.o.Viewers != nil && h.o.Viewers.Match(email) {
+		return RoleViewer, "", ""
+	}
+	return "", "", ""
+}
+
+func (h *Handler) roleFor(email string) string {
+	role, _, _ := h.memberFor(email)
+	return role
 }
 
 // UserFor returns the signed-in user for a request, if any.
 func (h *Handler) UserFor(r *http.Request) (*User, bool) {
 	if h.o.InsecureNoAuth {
-		return &User{Email: "dev@localhost", Name: "Local dev", Role: RoleAdmin}, true
+		role := h.o.DevUserRole
+		if role == "" {
+			role = RoleAdmin
+		}
+		return &User{
+			Email:  "dev@localhost",
+			Name:   "Local dev",
+			Role:   role,
+			TeamID: h.o.DevUserTeamID,
+			OrgID:  h.o.DevUserOrgID,
+		}, true
 	}
 	c, err := r.Cookie(sessionCookie)
 	if err != nil {
@@ -124,11 +217,18 @@ func (h *Handler) UserFor(r *http.Request) (*User, bool) {
 	if err := h.o.Signer.Open(c.Value, &s); err != nil || time.Now().Unix() >= s.Exp {
 		return nil, false
 	}
-	role := h.roleFor(s.Email)
+	role, teamID, orgID := h.memberFor(s.Email)
 	if role == "" {
 		return nil, false
 	}
-	return &User{Email: s.Email, Name: s.Name, Picture: s.Picture, Role: role}, true
+	return &User{
+		Email:   s.Email,
+		Name:    s.Name,
+		Picture: s.Picture,
+		Role:    role,
+		TeamID:  teamID,
+		OrgID:   orgID,
+	}, true
 }
 
 func randString(n int) string {

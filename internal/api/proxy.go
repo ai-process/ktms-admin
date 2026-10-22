@@ -8,8 +8,10 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/rs/zerolog/log"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 
@@ -31,7 +33,7 @@ func (s *Server) proxyConfig(w http.ResponseWriter, r *http.Request, _ *auth.Use
 	writeProto(w, resp)
 }
 
-func (s *Server) proxyListKeys(w http.ResponseWriter, r *http.Request, _ *auth.User) {
+func (s *Server) proxyListKeys(w http.ResponseWriter, r *http.Request, u *auth.User) {
 	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
 	defer cancel()
 	resp, err := s.admin.ListAPIKeys(ctx, &pb.ListAPIKeysRequest{})
@@ -39,10 +41,29 @@ func (s *Server) proxyListKeys(w http.ResponseWriter, r *http.Request, _ *auth.U
 		backendErr(w, err)
 		return
 	}
+	// A team user sees their own team's keys only; the guard ensures they have one.
+	if !u.CanReadGlobal() {
+		resp.Keys = keysOfTeam(resp.Keys, u.TeamID)
+	}
 	writeProto(w, resp)
 }
 
-func (s *Server) proxyMintKey(w http.ResponseWriter, r *http.Request, _ *auth.User) {
+// keysOfTeam filters keys to one team. teamID is never empty here: an empty
+// one would match every untenanted key, admin keys included.
+func keysOfTeam(keys []*pb.APIKeyInfo, teamID string) []*pb.APIKeyInfo {
+	var out []*pb.APIKeyInfo
+	if teamID == "" {
+		return out
+	}
+	for _, k := range keys {
+		if k.TeamId == teamID {
+			out = append(out, k)
+		}
+	}
+	return out
+}
+
+func (s *Server) proxyMintKey(w http.ResponseWriter, r *http.Request, u *auth.User) {
 	var req pb.MintAPIKeyRequest
 	if err := readProto(r, &req); err != nil {
 		backendErr(w, badBody(err))
@@ -50,6 +71,18 @@ func (s *Server) proxyMintKey(w http.ResponseWriter, r *http.Request, _ *auth.Us
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
 	defer cancel()
+	if !u.IsSuperAdmin() {
+		// A team lead mints generate keys for their own team; the org comes from
+		// the team record, not the membership entry, so the binding is consistent.
+		teamResp, err := s.admin.GetTeam(ctx, &pb.GetTeamRequest{Id: u.TeamID})
+		if err != nil {
+			backendErr(w, err)
+			return
+		}
+		req.TeamId = teamResp.GetTeam().GetId()
+		req.OrgId = teamResp.GetTeam().GetOrgId()
+		req.Scopes = []string{"generate"}
+	}
 	resp, err := s.admin.MintAPIKey(ctx, &req)
 	if err != nil {
 		backendErr(w, err)
@@ -58,10 +91,26 @@ func (s *Server) proxyMintKey(w http.ResponseWriter, r *http.Request, _ *auth.Us
 	writeProto(w, resp)
 }
 
-func (s *Server) proxyRevokeKey(w http.ResponseWriter, r *http.Request, _ *auth.User) {
+func (s *Server) proxyRevokeKey(w http.ResponseWriter, r *http.Request, u *auth.User) {
+	name := r.PathValue("name")
 	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
 	defer cancel()
-	if _, err := s.admin.RevokeAPIKey(ctx, &pb.RevokeAPIKeyRequest{Name: r.PathValue("name")}); err != nil {
+	if !u.IsSuperAdmin() {
+		keysResp, err := s.admin.ListAPIKeys(ctx, &pb.ListAPIKeysRequest{})
+		if err != nil {
+			backendErr(w, err)
+			return
+		}
+		isOwnTeam := false
+		for _, k := range keysOfTeam(keysResp.Keys, u.TeamID) {
+			isOwnTeam = isOwnTeam || k.Name == name
+		}
+		if !isOwnTeam {
+			writeErr(w, http.StatusForbidden, "forbidden", "cannot revoke keys belonging to other teams")
+			return
+		}
+	}
+	if _, err := s.admin.RevokeAPIKey(ctx, &pb.RevokeAPIKeyRequest{Name: name}); err != nil {
 		backendErr(w, err)
 		return
 	}
@@ -77,7 +126,7 @@ func hasField(m map[string]json.RawMessage, keys ...string) bool {
 	return false
 }
 
-func (s *Server) proxyUpsertModel(w http.ResponseWriter, r *http.Request, _ *auth.User) {
+func (s *Server) proxyUpsertModel(w http.ResponseWriter, r *http.Request, u *auth.User) {
 	raw, err := io.ReadAll(http.MaxBytesReader(nil, r.Body, 1<<20))
 	if err != nil {
 		backendErr(w, badBody(err))
@@ -125,7 +174,7 @@ func (s *Server) proxyUpsertModel(w http.ResponseWriter, r *http.Request, _ *aut
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-func (s *Server) proxyDeleteModel(w http.ResponseWriter, r *http.Request, _ *auth.User) {
+func (s *Server) proxyDeleteModel(w http.ResponseWriter, r *http.Request, u *auth.User) {
 	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
 	defer cancel()
 	if _, err := s.admin.DeleteModel(ctx, &pb.DeleteModelRequest{Id: r.PathValue("id")}); err != nil {
@@ -136,7 +185,7 @@ func (s *Server) proxyDeleteModel(w http.ResponseWriter, r *http.Request, _ *aut
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-func (s *Server) proxyReplaceRules(w http.ResponseWriter, r *http.Request, _ *auth.User) {
+func (s *Server) proxyReplaceRules(w http.ResponseWriter, r *http.Request, u *auth.User) {
 	raw, err := io.ReadAll(http.MaxBytesReader(nil, r.Body, 1<<20))
 	if err != nil {
 		backendErr(w, badBody(err))
@@ -195,7 +244,7 @@ func (s *Server) proxyListUserRateLimits(w http.ResponseWriter, r *http.Request,
 	writeProto(w, resp)
 }
 
-func (s *Server) proxySetUserRateLimit(w http.ResponseWriter, r *http.Request, _ *auth.User) {
+func (s *Server) proxySetUserRateLimit(w http.ResponseWriter, r *http.Request, u *auth.User) {
 	var spec pb.UserRateLimitSpec
 	if err := readProto(r, &spec); err != nil {
 		backendErr(w, badBody(err))
@@ -220,7 +269,7 @@ func (s *Server) proxySetUserRateLimit(w http.ResponseWriter, r *http.Request, _
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-func (s *Server) proxyDeleteUserRateLimit(w http.ResponseWriter, r *http.Request, _ *auth.User) {
+func (s *Server) proxyDeleteUserRateLimit(w http.ResponseWriter, r *http.Request, u *auth.User) {
 	q := r.URL.Query()
 	userID := strings.TrimSpace(q.Get("user_id"))
 	modelID := strings.TrimSpace(q.Get("model_id"))
@@ -237,7 +286,7 @@ func (s *Server) proxyDeleteUserRateLimit(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-func (s *Server) proxySetVendorKey(w http.ResponseWriter, r *http.Request, _ *auth.User) {
+func (s *Server) proxySetVendorKey(w http.ResponseWriter, r *http.Request, u *auth.User) {
 	var req pb.SetVendorKeyRequest
 	if err := readProto(r, &req); err != nil {
 		backendErr(w, badBody(err))
@@ -252,7 +301,7 @@ func (s *Server) proxySetVendorKey(w http.ResponseWriter, r *http.Request, _ *au
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-func (s *Server) proxyDeleteVendorKey(w http.ResponseWriter, r *http.Request, _ *auth.User) {
+func (s *Server) proxyDeleteVendorKey(w http.ResponseWriter, r *http.Request, u *auth.User) {
 	q := r.URL.Query()
 	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
 	defer cancel()
@@ -263,7 +312,7 @@ func (s *Server) proxyDeleteVendorKey(w http.ResponseWriter, r *http.Request, _ 
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-func (s *Server) proxyRotate(w http.ResponseWriter, r *http.Request, _ *auth.User) {
+func (s *Server) proxyRotate(w http.ResponseWriter, r *http.Request, u *auth.User) {
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
 	defer cancel()
 	resp, err := s.admin.RotateEncryption(ctx, &pb.RotateEncryptionRequest{})
@@ -569,7 +618,7 @@ func (s *Server) proxyListNodes(w http.ResponseWriter, r *http.Request, _ *auth.
 	writeProto(w, resp)
 }
 
-func (s *Server) proxyDrainNode(w http.ResponseWriter, r *http.Request, _ *auth.User) {
+func (s *Server) proxyDrainNode(w http.ResponseWriter, r *http.Request, u *auth.User) {
 	nodeID := r.PathValue("id")
 	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
 	defer cancel()
@@ -591,7 +640,7 @@ func (s *Server) proxyListNodeKeys(w http.ResponseWriter, r *http.Request, _ *au
 	writeProto(w, resp)
 }
 
-func (s *Server) proxyMintNodeKey(w http.ResponseWriter, r *http.Request, _ *auth.User) {
+func (s *Server) proxyMintNodeKey(w http.ResponseWriter, r *http.Request, u *auth.User) {
 	var req pb.MintNodeKeyRequest
 	if err := readProto(r, &req); err != nil {
 		backendErr(w, badBody(err))
@@ -607,7 +656,7 @@ func (s *Server) proxyMintNodeKey(w http.ResponseWriter, r *http.Request, _ *aut
 	writeProto(w, resp)
 }
 
-func (s *Server) proxyRevokeNodeKey(w http.ResponseWriter, r *http.Request, _ *auth.User) {
+func (s *Server) proxyRevokeNodeKey(w http.ResponseWriter, r *http.Request, u *auth.User) {
 	var req struct {
 		ID int64 `json:"id"`
 	}
@@ -622,6 +671,183 @@ func (s *Server) proxyRevokeNodeKey(w http.ResponseWriter, r *http.Request, _ *a
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// ---- organizations & teams ----
+
+func (s *Server) proxyListOrganizations(w http.ResponseWriter, r *http.Request, u *auth.User) {
+	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
+	defer cancel()
+	resp, err := s.admin.ListOrganizations(ctx, &pb.ListOrganizationsRequest{})
+	if err != nil {
+		backendErr(w, err)
+		return
+	}
+	writeProto(w, resp)
+}
+
+func (s *Server) proxyCreateOrganization(w http.ResponseWriter, r *http.Request, u *auth.User) {
+	var req pb.CreateOrganizationRequest
+	if err := readProto(r, &req); err != nil {
+		backendErr(w, badBody(err))
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
+	defer cancel()
+	resp, err := s.admin.CreateOrganization(ctx, &req)
+	if err != nil {
+		backendErr(w, err)
+		return
+	}
+	writeProto(w, resp)
+}
+
+func (s *Server) proxyDeleteOrganization(w http.ResponseWriter, r *http.Request, u *auth.User) {
+	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
+	defer cancel()
+	if _, err := s.admin.DeleteOrganization(ctx, &pb.DeleteOrganizationRequest{Id: r.PathValue("id")}); err != nil {
+		backendErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) proxyListTeams(w http.ResponseWriter, r *http.Request, u *auth.User) {
+	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
+	defer cancel()
+	if !u.CanReadGlobal() {
+		teamResp, err := s.admin.GetTeam(ctx, &pb.GetTeamRequest{Id: u.TeamID})
+		if err != nil {
+			backendErr(w, err)
+			return
+		}
+		writeProto(w, &pb.ListTeamsResponse{Teams: []*pb.Team{teamResp.Team}})
+		return
+	}
+	orgID := r.URL.Query().Get("org_id")
+	resp, err := s.admin.ListTeams(ctx, &pb.ListTeamsRequest{OrgId: orgID})
+	if err != nil {
+		backendErr(w, err)
+		return
+	}
+	writeProto(w, resp)
+}
+
+func (s *Server) proxyCreateTeam(w http.ResponseWriter, r *http.Request, u *auth.User) {
+	var req pb.CreateTeamRequest
+	if err := readProto(r, &req); err != nil {
+		backendErr(w, badBody(err))
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
+	defer cancel()
+	resp, err := s.admin.CreateTeam(ctx, &req)
+	if err != nil {
+		backendErr(w, err)
+		return
+	}
+	writeProto(w, resp)
+}
+
+func (s *Server) proxyGetTeam(w http.ResponseWriter, r *http.Request, u *auth.User) {
+	id := r.PathValue("id")
+	if !u.CanReadGlobal() && u.TeamID != id {
+		writeErr(w, http.StatusForbidden, "forbidden", "access to other teams is restricted")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
+	defer cancel()
+	resp, err := s.admin.GetTeam(ctx, &pb.GetTeamRequest{Id: id})
+	if err != nil {
+		backendErr(w, err)
+		return
+	}
+	writeProto(w, resp)
+}
+
+func (s *Server) proxyUpdateTeam(w http.ResponseWriter, r *http.Request, u *auth.User) {
+	var req pb.UpdateTeamRequest
+	if err := readProto(r, &req); err != nil {
+		backendErr(w, badBody(err))
+		return
+	}
+	req.Id = r.PathValue("id")
+	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
+	defer cancel()
+	resp, err := s.admin.UpdateTeam(ctx, &req)
+	if err != nil {
+		backendErr(w, err)
+		return
+	}
+	writeProto(w, resp)
+}
+
+func (s *Server) proxyDeleteTeam(w http.ResponseWriter, r *http.Request, u *auth.User) {
+	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
+	defer cancel()
+	if _, err := s.admin.DeleteTeam(ctx, &pb.DeleteTeamRequest{Id: r.PathValue("id")}); err != nil {
+		backendErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) proxyTeamCabinet(w http.ResponseWriter, r *http.Request, u *auth.User) {
+	id := r.PathValue("id")
+	if !u.CanReadGlobal() && u.TeamID != id {
+		writeErr(w, http.StatusForbidden, "forbidden", "access to other teams is restricted")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
+	defer cancel()
+	var (
+		wg       sync.WaitGroup
+		keysResp *pb.ListAPIKeysResponse
+		keysErr  error
+		spend    *pb.GetTeamSpendResponse
+		spendErr error
+	)
+	wg.Add(2)
+	go func() { defer wg.Done(); keysResp, keysErr = s.admin.ListAPIKeys(ctx, &pb.ListAPIKeysRequest{}) }()
+	go func() { defer wg.Done(); spend, spendErr = s.admin.GetTeamSpend(ctx, &pb.GetTeamSpendRequest{Id: id}) }()
+	teamResp, err := s.admin.GetTeam(ctx, &pb.GetTeamRequest{Id: id})
+	wg.Wait()
+	if err == nil {
+		err = keysErr
+	}
+	if err != nil {
+		backendErr(w, err)
+		return
+	}
+	team, err := protoValue(teamResp.Team)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal", "cannot encode response")
+		return
+	}
+	keys, err := protoValue(&pb.ListAPIKeysResponse{Keys: keysOfTeam(keysResp.Keys, id)})
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal", "cannot encode response")
+		return
+	}
+	out := map[string]any{"team": team, "keys": keys["keys"]}
+	// The gateway's own counter, the one its team cap refuses calls on. When it
+	// cannot be read the page says so instead of showing the whole budget as free.
+	switch {
+	case spendErr != nil:
+		log.Warn().Err(spendErr).Str("team", id).Msg("cabinet: team spend unavailable")
+		out["spend_error"] = "spend counters unavailable"
+	case !spend.GetMetered():
+		out["metered"] = false
+	default:
+		spent := float64(spend.GetSpentNanousd()) / 1e9
+		out["metered"] = true
+		out["current_spend_usd"] = spent
+		out["resets_at"] = spend.GetResetsAt().AsTime()
+		if limit := spend.GetLimitNanousd(); limit > 0 {
+			out["remaining_usd"] = max(0, float64(limit)/1e9-spent)
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // ---- prices (for cost estimates in the usage view) ----

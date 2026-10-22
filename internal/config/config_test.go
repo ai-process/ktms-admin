@@ -23,6 +23,11 @@ func TestValidate(t *testing.T) {
 			t.Errorf("%s: expected an error", name)
 		}
 	}
+	teamsOnly := ok
+	teamsOnly.AllowedEmails, teamsOnly.TeamMemberships = "", "lead@x.com:team-1:teamlead"
+	if err := teamsOnly.Validate(); err != nil {
+		t.Errorf("TEAM_MEMBERSHIPS alone rejected: %v", err)
+	}
 	dev := Config{PublicURL: "http://localhost:8080", InsecureNoAuth: true, ProxyAddr: "p:9090", ProxyAdminKey: "k"}
 	if err := dev.Validate(); err != nil {
 		t.Errorf("local insecure mode rejected: %v", err)

@@ -20,6 +20,10 @@ type Config struct {
 	GoogleClientSecret string
 	AllowedEmails      string
 	ViewerEmails       string
+	TeamMemberships    string // email:team_id:role[:org_id]
+	DevUserRole        string // admin | viewer | teamlead | member
+	DevUserTeamID      string
+	DevUserOrgID       string
 	SessionSecret      string
 	SessionTTL         time.Duration
 	// OIDCIssuer replaces Google as the identity provider (any OIDC provider that returns verified e-mails).
@@ -47,6 +51,10 @@ func Load() (*Config, error) {
 		GoogleClientSecret: env("GOOGLE_CLIENT_SECRET", ""),
 		AllowedEmails:      env("ALLOWED_EMAILS", ""),
 		ViewerEmails:       env("VIEWER_EMAILS", ""),
+		TeamMemberships:    env("TEAM_MEMBERSHIPS", ""),
+		DevUserRole:        env("DEV_USER_ROLE", ""),
+		DevUserTeamID:      env("DEV_USER_TEAM_ID", ""),
+		DevUserOrgID:       env("DEV_USER_ORG_ID", ""),
 		SessionSecret:      env("SESSION_SECRET", ""),
 		SessionTTL:         ttl,
 		OIDCIssuer:         env("OIDC_ISSUER", ""),
@@ -92,8 +100,8 @@ func (c *Config) Validate() error {
 		return errors.New("PUBLIC_URL is required (e.g. https://admin.example.com)")
 	case c.GoogleClientID == "" || c.GoogleClientSecret == "":
 		return errors.New("GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are required")
-	case strings.TrimSpace(c.AllowedEmails) == "" && strings.TrimSpace(c.ViewerEmails) == "":
-		return errors.New("ALLOWED_EMAILS is empty: nobody could sign in")
+	case strings.TrimSpace(c.AllowedEmails) == "" && strings.TrimSpace(c.ViewerEmails) == "" && strings.TrimSpace(c.TeamMemberships) == "":
+		return errors.New("ALLOWED_EMAILS, VIEWER_EMAILS and TEAM_MEMBERSHIPS are empty: nobody could sign in")
 	}
 	return nil
 }

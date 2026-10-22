@@ -109,21 +109,33 @@ message ChatMessage {
 
 // SchemaProperty mirrors the vendor-neutral llm.SchemaProperty.
 message SchemaProperty {
-  // "string" | "integer" | "boolean" | "object" | "array"
+  // "string" | "integer" | "number" | "boolean" | "object" | "array"
   string type = 1;
   string description = 2;
   map<string, SchemaProperty> properties = 3; // object types
   SchemaProperty items = 4; // array types
   repeated string required = 5; // object types
   bool nullable = 6;
+  // Allowed values. Enforced on string types; on other types (values as JSON
+  // text, e.g. "1") they reach the model as a hint in the description.
+  repeated string enum = 7;
+  // String format hint ("date-time", "email", "uuid", ...). Formats a vendor
+  // cannot enforce are passed to the model in the description instead.
+  string format = 8;
+  // Object types: false forbids keys beyond properties. Unset allows them;
+  // vendors with strict modes forbid them anyway, which still satisfies it.
+  optional bool additional_properties = 9;
 }
 
 // ResponseSchema mirrors llm.ResponseSchema (top level of the JSON schema).
+// Replies are checked against it, including enum values and forbidden extra
+// keys; a mismatch is retried once on the same model, then falls back.
 message ResponseSchema {
   string type = 1;
   map<string, SchemaProperty> properties = 2;
   SchemaProperty items = 3;
   repeated string required = 4;
+  optional bool additional_properties = 5;
 }
 
 message GenerateTextRequest {
@@ -207,7 +219,8 @@ message ModelInfo {
 }
 
 message ListModelsResponse {
-  // Models the calling client can call: those it holds a vendor key for, plus every local model (no key needed).
+  // Models the calling client can call: those it holds a vendor key for, plus every local model (no key needed),
+  // narrowed to its team's allowed_models.
   repeated ModelInfo models = 1;
 }
 
@@ -216,11 +229,16 @@ message GenerateTextStreamRequest {
 }
 
 // Error contract: retry only on UNAVAILABLE ("vendors_unavailable", or
-// "throttled:spend_unavailable" when spend limits fail closed).
+// "throttled:spend_unavailable" when spend limits fail closed). When vendors
+// paused every model in the chain with Retry-After, "vendors_unavailable"
+// carries RetryInfo with the soonest one frees up: wait that long first.
 // RESOURCE_EXHAUSTED = throttled ("throttled:rpm" | "throttled:budget_key" |
 // "throttled:budget_user") — back off, do not hot-retry; or a spend limit
-// ("throttled:spend_<key|user>_<daily|monthly>") with ErrorInfo
-// "insufficient_quota" and RetryInfo until the UTC period resets.
+// ("throttled:spend_<key|user>_<daily|monthly>", "throttled:spend_team_monthly")
+// with ErrorInfo "insufficient_quota" and RetryInfo until the UTC period resets.
+// PERMISSION_DENIED: the key's team may not use the model ("model \"<id>\" not
+// allowed for team", "no models in chain allowed for team", "model access
+// denied by team policy"); do not retry.
 // FAILED_PRECONDITION: "output_truncated" (raise max_output_tokens, do not
 // retry as-is), "no_capable_model", "no_vendor_key", "not_configured",
 // "batch not configured".

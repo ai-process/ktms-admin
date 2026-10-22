@@ -26,6 +26,11 @@ type fakeAdmin struct {
 	config           *pb.GetConfigResponse
 	userLimits       map[string]*pb.UserRateLimitSpec
 	deletedUserLimit *pb.DeleteUserRateLimitRequest
+	orgs             map[string]*pb.Organization
+	teams            map[string]*pb.Team
+	keys             []*pb.APIKeyInfo
+	lastMint         *pb.MintAPIKeyRequest
+	lastRevoke       string
 }
 
 type fakeData struct {
@@ -107,7 +112,76 @@ func (f *fakeAdmin) ReplaceRules(_ context.Context, r *pb.ReplaceRulesRequest, _
 	return &pb.ReplaceRulesResponse{}, nil
 }
 func (f *fakeAdmin) ListAPIKeys(context.Context, *pb.ListAPIKeysRequest, ...grpc.CallOption) (*pb.ListAPIKeysResponse, error) {
+	if f.keys != nil {
+		return &pb.ListAPIKeysResponse{Keys: f.keys}, nil
+	}
 	return &pb.ListAPIKeysResponse{Keys: []*pb.APIKeyInfo{{Name: "k", Scopes: []string{"generate"}}}}, nil
+}
+func (f *fakeAdmin) MintAPIKey(_ context.Context, r *pb.MintAPIKeyRequest, _ ...grpc.CallOption) (*pb.MintAPIKeyResponse, error) {
+	f.lastMint = r
+	info := &pb.APIKeyInfo{Name: r.Name, Scopes: r.Scopes, OrgId: r.OrgId, TeamId: r.TeamId}
+	f.keys = append(f.keys, info)
+	return &pb.MintAPIKeyResponse{PlainKey: "plain-" + r.Name}, nil
+}
+func (f *fakeAdmin) RevokeAPIKey(_ context.Context, r *pb.RevokeAPIKeyRequest, _ ...grpc.CallOption) (*pb.RevokeAPIKeyResponse, error) {
+	f.lastRevoke = r.Name
+	return &pb.RevokeAPIKeyResponse{}, nil
+}
+func (f *fakeAdmin) CreateOrganization(_ context.Context, r *pb.CreateOrganizationRequest, _ ...grpc.CallOption) (*pb.CreateOrganizationResponse, error) {
+	if f.orgs == nil {
+		f.orgs = make(map[string]*pb.Organization)
+	}
+	org := &pb.Organization{Id: "org-1", Name: r.Name}
+	f.orgs[org.Id] = org
+	return &pb.CreateOrganizationResponse{Organization: org}, nil
+}
+func (f *fakeAdmin) ListOrganizations(_ context.Context, _ *pb.ListOrganizationsRequest, _ ...grpc.CallOption) (*pb.ListOrganizationsResponse, error) {
+	var out []*pb.Organization
+	for _, o := range f.orgs {
+		out = append(out, o)
+	}
+	return &pb.ListOrganizationsResponse{Organizations: out}, nil
+}
+func (f *fakeAdmin) DeleteOrganization(_ context.Context, r *pb.DeleteOrganizationRequest, _ ...grpc.CallOption) (*pb.DeleteOrganizationResponse, error) {
+	delete(f.orgs, r.Id)
+	return &pb.DeleteOrganizationResponse{}, nil
+}
+func (f *fakeAdmin) CreateTeam(_ context.Context, r *pb.CreateTeamRequest, _ ...grpc.CallOption) (*pb.CreateTeamResponse, error) {
+	if f.teams == nil {
+		f.teams = make(map[string]*pb.Team)
+	}
+	team := &pb.Team{Id: "team-1", OrgId: r.OrgId, Name: r.Name, MonthlyBudgetUsd: r.MonthlyBudgetUsd, AllowedModels: r.AllowedModels}
+	f.teams[team.Id] = team
+	return &pb.CreateTeamResponse{Team: team}, nil
+}
+func (f *fakeAdmin) GetTeam(_ context.Context, r *pb.GetTeamRequest, _ ...grpc.CallOption) (*pb.GetTeamResponse, error) {
+	if t, ok := f.teams[r.Id]; ok {
+		return &pb.GetTeamResponse{Team: t}, nil
+	}
+	return nil, status.Error(codes.NotFound, "team not found")
+}
+func (f *fakeAdmin) ListTeams(_ context.Context, r *pb.ListTeamsRequest, _ ...grpc.CallOption) (*pb.ListTeamsResponse, error) {
+	var out []*pb.Team
+	for _, t := range f.teams {
+		if r.OrgId == "" || t.OrgId == r.OrgId {
+			out = append(out, t)
+		}
+	}
+	return &pb.ListTeamsResponse{Teams: out}, nil
+}
+func (f *fakeAdmin) UpdateTeam(_ context.Context, r *pb.UpdateTeamRequest, _ ...grpc.CallOption) (*pb.UpdateTeamResponse, error) {
+	t, ok := f.teams[r.Id]
+	if !ok {
+		return nil, status.Error(codes.NotFound, "team not found")
+	}
+	t.Name = r.Name
+	t.MonthlyBudgetUsd = r.MonthlyBudgetUsd
+	t.AllowedModels = r.AllowedModels
+	return &pb.UpdateTeamResponse{Team: t}, nil
+}
+func (f *fakeAdmin) DeleteTeam(_ context.Context, r *pb.DeleteTeamRequest, _ ...grpc.CallOption) (*pb.DeleteTeamResponse, error) {
+	delete(f.teams, r.Id)
+	return &pb.DeleteTeamResponse{}, nil
 }
 func (f *fakeAdmin) ListUserRateLimits(_ context.Context, r *pb.ListUserRateLimitsRequest, _ ...grpc.CallOption) (*pb.ListUserRateLimitsResponse, error) {
 	var out []*pb.UserRateLimitSpec
@@ -656,5 +730,107 @@ func TestUserRateLimitsAPI(t *testing.T) {
 	// 7. Delete with missing params returns 400
 	if w := call(h, "DELETE", "/api/proxy/user-rate-limits?user_id=alice", "", boss, csrf); w.Code != 400 {
 		t.Fatalf("missing model_id = %d, want 400", w.Code)
+	}
+}
+
+func TestMultiTenancy_EndpointsAndRBAC(t *testing.T) {
+	admins, _ := auth.ParseAllowlist("boss@x.com")
+	viewers, _ := auth.ParseAllowlist("*@view.com")
+	memberships := auth.ParseTeamMemberships("lead@corp.com:team-1:teamlead:org-1, dev@corp.com:team-1:member:org-1")
+	signer := auth.NewSigner("0123456789abcdef0123456789abcdef")
+	authHandler := auth.New(auth.Options{
+		PublicURL:       "https://admin.example.com",
+		Admins:          admins,
+		Viewers:         viewers,
+		TeamMemberships: memberships,
+		Signer:          signer,
+		SessionTTL:      time.Hour,
+	})
+
+	fa := &fakeAdmin{}
+	server := &Server{
+		cfg:   &config.Config{PublicURL: "https://admin.example.com"},
+		auth:  authHandler,
+		admin: fa,
+	}
+	handler := server.Handler()
+
+	bossCookie := sessionCookie(t, "boss@x.com")
+	leadCookie := sessionCookie(t, "lead@corp.com")
+	devCookie := sessionCookie(t, "dev@corp.com")
+
+	// 1. SuperAdmin creates Organization and Team
+	w := call(handler, "POST", "/api/proxy/organizations", `{"name":"Acme Corp"}`, bossCookie, csrf)
+	if w.Code != 200 {
+		t.Fatalf("create org failed: %d %s", w.Code, w.Body)
+	}
+	w = call(handler, "POST", "/api/proxy/teams", `{"org_id":"org-1","name":"Core Dev","monthly_budget_usd":500,"allowed_models":["m1"]}`, bossCookie, csrf)
+	if w.Code != 200 {
+		t.Fatalf("create team failed: %d %s", w.Code, w.Body)
+	}
+
+	// 2. TeamLead cannot create organization (403)
+	w = call(handler, "POST", "/api/proxy/organizations", `{"name":"Other"}`, leadCookie, csrf)
+	if w.Code != 403 {
+		t.Fatalf("expected 403 for teamlead create org, got %d", w.Code)
+	}
+
+	// 3. TeamLead can access own cabinet, but not another team's cabinet
+	w = call(handler, "GET", "/api/proxy/teams/team-1/cabinet", "", leadCookie, nil)
+	if w.Code != 200 {
+		t.Fatalf("expected 200 for team cabinet, got %d %s", w.Code, w.Body)
+	}
+	w = call(handler, "GET", "/api/proxy/teams/team-2/cabinet", "", leadCookie, nil)
+	if w.Code != 403 {
+		t.Fatalf("expected 403 for other team cabinet, got %d", w.Code)
+	}
+
+	// 4. Pre-populate another team's key and test list isolation
+	fa.keys = []*pb.APIKeyInfo{
+		{Name: "team1-key", TeamId: "team-1", Scopes: []string{"generate"}},
+		{Name: "team2-key", TeamId: "team-2", Scopes: []string{"generate"}},
+	}
+	w = call(handler, "GET", "/api/proxy/keys", "", leadCookie, nil)
+	if w.Code != 200 {
+		t.Fatalf("lead list keys failed: %d", w.Code)
+	}
+	if strings.Contains(w.Body.String(), "team2-key") || !strings.Contains(w.Body.String(), "team1-key") {
+		t.Fatalf("expected only team1-key in lead list, got %s", w.Body)
+	}
+
+	// 5. TeamLead mints key: team_id, org_id, and scopes must be forced
+	w = call(handler, "POST", "/api/proxy/keys", `{"name":"new-svc-key","scopes":["admin","generate"],"team_id":"fake-team"}`, leadCookie, csrf)
+	if w.Code != 200 {
+		t.Fatalf("lead mint key failed: %d %s", w.Code, w.Body)
+	}
+	if fa.lastMint.TeamId != "team-1" || fa.lastMint.OrgId != "org-1" {
+		t.Fatalf("expected team-1 and org-1 forced, got %+v", fa.lastMint)
+	}
+	if len(fa.lastMint.Scopes) != 1 || fa.lastMint.Scopes[0] != "generate" {
+		t.Fatalf("expected admin scope stripped, got %+v", fa.lastMint.Scopes)
+	}
+
+	// 6. TeamLead revoking keys: can revoke own team key, cannot revoke other team key
+	w = call(handler, "DELETE", "/api/proxy/keys/team2-key", "", leadCookie, csrf)
+	if w.Code != 403 {
+		t.Fatalf("expected 403 when revoking other team key, got %d", w.Code)
+	}
+	w = call(handler, "DELETE", "/api/proxy/keys/team1-key", "", leadCookie, csrf)
+	if w.Code != 200 {
+		t.Fatalf("expected 200 when revoking own team key, got %d %s", w.Code, w.Body)
+	}
+
+	// 7. Member: can view cabinet and keys, but cannot mint or revoke (403)
+	w = call(handler, "GET", "/api/proxy/teams/team-1/cabinet", "", devCookie, nil)
+	if w.Code != 200 {
+		t.Fatalf("dev cabinet failed: %d", w.Code)
+	}
+	w = call(handler, "POST", "/api/proxy/keys", `{"name":"dev-key"}`, devCookie, csrf)
+	if w.Code != 403 {
+		t.Fatalf("expected 403 for member mint key, got %d", w.Code)
+	}
+	w = call(handler, "DELETE", "/api/proxy/keys/team1-key", "", devCookie, csrf)
+	if w.Code != 403 {
+		t.Fatalf("expected 403 for member revoke key, got %d", w.Code)
 	}
 }
