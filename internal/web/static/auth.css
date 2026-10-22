@@ -31,6 +31,14 @@ h1 { margin: 0; font-size: 20px; font-weight: 650; }
 p { margin: 0; }
 .muted { color: var(--muted); margin-bottom: 8px; }
 .note { color: var(--muted); font-size: 14px; }
+.or { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 13px; }
+.or::before, .or::after { content: ""; flex: 1; border-top: 1px solid var(--line); }
+form { display: flex; flex-direction: column; gap: 10px; margin: 0; }
+label { display: flex; flex-direction: column; gap: 4px; font-size: 14px; font-weight: 550; }
+input {
+  padding: 9px 11px; border: 1px solid var(--line-strong); border-radius: 8px;
+  background: var(--surface); color: var(--text); font: inherit; font-weight: 400;
+}
 .error { padding: 10px 12px; border-radius: 8px; background: var(--bad-soft); color: var(--bad-text); }
 a { color: var(--accent); }
 .btn, button {

@@ -33,6 +33,9 @@ type Config struct {
 	TrustedProxyCIDRs string
 	AuthHeaderEmail   string
 	AuthHeaderName    string
+	// AdminUsers and AdminUsersFile turn on password sign-in: email:hash entries.
+	AdminUsers     string
+	AdminUsersFile string
 	// CFAccessTeamDomain and CFAccessAUD turn on Cloudflare Access.
 	CFAccessTeamDomain string
 	CFAccessAUD        string
@@ -80,6 +83,8 @@ func Load() (*Config, error) {
 		TrustedProxyCIDRs:  env("TRUSTED_PROXY_CIDRS", ""),
 		AuthHeaderEmail:    env("AUTH_HEADER_EMAIL", ""),
 		AuthHeaderName:     env("AUTH_HEADER_NAME", ""),
+		AdminUsers:         env("ADMIN_USERS", ""),
+		AdminUsersFile:     env("ADMIN_USERS_FILE", ""),
 		CFAccessTeamDomain: env("CF_ACCESS_TEAM_DOMAIN", ""),
 		CFAccessAUD:        env("CF_ACCESS_AUD", ""),
 		InsecureNoAuth:     env("INSECURE_NO_AUTH", "") == "true",
@@ -100,6 +105,7 @@ func Load() (*Config, error) {
 }
 
 func (c *Config) GoogleEnabled() bool   { return c.GoogleClientID != "" && c.GoogleClientSecret != "" }
+func (c *Config) PasswordEnabled() bool { return c.AdminUsers != "" || c.AdminUsersFile != "" }
 func (c *Config) HeaderEnabled() bool   { return c.TrustedProxyCIDRs != "" }
 func (c *Config) CFAccessEnabled() bool { return c.CFAccessTeamDomain != "" && c.CFAccessAUD != "" }
 
@@ -138,8 +144,8 @@ func (c *Config) Validate() error {
 		return errors.New("set both GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET, or neither")
 	case (c.CFAccessTeamDomain == "") != (c.CFAccessAUD == ""):
 		return errors.New("set both CF_ACCESS_TEAM_DOMAIN and CF_ACCESS_AUD, or neither")
-	case !c.GoogleEnabled() && !c.HeaderEnabled() && !c.CFAccessEnabled():
-		return errors.New("configure a sign-in method: GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET, TRUSTED_PROXY_CIDRS, or CF_ACCESS_TEAM_DOMAIN + CF_ACCESS_AUD")
+	case !c.GoogleEnabled() && !c.PasswordEnabled() && !c.HeaderEnabled() && !c.CFAccessEnabled():
+		return errors.New("configure a sign-in method: ADMIN_USERS (or ADMIN_USERS_FILE), GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET, TRUSTED_PROXY_CIDRS, or CF_ACCESS_TEAM_DOMAIN + CF_ACCESS_AUD")
 	case strings.TrimSpace(c.AllowedEmails) == "" && strings.TrimSpace(c.ViewerEmails) == "" && strings.TrimSpace(c.TeamMemberships) == "":
 		return errors.New("ALLOWED_EMAILS, VIEWER_EMAILS and TEAM_MEMBERSHIPS are empty: nobody could sign in")
 	}

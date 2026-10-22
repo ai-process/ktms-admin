@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -17,10 +18,14 @@ import (
 	"github.com/ai-process/llm-proxy-admin/internal/auth/cfaccess"
 	"github.com/ai-process/llm-proxy-admin/internal/auth/header"
 	"github.com/ai-process/llm-proxy-admin/internal/auth/oidc"
+	"github.com/ai-process/llm-proxy-admin/internal/auth/password"
 	"github.com/ai-process/llm-proxy-admin/internal/config"
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "hash-password" {
+		os.Exit(hashPassword(os.Args[2:]))
+	}
 	log.Logger = log.Output(os.Stderr)
 	cfg, err := config.Load()
 	if cfg != nil {
@@ -110,6 +115,17 @@ func main() {
 // order of the buttons on the sign-in page.
 func signInMethods(cfg *config.Config) ([]auth.Method, error) {
 	var methods []auth.Method
+	if cfg.PasswordEnabled() {
+		users, err := password.LoadUsers(cfg.AdminUsers, cfg.AdminUsersFile)
+		if err != nil {
+			return nil, err
+		}
+		m, err := password.New(users)
+		if err != nil {
+			return nil, fmt.Errorf("ADMIN_USERS: %w", err)
+		}
+		methods = append(methods, m)
+	}
 	if cfg.GoogleEnabled() {
 		methods = append(methods, oidc.New(oidc.Options{Issuer: cfg.OIDCIssuer, ClientID: cfg.GoogleClientID, ClientSecret: cfg.GoogleClientSecret}))
 	}
