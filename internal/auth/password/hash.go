@@ -74,7 +74,8 @@ func parseArgon(h string) (argonHash, error) {
 	if len(parts) != 6 || parts[1] != "argon2id" || parts[2] != fmt.Sprintf("v=%d", argon2.Version) {
 		return a, errBadHash
 	}
-	if _, err := fmt.Sscanf(parts[3], "m=%d,t=%d,p=%d", &a.memory, &a.time, &a.threads); err != nil {
+	_, err := fmt.Sscanf(parts[3], "m=%d,t=%d,p=%d", &a.memory, &a.time, &a.threads)
+	if err != nil || parts[3] != fmt.Sprintf("m=%d,t=%d,p=%d", a.memory, a.time, a.threads) {
 		return a, errBadHash
 	}
 	var err1, err2 error
@@ -82,7 +83,7 @@ func parseArgon(h string) (argonHash, error) {
 	a.key, err2 = base64.RawStdEncoding.DecodeString(parts[5])
 	// Bounds keep a hand-edited hash from asking for gigabytes per attempt.
 	if err1 != nil || err2 != nil || len(a.salt) < 8 || len(a.key) < 16 || len(a.key) > 64 ||
-		a.time < 1 || a.time > 10 || a.memory < 8*1024 || a.memory > 256*1024 || a.threads < 1 {
+		a.time < 1 || a.time > 10 || a.memory < 8*1024 || a.memory > 256*1024 || a.threads < 1 || a.threads > 16 {
 		return a, errBadHash
 	}
 	return a, nil

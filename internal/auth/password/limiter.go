@@ -23,39 +23,31 @@ type strikes struct {
 	seen  time.Time
 }
 
-const forgetAfter = time.Hour
+const (
+	forgetAfter = time.Hour
+	maxKeys     = 10000
+)
 
 func newLimiter(free int, max time.Duration) *limiter {
 	return &limiter{free: free, max: max, now: time.Now, m: map[string]*strikes{}}
 }
 
-// wait is how long key must wait before its next attempt; zero means go ahead.
-func (l *limiter) wait(key string) time.Duration {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	s := l.m[key]
-	if s == nil {
-		return 0
-	}
-	if d := s.until.Sub(l.now()); d > 0 {
-		return d
-	}
-	return 0
-}
-
-func (l *limiter) fail(key string) {
+// take counts an attempt for key before it runs, so parallel attempts cannot
+// all pass before the first failure lands. It returns how long key must wait
+// instead; zero means go ahead. A successful attempt is handed back with
+// forgive or reset.
+func (l *limiter) take(key string) time.Duration {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	now := l.now()
-	if len(l.m) > 10000 {
-		for k, s := range l.m {
-			if now.Sub(s.seen) > forgetAfter {
-				delete(l.m, k)
-			}
+	s := l.m[key]
+	if s != nil {
+		if d := s.until.Sub(now); d > 0 {
+			return d
 		}
 	}
-	s := l.m[key]
 	if s == nil || now.Sub(s.seen) > forgetAfter {
+		l.makeRoom(now)
 		s = &strikes{}
 		l.m[key] = s
 	}
@@ -67,6 +59,35 @@ func (l *limiter) fail(key string) {
 			d = time.Second << (over - 1)
 		}
 		s.until = now.Add(d)
+	}
+	return 0
+}
+
+// makeRoom drops stale keys and, if a flood of fresh ones still fills the
+// map, all of them: forgetting strikes beats unbounded memory.
+func (l *limiter) makeRoom(now time.Time) {
+	if len(l.m) < maxKeys {
+		return
+	}
+	for k, s := range l.m {
+		if now.Sub(s.seen) > forgetAfter {
+			delete(l.m, k)
+		}
+	}
+	if len(l.m) >= maxKeys {
+		clear(l.m)
+	}
+}
+
+// forgive takes back one counted attempt that succeeded.
+func (l *limiter) forgive(key string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if s := l.m[key]; s != nil {
+		s.fails--
+		if s.fails <= l.free {
+			s.until = time.Time{}
+		}
 	}
 }
 

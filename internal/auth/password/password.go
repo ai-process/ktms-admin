@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
+	"encoding/base64"
 	"fmt"
 	"html/template"
 	"net"
@@ -15,6 +16,8 @@ import (
 	"time"
 
 	"github.com/rs/zerolog/log"
+	"golang.org/x/crypto/argon2"
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/ai-process/llm-proxy-admin/internal/auth"
 )
@@ -43,7 +46,7 @@ func New(users map[string]string) (*Method, error) {
 		return nil, fmt.Errorf("no password users")
 	}
 	return &Method{
-		users: users, decoy: Hash(rand.Text()), slots: make(chan struct{}, 4),
+		users: users, decoy: decoyFor(users), slots: make(chan struct{}, 4),
 		// A shared front proxy makes every client one address, so its limit
 		// is looser and shorter than the per-account one.
 		byEmail: newLimiter(5, 5*time.Minute), byClient: newLimiter(30, time.Minute),
@@ -73,6 +76,7 @@ var formTmpl = template.Must(template.New("form").Parse(`<form method="post" act
 func (m *Method) Form(w http.ResponseWriter, r *http.Request, next string) template.HTML {
 	tok := rand.Text()
 	if err := m.host.SaveFlow(w, methodID, flowData{Token: tok}); err != nil {
+		log.Error().Err(err).Msg("password form")
 		return ""
 	}
 	var b bytes.Buffer
@@ -82,6 +86,7 @@ func (m *Method) Form(w http.ResponseWriter, r *http.Request, next string) templ
 		email = r.PostForm.Get("email")
 	}
 	if err := formTmpl.Execute(&b, map[string]string{"Token": tok, "Next": next, "Email": email}); err != nil {
+		log.Error().Err(err).Msg("password form")
 		return ""
 	}
 	return template.HTML(b.String())
@@ -107,7 +112,13 @@ func (m *Method) submit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	client := clientAddr(r)
-	if d := max(m.byEmail.wait(email), m.byClient.wait(client)); d > 0 {
+	d := m.byClient.take(client)
+	if d == 0 {
+		if d = m.byEmail.take(email); d > 0 {
+			m.byClient.forgive(client)
+		}
+	}
+	if d > 0 {
 		w.Header().Set("Retry-After", fmt.Sprint(int(d.Seconds())+1))
 		m.host.LoginPage(w, r, http.StatusTooManyRequests, next,
 			fmt.Sprintf("Too many failed attempts. Try again in %s.", d.Round(time.Second)+time.Second))
@@ -118,13 +129,12 @@ func (m *Method) submit(w http.ResponseWriter, r *http.Request) {
 		return // the client went away while waiting for a slot
 	}
 	if !ok {
-		m.byEmail.fail(email)
-		m.byClient.fail(client)
 		log.Warn().Str("email", email).Str("remote", client).Msg("password sign-in failed")
 		m.host.LoginPage(w, r, http.StatusUnauthorized, next, "Wrong e-mail or password.")
 		return
 	}
 	m.byEmail.reset(email)
+	m.byClient.forgive(client)
 	m.host.SignIn(w, r, methodID, auth.Identity{Email: email}, next)
 }
 
@@ -147,4 +157,24 @@ func clientAddr(r *http.Request) string {
 		return host
 	}
 	return r.RemoteAddr
+}
+
+// decoyFor hashes a random password the way the users' hashes are made, so an
+// unknown e-mail costs what a known one does. Mixed kinds still differ.
+func decoyFor(users map[string]string) string {
+	for _, h := range users {
+		if cost, err := bcrypt.Cost([]byte(h)); err == nil {
+			b, err := bcrypt.GenerateFromPassword([]byte(rand.Text()), cost)
+			if err == nil {
+				return string(b)
+			}
+		}
+		if a, err := parseArgon(h); err == nil {
+			key := argon2.IDKey([]byte(rand.Text()), a.salt, a.time, a.memory, a.threads, uint32(len(a.key)))
+			return fmt.Sprintf("$argon2id$v=%d$m=%d,t=%d,p=%d$%s$%s", argon2.Version, a.memory, a.time, a.threads,
+				base64.RawStdEncoding.EncodeToString(a.salt), base64.RawStdEncoding.EncodeToString(key))
+		}
+		break
+	}
+	return Hash(rand.Text())
 }

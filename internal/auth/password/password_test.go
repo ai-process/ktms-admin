@@ -1,11 +1,13 @@
 package password
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -58,25 +60,67 @@ func TestLimiter(t *testing.T) {
 	now := time.Unix(1000, 0)
 	l := newLimiter(2, 4*time.Second)
 	l.now = func() time.Time { return now }
-	l.fail("k")
-	l.fail("k")
-	if l.wait("k") != 0 {
+	if l.take("k") != 0 || l.take("k") != 0 {
 		t.Fatal("free attempts were limited")
 	}
+	// Each attempt over the free ones is let through and sets the next wait.
 	for i, want := range []time.Duration{time.Second, 2 * time.Second, 4 * time.Second, 4 * time.Second} {
-		l.fail("k")
-		if got := l.wait("k"); got != want {
-			t.Fatalf("failure %d: wait %v, want %v", i+3, got, want)
+		if l.take("k") != 0 {
+			t.Fatalf("attempt %d refused", i+3)
 		}
+		if got := l.take("k"); got != want {
+			t.Fatalf("after attempt %d: wait %v, want %v", i+3, got, want)
+		}
+		now = now.Add(want)
 	}
-	now = now.Add(5 * time.Second)
-	if l.wait("k") != 0 || l.wait("other") != 0 {
-		t.Fatal("the wait did not end")
+	if l.take("other") != 0 {
+		t.Fatal("keys are not independent")
 	}
 	l.reset("k")
-	l.fail("k")
-	if l.wait("k") != 0 {
+	if l.take("k") != 0 {
 		t.Fatal("reset kept the strikes")
+	}
+	l.forgive("k")
+	l.take("k")
+	l.take("k")
+	if l.take("k") != 0 {
+		t.Fatal("a forgiven attempt still counted")
+	}
+}
+
+func TestLimiterIsBounded(t *testing.T) {
+	l := newLimiter(1, time.Minute)
+	for i := 0; i < maxKeys+10; i++ {
+		l.take(fmt.Sprint(i))
+	}
+	if len(l.m) > maxKeys {
+		t.Fatalf("%d keys kept", len(l.m))
+	}
+}
+
+func TestParallelAttemptsAreLimited(t *testing.T) {
+	g := newRig(t)
+	const n = 40
+	codes := make(chan int, n)
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		tok, c := g.form(t)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			codes <- g.post(tok, c, "boss@x.com", "guess").Code
+		}()
+	}
+	wg.Wait()
+	close(codes)
+	tried := 0
+	for c := range codes {
+		if c == 401 {
+			tried++
+		}
+	}
+	if tried > 6 {
+		t.Fatalf("%d of %d parallel guesses were checked, want at most 6", tried, n)
 	}
 }
 
@@ -211,5 +255,16 @@ func TestBackoff(t *testing.T) {
 	w := g.try(t, "boss@x.com", "boss password!")
 	if w.Code != 429 || w.Header().Get("Retry-After") == "" || sessionOf(w) != nil {
 		t.Fatalf("attempt while backing off = %d", w.Code)
+	}
+}
+
+func TestDecoyMatchesTheUsersHashes(t *testing.T) {
+	b, _ := bcrypt.GenerateFromPassword([]byte("p"), bcrypt.MinCost)
+	if cost, err := bcrypt.Cost([]byte(decoyFor(map[string]string{"a@x.com": string(b)}))); err != nil || cost != bcrypt.MinCost {
+		t.Fatalf("bcrypt users got decoy cost %d, %v", cost, err)
+	}
+	slow := "$argon2id$v=19$m=32768,t=3,p=2$c2FsdHNhbHRzYWx0$a2V5a2V5a2V5a2V5a2V5a2V5a2V5a2V5"
+	if d := decoyFor(map[string]string{"a@x.com": slow}); !strings.HasPrefix(d, "$argon2id$v=19$m=32768,t=3,p=2$") {
+		t.Fatalf("argon2id decoy = %q", d)
 	}
 }
