@@ -1,4 +1,4 @@
-package auth
+package oidc
 
 import (
 	"crypto/rand"
@@ -12,6 +12,8 @@ import (
 
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
+
+	"github.com/ai-process/llm-proxy-admin/internal/auth"
 )
 
 // fakeIdP is a minimal OIDC provider: discovery, keys and a token endpoint
@@ -54,29 +56,55 @@ func newIdP(t *testing.T) *fakeIdP {
 	return p
 }
 
-func newFlowHandler(t *testing.T, idp *fakeIdP) *Handler {
-	t.Helper()
-	admins, _ := ParseAllowlist("boss@x.com")
-	viewers, _ := ParseAllowlist("*@view.com")
-	return New(Options{PublicURL: "http://localhost:8085", ClientID: "client-id", ClientSecret: "secret", Admins: admins, Viewers: viewers,
-		Signer: NewSigner("0123456789abcdef0123456789abcdef"), SessionTTL: time.Hour, Issuer: idp.srv.URL})
+type rig struct {
+	h   *auth.Handler
+	mux *http.ServeMux
 }
 
-// startLogin runs Login and returns the flow cookie plus the state and nonce sent to the IdP.
-func startLogin(t *testing.T, h *Handler, next string) (cookie *http.Cookie, state, nonce string) {
+func newRig(t *testing.T, idp *fakeIdP) *rig {
 	t.Helper()
+	admins, _ := auth.ParseAllowlist("boss@x.com")
+	viewers, _ := auth.ParseAllowlist("*@view.com")
+	h := auth.New(auth.Options{PublicURL: "http://localhost:8085", Admins: admins, Viewers: viewers,
+		Signer: auth.NewSigner("0123456789abcdef0123456789abcdef"), SessionTTL: time.Hour,
+		Methods: []auth.Method{New(Options{Issuer: idp.srv.URL, ClientID: "client-id", ClientSecret: "secret"})}})
+	mux := http.NewServeMux()
+	h.Mount(mux)
+	return &rig{h: h, mux: mux}
+}
+
+func (g *rig) get(path string, cookies ...*http.Cookie) *httptest.ResponseRecorder {
+	r := httptest.NewRequest("GET", path, nil)
+	for _, c := range cookies {
+		r.AddCookie(c)
+	}
 	w := httptest.NewRecorder()
-	h.Login(w, httptest.NewRequest("GET", "/auth/login?next="+url.QueryEscape(next), nil))
+	g.mux.ServeHTTP(w, r)
+	return w
+}
+
+// startLogin follows the sign-in page to the IdP and returns the flow cookie
+// plus the state and nonce sent there.
+func startLogin(t *testing.T, g *rig, next string) (cookie *http.Cookie, state, nonce string) {
+	t.Helper()
+	w := g.get("/auth/login?next=" + url.QueryEscape(next))
+	if w.Code != 302 || w.Header().Get("Location") != "/auth/oidc/start?next="+url.QueryEscape(next) {
+		t.Fatalf("login page should go straight to the only method: %d %q", w.Code, w.Header().Get("Location"))
+	}
+	w = g.get(w.Header().Get("Location"))
 	if w.Code != 302 {
-		t.Fatalf("login = %d %s", w.Code, w.Body)
+		t.Fatalf("start = %d %s", w.Code, w.Body)
 	}
 	loc, _ := url.Parse(w.Header().Get("Location"))
 	q := loc.Query()
 	if q.Get("code_challenge_method") != "S256" || q.Get("code_challenge") == "" || q.Get("nonce") == "" {
 		t.Fatalf("auth URL lacks PKCE/nonce: %s", loc)
 	}
+	if q.Get("redirect_uri") != "http://localhost:8085/auth/callback" {
+		t.Fatalf("redirect_uri = %q", q.Get("redirect_uri"))
+	}
 	for _, c := range w.Result().Cookies() {
-		if c.Name == flowCookie {
+		if c.Name == "lpa_login" {
 			cookie = c
 		}
 	}
@@ -86,17 +114,13 @@ func startLogin(t *testing.T, h *Handler, next string) (cookie *http.Cookie, sta
 	return cookie, q.Get("state"), q.Get("nonce")
 }
 
-func finish(h *Handler, c *http.Cookie, state string) *httptest.ResponseRecorder {
-	r := httptest.NewRequest("GET", "/auth/callback?code=abc&state="+url.QueryEscape(state), nil)
-	r.AddCookie(c)
-	w := httptest.NewRecorder()
-	h.Callback(w, r)
-	return w
+func finish(g *rig, c *http.Cookie, state string) *httptest.ResponseRecorder {
+	return g.get("/auth/callback?code=abc&state="+url.QueryEscape(state), c)
 }
 
 func TestFullSignInFlow(t *testing.T) {
 	idp := newIdP(t)
-	h := newFlowHandler(t, idp)
+	g := newRig(t, idp)
 
 	cases := []struct {
 		name   string
@@ -105,8 +129,8 @@ func TestFullSignInFlow(t *testing.T) {
 		want   int
 		role   string
 	}{
-		{"admin", map[string]any{"email": "boss@x.com", "email_verified": true, "name": "Boss"}, nil, 302, RoleAdmin},
-		{"viewer by wildcard", map[string]any{"email": "Pat@View.com", "email_verified": true}, nil, 302, RoleViewer},
+		{"admin", map[string]any{"email": "boss@x.com", "email_verified": true, "name": "Boss"}, nil, 302, auth.RoleAdmin},
+		{"viewer by wildcard", map[string]any{"email": "Pat@View.com", "email_verified": true}, nil, 302, auth.RoleViewer},
 		{"not allowed", map[string]any{"email": "eve@evil.com", "email_verified": true}, nil, 403, ""},
 		{"unverified email", map[string]any{"email": "boss@x.com", "email_verified": false}, nil, 403, ""},
 		{"wrong nonce", map[string]any{"email": "boss@x.com", "email_verified": true}, func(_, n *string) { *n = "other" }, 403, ""},
@@ -114,7 +138,7 @@ func TestFullSignInFlow(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			cookie, state, nonce := startLogin(t, h, "/models")
+			cookie, state, nonce := startLogin(t, g, "/models")
 			if c.mutate != nil {
 				c.mutate(&state, &nonce)
 			}
@@ -123,13 +147,13 @@ func TestFullSignInFlow(t *testing.T) {
 				claims[k] = v
 			}
 			idp.claim = claims
-			w := finish(h, cookie, state)
+			w := finish(g, cookie, state)
 			if w.Code != c.want {
 				t.Fatalf("callback = %d, want %d: %s", w.Code, c.want, w.Body)
 			}
 			var session *http.Cookie
 			for _, sc := range w.Result().Cookies() {
-				if sc.Name == sessionCookie && sc.Value != "" {
+				if sc.Name == "lpa_session" && sc.Value != "" {
 					session = sc
 				}
 			}
@@ -144,7 +168,7 @@ func TestFullSignInFlow(t *testing.T) {
 			}
 			r := httptest.NewRequest("GET", "/", nil)
 			r.AddCookie(session)
-			if u, ok := h.UserFor(r); !ok || u.Role != c.role {
+			if u, ok := g.h.UserFor(r); !ok || u.Role != c.role || u.Method != "oidc" {
 				t.Fatalf("session user = %+v ok=%v, want role %s", u, ok, c.role)
 			}
 		})
@@ -152,11 +176,23 @@ func TestFullSignInFlow(t *testing.T) {
 }
 
 func TestCallbackWithoutFlowCookie(t *testing.T) {
-	idp := newIdP(t)
-	h := newFlowHandler(t, idp)
-	w := httptest.NewRecorder()
-	h.Callback(w, httptest.NewRequest("GET", "/auth/callback?code=x&state=y", nil))
-	if w.Code != 400 {
+	g := newRig(t, newIdP(t))
+	if w := g.get("/auth/callback?code=x&state=y"); w.Code != 400 {
 		t.Errorf("replayed/unsolicited callback = %d", w.Code)
+	}
+}
+
+func TestFlowCookieIsSingleUse(t *testing.T) {
+	idp := newIdP(t)
+	g := newRig(t, idp)
+	cookie, state, nonce := startLogin(t, g, "/")
+	idp.claim = map[string]any{"nonce": nonce, "email": "boss@x.com", "email_verified": true}
+	w := finish(g, cookie, state)
+	cleared := false
+	for _, c := range w.Result().Cookies() {
+		cleared = cleared || (c.Name == "lpa_login" && c.MaxAge < 0)
+	}
+	if w.Code != 302 || !cleared {
+		t.Fatalf("callback = %d, flow cookie cleared = %v", w.Code, cleared)
 	}
 }

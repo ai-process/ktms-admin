@@ -14,6 +14,7 @@ import (
 
 	"github.com/ai-process/llm-proxy-admin/internal/api"
 	"github.com/ai-process/llm-proxy-admin/internal/auth"
+	"github.com/ai-process/llm-proxy-admin/internal/auth/oidc"
 	"github.com/ai-process/llm-proxy-admin/internal/config"
 )
 
@@ -43,7 +44,7 @@ func main() {
 		log.Fatal().Err(err).Msg("VIEWER_EMAILS")
 	}
 	if admins.AllowsAll() || viewers.AllowsAll() {
-		log.Warn().Msg("an allowlist contains *@*: every verified Google account can sign in")
+		log.Warn().Msg("an allowlist contains *@*: everyone who can sign in gets access")
 	}
 	secret := cfg.SessionSecret
 	switch {
@@ -59,12 +60,16 @@ func main() {
 
 	memberships := auth.ParseTeamMemberships(cfg.TeamMemberships)
 
+	var methods []auth.Method
+	if cfg.GoogleClientID != "" {
+		methods = append(methods, oidc.New(oidc.Options{Issuer: cfg.OIDCIssuer, ClientID: cfg.GoogleClientID, ClientSecret: cfg.GoogleClientSecret}))
+	}
 	handler := auth.New(auth.Options{
-		PublicURL: cfg.PublicURL, ClientID: cfg.GoogleClientID, ClientSecret: cfg.GoogleClientSecret,
+		PublicURL: cfg.PublicURL, Methods: methods,
 		Admins: admins, Viewers: viewers, TeamMemberships: memberships,
 		DevUserRole: cfg.DevUserRole, DevUserTeamID: cfg.DevUserTeamID, DevUserOrgID: cfg.DevUserOrgID,
 		Signer: auth.NewSigner(secret), SessionTTL: cfg.SessionTTL,
-		SecureCookies: cfg.SecureCookies(), InsecureNoAuth: cfg.InsecureNoAuth, Issuer: cfg.OIDCIssuer,
+		SecureCookies: cfg.SecureCookies(), InsecureNoAuth: cfg.InsecureNoAuth,
 	})
 	srv, closeBackends, err := api.New(cfg, handler)
 	if err != nil {
