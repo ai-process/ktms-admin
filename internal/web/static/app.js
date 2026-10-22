@@ -1435,7 +1435,7 @@ pages.cabinet = async (root) => {
     const remaining = num(cab.remaining_usd);
     const spendPct = known && budget > 0 ? Math.min(100, (spend / budget) * 100) : 0;
     const isExhausted = capped && remaining <= 0;
-    const unknownSpend = cab.spend_error ? 'Spend counters unavailable' : 'Not metered (no Redis on the gateway)';
+    const unknownSpend = cab.spend_error ? 'Spend counters unavailable' : budget > 0 ? 'Not metered (no Redis on the gateway)' : 'Counted only while a budget is set';
 
     headContainer.replaceChildren(
       h('div', {},
