@@ -91,7 +91,10 @@ function emptyRow(cols, text) { return h('tr', {}, h('td', { colspan: cols, clas
 const S = { me: null, health: null, cfg: null };
 const isSuperAdmin = () => S.me?.user?.role === 'admin' || S.me?.user?.role === 'superadmin';
 const isTeamLead = () => S.me?.user?.role === 'teamlead';
-const isMember = () => S.me?.user?.role === 'member' || S.me?.user?.role === 'viewer';
+const isViewer = () => S.me?.user?.role === 'viewer';
+const isMember = () => S.me?.user?.role === 'member';
+// Viewers read everything an admin reads; team users only their own team.
+const canReadGlobal = () => isSuperAdmin() || isViewer();
 const canWrite = () => isSuperAdmin();
 
 async function loadCfg(force) {
@@ -1423,11 +1426,15 @@ pages.cabinet = async (root) => {
 
     const t = cab.team || {};
     const keys = cab.keys || [];
+    // Spend is the gateway's own counter; when it is unknown the page says so
+    // rather than showing the whole budget as available.
+    const known = cab.metered === true;
     const spend = num(cab.current_spend_usd);
     const budget = num(t.monthly_budget_usd);
     const remaining = num(cab.remaining_usd);
-    const spendPct = budget > 0 ? Math.min(100, (spend / budget) * 100) : 0;
-    const isExhausted = budget > 0 && remaining <= 0;
+    const spendPct = known && budget > 0 ? Math.min(100, (spend / budget) * 100) : 0;
+    const isExhausted = known && budget > 0 && remaining <= 0;
+    const unknownSpend = cab.spend_error ? 'Spend counters unavailable' : 'Not metered (no Redis on the gateway)';
 
     headContainer.replaceChildren(
       h('div', {},
@@ -1445,8 +1452,8 @@ pages.cabinet = async (root) => {
 
     tilesContainer.replaceChildren(
       tile('Monthly Budget', budget > 0 ? usd(budget) : 'Unlimited', 'Configured spend cap'),
-      tile('Current Month Spend', usd(spend), spendSubtitle),
-      tile('Budget Remaining', budget > 0 ? usd(remaining) : 'Unlimited', isExhausted ? 'Quota exhausted! Requests blocked.' : 'Available for this month'),
+      tile('Current Month Spend', known ? usd(spend) : '—', known ? spendSubtitle : unknownSpend),
+      tile('Budget Remaining', budget > 0 ? (known ? usd(remaining) : '—') : 'Unlimited', isExhausted ? 'Quota exhausted! Requests blocked.' : (known ? 'Available for this month' : unknownSpend)),
       tile('Team Keys', fmt(keys.filter((k) => !k.disabled).length), `${keys.length} total keys minted`)
     );
 
@@ -1522,11 +1529,12 @@ function route() {
 }
 
 const available = (n) => {
-  if (n === 'cabinet') return !!(S.me?.user?.team_id || isSuperAdmin());
-  if (n === 'tenants') return isSuperAdmin();
-  if (n === 'models' || n === 'rules' || n === 'limits' || n === 'nodes') return isSuperAdmin();
-  if (n === 'usage') return !!S.me?.features?.usage && isSuperAdmin();
-  if (n === 'keys' || n === 'playground' || n === 'judge') return !!S.me?.features?.proxy;
+  if (n === 'cabinet') return !!(S.me?.user?.team_id || canReadGlobal());
+  if (n === 'tenants' || n === 'models' || n === 'rules' || n === 'limits' || n === 'nodes') return canReadGlobal();
+  if (n === 'usage') return !!S.me?.features?.usage && canReadGlobal();
+  if (n === 'keys') return !!S.me?.features?.proxy;
+  // Run with the console's own key, outside any team's models and budget.
+  if (n === 'playground' || n === 'judge') return !!S.me?.features?.proxy && isSuperAdmin();
   return false;
 };
 
@@ -1548,7 +1556,7 @@ function shell() {
   const app = document.getElementById('app');
 
   const navItems = [];
-  if (isSuperAdmin()) {
+  if (canReadGlobal()) {
     if (f.usage) {
       navItems.push(h('div', { class: 'grp' }, 'Spend'), link('usage', 'Usage'));
     }
@@ -1567,8 +1575,8 @@ function shell() {
         link('limits', 'Limits'),
         link('keys', 'Keys'),
         link('nodes', 'Nodes'),
-        link('playground', 'Playground'),
-        link('judge', 'Judge')
+        isSuperAdmin() && link('playground', 'Playground'),
+        isSuperAdmin() && link('judge', 'Judge')
       );
     }
   } else {
@@ -1578,10 +1586,7 @@ function shell() {
       link('cabinet', 'Team Cabinet')
     );
     if (f.proxy) {
-      navItems.push(
-        link('keys', 'API Keys'),
-        link('playground', 'Playground')
-      );
+      navItems.push(link('keys', 'API Keys'));
     }
   }
 

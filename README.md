@@ -88,6 +88,13 @@ the door. An empty list admits nobody.
 - **`ALLOWED_EMAILS`** get full access.
 - **`VIEWER_EMAILS`** (optional, same syntax) get a read-only console: they see usage, models, rules and keys
   but every change is refused. An address in both lists is an admin.
+- **`TEAM_MEMBERSHIPS`** (optional) gives named people a workspace for one KTMS team:
+  `email:team_id[:teamlead|member[:org_id]]`, separated by commas, semicolons or spaces. They see only their
+  team: its cabinet (budget, spend as the gateway counts it, allowed models) and its keys. A `teamlead` also
+  mints and revokes the team's keys (always `generate` scope, bound to the team and its organization).
+  Neither sees other tenants, global config or usage, nor uses Playground or Judge, which run on the
+  console's own key outside the team's limits. An entry here overrides a matching `ALLOWED_EMAILS` pattern;
+  entries without a team or with another role are skipped and logged.
 - Lists are checked on **every request**, so removing someone ends their access immediately, not at
   session expiry. Changing a list needs a restart.
 
@@ -113,6 +120,8 @@ All settings are environment variables; see [`env.example`](env.example).
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | – | **Required** (unless `INSECURE_NO_AUTH`). |
 | `ALLOWED_EMAILS` | – | Admin patterns. At least one of the two lists must be non-empty. |
 | `VIEWER_EMAILS` | empty | Read-only patterns. |
+| `TEAM_MEMBERSHIPS` | empty | Team workspaces: `email:team_id[:teamlead\|member[:org_id]]`, see [Who may sign in](#who-may-sign-in). |
+| `DEV_USER_ROLE`, `DEV_USER_TEAM_ID`, `DEV_USER_ORG_ID` | admin | With `INSECURE_NO_AUTH`: the role and team of the local dev user. |
 | `SESSION_SECRET` | random | 32+ characters; signs the session cookie. Set it, or sessions end at every restart and cannot be shared between replicas. |
 | `SESSION_TTL` | `12h` | Session lifetime. |
 | `LLM_PROXY_ADDR` | empty | `host:port` of llm-proxy's gRPC endpoint. |

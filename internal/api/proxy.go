@@ -39,25 +39,26 @@ func (s *Server) proxyListKeys(w http.ResponseWriter, r *http.Request, u *auth.U
 		backendErr(w, err)
 		return
 	}
-	// Multi-tenancy isolation: non-superadmin users only see keys belonging to their team.
-	if !u.IsSuperAdmin() {
-		var filtered []*pb.APIKeyInfo
-		for _, k := range resp.Keys {
-			if k.TeamId == u.TeamID {
-				filtered = append(filtered, k)
-			}
-		}
-		resp.Keys = filtered
-	} else if teamID := r.URL.Query().Get("team_id"); teamID != "" {
-		var filtered []*pb.APIKeyInfo
-		for _, k := range resp.Keys {
-			if k.TeamId == teamID {
-				filtered = append(filtered, k)
-			}
-		}
-		resp.Keys = filtered
+	// A team user sees their own team's keys only; the guard ensures they have one.
+	if !u.CanReadGlobal() {
+		resp.Keys = keysOfTeam(resp.Keys, u.TeamID)
 	}
 	writeProto(w, resp)
+}
+
+// keysOfTeam filters keys to one team. teamID is never empty here: an empty
+// one would match every untenanted key, admin keys included.
+func keysOfTeam(keys []*pb.APIKeyInfo, teamID string) []*pb.APIKeyInfo {
+	var out []*pb.APIKeyInfo
+	if teamID == "" {
+		return out
+	}
+	for _, k := range keys {
+		if k.TeamId == teamID {
+			out = append(out, k)
+		}
+	}
+	return out
 }
 
 func (s *Server) proxyMintKey(w http.ResponseWriter, r *http.Request, u *auth.User) {
@@ -66,22 +67,20 @@ func (s *Server) proxyMintKey(w http.ResponseWriter, r *http.Request, u *auth.Us
 		backendErr(w, badBody(err))
 		return
 	}
-	if !u.IsSuperAdmin() {
-		if !u.IsTeamLead() {
-			writeErr(w, http.StatusForbidden, "forbidden", "only team leads can mint keys")
-			return
-		}
-		if u.TeamID == "" {
-			writeErr(w, http.StatusForbidden, "forbidden", "user has no assigned team")
-			return
-		}
-		// Force team association and restrict scope to generate.
-		req.TeamId = u.TeamID
-		req.OrgId = u.OrgID
-		req.Scopes = []string{"generate"}
-	}
 	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
 	defer cancel()
+	if !u.IsSuperAdmin() {
+		// A team lead mints generate keys for their own team; the org comes from
+		// the team record, not the membership entry, so the binding is consistent.
+		teamResp, err := s.admin.GetTeam(ctx, &pb.GetTeamRequest{Id: u.TeamID})
+		if err != nil {
+			backendErr(w, err)
+			return
+		}
+		req.TeamId = teamResp.GetTeam().GetId()
+		req.OrgId = teamResp.GetTeam().GetOrgId()
+		req.Scopes = []string{"generate"}
+	}
 	resp, err := s.admin.MintAPIKey(ctx, &req)
 	if err != nil {
 		backendErr(w, err)
@@ -95,21 +94,14 @@ func (s *Server) proxyRevokeKey(w http.ResponseWriter, r *http.Request, u *auth.
 	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
 	defer cancel()
 	if !u.IsSuperAdmin() {
-		if !u.IsTeamLead() {
-			writeErr(w, http.StatusForbidden, "forbidden", "only team leads can revoke keys")
-			return
-		}
 		keysResp, err := s.admin.ListAPIKeys(ctx, &pb.ListAPIKeysRequest{})
 		if err != nil {
 			backendErr(w, err)
 			return
 		}
-		var isOwnTeam bool
-		for _, k := range keysResp.Keys {
-			if k.Name == name && k.TeamId == u.TeamID {
-				isOwnTeam = true
-				break
-			}
+		isOwnTeam := false
+		for _, k := range keysOfTeam(keysResp.Keys, u.TeamID) {
+			isOwnTeam = isOwnTeam || k.Name == name
 		}
 		if !isOwnTeam {
 			writeErr(w, http.StatusForbidden, "forbidden", "cannot revoke keys belonging to other teams")
@@ -773,11 +765,7 @@ func (s *Server) proxyDeleteOrganization(w http.ResponseWriter, r *http.Request,
 func (s *Server) proxyListTeams(w http.ResponseWriter, r *http.Request, u *auth.User) {
 	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
 	defer cancel()
-	if !u.IsSuperAdmin() {
-		if u.TeamID == "" {
-			writeProto(w, &pb.ListTeamsResponse{})
-			return
-		}
+	if !u.CanReadGlobal() {
 		teamResp, err := s.admin.GetTeam(ctx, &pb.GetTeamRequest{Id: u.TeamID})
 		if err != nil {
 			backendErr(w, err)
@@ -817,7 +805,7 @@ func (s *Server) proxyCreateTeam(w http.ResponseWriter, r *http.Request, u *auth
 
 func (s *Server) proxyGetTeam(w http.ResponseWriter, r *http.Request, u *auth.User) {
 	id := r.PathValue("id")
-	if !u.IsSuperAdmin() && u.TeamID != id {
+	if !u.CanReadGlobal() && u.TeamID != id {
 		writeErr(w, http.StatusForbidden, "forbidden", "access to other teams is restricted")
 		return
 	}
@@ -868,7 +856,7 @@ func (s *Server) proxyDeleteTeam(w http.ResponseWriter, r *http.Request, u *auth
 
 func (s *Server) proxyTeamCabinet(w http.ResponseWriter, r *http.Request, u *auth.User) {
 	id := r.PathValue("id")
-	if !u.IsSuperAdmin() && u.TeamID != id {
+	if !u.CanReadGlobal() && u.TeamID != id {
 		writeErr(w, http.StatusForbidden, "forbidden", "access to other teams is restricted")
 		return
 	}
@@ -884,43 +872,28 @@ func (s *Server) proxyTeamCabinet(w http.ResponseWriter, r *http.Request, u *aut
 		backendErr(w, err)
 		return
 	}
-	var teamKeys []*pb.APIKeyInfo
-	keyNames := make(map[string]bool)
-	for _, k := range keysResp.Keys {
-		if k.TeamId == id {
-			teamKeys = append(teamKeys, k)
-			keyNames[k.Name] = true
-			keyNames["svc:"+k.Name] = true
+	out := map[string]any{
+		"team": teamResp.Team,
+		"keys": keysOfTeam(keysResp.Keys, id),
+	}
+	// The gateway's own counter, the one its team cap refuses calls on. When it
+	// cannot be read the page says so instead of showing the whole budget as free.
+	spend, err := s.admin.GetTeamSpend(ctx, &pb.GetTeamSpendRequest{Id: id})
+	switch {
+	case err != nil:
+		out["spend_error"] = "spend counters unavailable"
+	case !spend.GetMetered():
+		out["metered"] = false
+	default:
+		spent := float64(spend.GetSpentNanousd()) / 1e9
+		out["metered"] = true
+		out["current_spend_usd"] = spent
+		out["resets_at"] = spend.GetResetsAt().AsTime()
+		if limit := spend.GetLimitNanousd(); limit > 0 {
+			out["remaining_usd"] = max(0, float64(limit)/1e9-spent)
 		}
 	}
-
-	var spendUSD float64
-	if s.usage != nil && len(teamKeys) > 0 {
-		now := time.Now().UTC()
-		startOfMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
-		rows, err := s.usage.Summary(ctx, startOfMonth, now.Add(24*time.Hour), "project")
-		if err == nil {
-			prices := s.modelPrices(ctx)
-			for _, row := range rows {
-				if keyNames[row.ProjectID] || keyNames[row.UserID] {
-					p := prices[row.Model]
-					spendUSD += (float64(row.TokensInput)*p.In + float64(row.TokensOutput)*p.Out) / 1e6
-				}
-			}
-		}
-	}
-
-	remainingUSD := teamResp.Team.MonthlyBudgetUsd - spendUSD
-	if remainingUSD < 0 {
-		remainingUSD = 0
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"team":              teamResp.Team,
-		"keys":              teamKeys,
-		"current_spend_usd": spendUSD,
-		"remaining_usd":     remainingUSD,
-	})
+	writeJSON(w, http.StatusOK, out)
 }
 
 // ---- prices (for cost estimates in the usage view) ----

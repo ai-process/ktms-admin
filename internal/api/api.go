@@ -99,45 +99,46 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /auth/logout", s.auth.Logout)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, 200, map[string]string{"status": "ok"}) })
 
-	api := func(pattern string, h func(w http.ResponseWriter, r *http.Request, u *auth.User)) {
-		mux.HandleFunc(pattern, s.guard(h))
+	api := func(pattern string, pol policy, h func(w http.ResponseWriter, r *http.Request, u *auth.User)) {
+		mux.HandleFunc(pattern, s.guard(pol, h))
 	}
-	api("GET /api/me", s.me)
-	api("GET /api/health", s.health)
+	api("GET /api/me", anyUser, s.me)
+	api("GET /api/health", anyUser, s.health)
 	if s.admin != nil {
-		api("GET /api/proxy/config", s.proxyConfig)
-		api("GET /api/proxy/keys", s.proxyListKeys)
-		api("POST /api/proxy/keys", s.proxyMintKey)
-		api("DELETE /api/proxy/keys/{name}", s.proxyRevokeKey)
-		api("GET /api/proxy/nodes", s.proxyListNodes)
-		api("POST /api/proxy/nodes/{id}/drain", s.proxyDrainNode)
-		api("GET /api/proxy/node-keys", s.proxyListNodeKeys)
-		api("POST /api/proxy/node-keys", s.proxyMintNodeKey)
-		api("POST /api/proxy/node-keys/revoke", s.proxyRevokeNodeKey)
-		api("PUT /api/proxy/models/{id}", s.proxyUpsertModel)
-		api("DELETE /api/proxy/models/{id}", s.proxyDeleteModel)
-		api("PUT /api/proxy/rules", s.proxyReplaceRules)
-		api("GET /api/proxy/user-rate-limits", s.proxyListUserRateLimits)
-		api("PUT /api/proxy/user-rate-limits", s.proxySetUserRateLimit)
-		api("DELETE /api/proxy/user-rate-limits", s.proxyDeleteUserRateLimit)
-		api("PUT /api/proxy/vendor-keys", s.proxySetVendorKey)
-		api("DELETE /api/proxy/vendor-keys", s.proxyDeleteVendorKey)
-		api("GET /api/proxy/organizations", s.proxyListOrganizations)
-		api("POST /api/proxy/organizations", s.proxyCreateOrganization)
-		api("DELETE /api/proxy/organizations/{id}", s.proxyDeleteOrganization)
-		api("GET /api/proxy/teams", s.proxyListTeams)
-		api("POST /api/proxy/teams", s.proxyCreateTeam)
-		api("GET /api/proxy/teams/{id}", s.proxyGetTeam)
-		api("PUT /api/proxy/teams/{id}", s.proxyUpdateTeam)
-		api("DELETE /api/proxy/teams/{id}", s.proxyDeleteTeam)
-		api("GET /api/proxy/teams/{id}/cabinet", s.proxyTeamCabinet)
-		api("POST /api/proxy/rotate", s.proxyRotate)
-		api("POST /api/proxy/playground", s.proxyPlayground)
-		api("POST /api/proxy/playground/stream", s.proxyPlaygroundStream)
-		api("POST /api/proxy/judge", s.proxyJudge)
+		api("GET /api/proxy/config", globalRead, s.proxyConfig)
+		api("GET /api/proxy/keys", team, s.proxyListKeys)
+		api("POST /api/proxy/keys", team, s.proxyMintKey)
+		api("DELETE /api/proxy/keys/{name}", team, s.proxyRevokeKey)
+		api("GET /api/proxy/nodes", globalRead, s.proxyListNodes)
+		api("POST /api/proxy/nodes/{id}/drain", adminOnly, s.proxyDrainNode)
+		api("GET /api/proxy/node-keys", globalRead, s.proxyListNodeKeys)
+		api("POST /api/proxy/node-keys", adminOnly, s.proxyMintNodeKey)
+		api("POST /api/proxy/node-keys/revoke", adminOnly, s.proxyRevokeNodeKey)
+		api("PUT /api/proxy/models/{id}", adminOnly, s.proxyUpsertModel)
+		api("DELETE /api/proxy/models/{id}", adminOnly, s.proxyDeleteModel)
+		api("PUT /api/proxy/rules", adminOnly, s.proxyReplaceRules)
+		api("GET /api/proxy/user-rate-limits", globalRead, s.proxyListUserRateLimits)
+		api("PUT /api/proxy/user-rate-limits", adminOnly, s.proxySetUserRateLimit)
+		api("DELETE /api/proxy/user-rate-limits", adminOnly, s.proxyDeleteUserRateLimit)
+		api("PUT /api/proxy/vendor-keys", adminOnly, s.proxySetVendorKey)
+		api("DELETE /api/proxy/vendor-keys", adminOnly, s.proxyDeleteVendorKey)
+		api("GET /api/proxy/organizations", globalRead, s.proxyListOrganizations)
+		api("POST /api/proxy/organizations", adminOnly, s.proxyCreateOrganization)
+		api("DELETE /api/proxy/organizations/{id}", adminOnly, s.proxyDeleteOrganization)
+		api("GET /api/proxy/teams", team, s.proxyListTeams)
+		api("POST /api/proxy/teams", adminOnly, s.proxyCreateTeam)
+		api("GET /api/proxy/teams/{id}", team, s.proxyGetTeam)
+		api("PUT /api/proxy/teams/{id}", adminOnly, s.proxyUpdateTeam)
+		api("DELETE /api/proxy/teams/{id}", adminOnly, s.proxyDeleteTeam)
+		api("GET /api/proxy/teams/{id}/cabinet", team, s.proxyTeamCabinet)
+		api("POST /api/proxy/rotate", adminOnly, s.proxyRotate)
+		// The console's own gateway key runs these, outside any team's models and budget.
+		api("POST /api/proxy/playground", adminOnly, s.proxyPlayground)
+		api("POST /api/proxy/playground/stream", adminOnly, s.proxyPlaygroundStream)
+		api("POST /api/proxy/judge", adminOnly, s.proxyJudge)
 	}
 	if s.usage != nil {
-		api("GET /api/usage", s.usageReport)
+		api("GET /api/usage", globalRead, s.usageReport)
 	}
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "not_found", "no such endpoint (is that backend configured?)")
@@ -175,18 +176,47 @@ type handler func(w http.ResponseWriter, r *http.Request, u *auth.User)
 // guard requires a session and, for anything that changes state, an admin
 // role, a same-origin Origin (when sent) and the custom CSRF header that a
 // cross-site form or fetch cannot set without a CORS preflight.
-func (s *Server) guard(h handler) http.HandlerFunc {
+// policy is who may reach a route at all; handlers of team routes then narrow
+// a team user to their own team. Anything not listed is denied.
+type policy int
+
+const (
+	anyUser    policy = iota // /api/me, /api/health
+	globalRead               // every tenant's data: admins and viewers
+	adminOnly                // global changes, and calls made with the console's own key
+	team                     // admins and viewers globally, team users for their own team
+)
+
+func (p policy) allows(u *auth.User, write bool) bool {
+	switch p {
+	case anyUser:
+		return !write
+	case globalRead:
+		return !write && u.CanReadGlobal()
+	case adminOnly:
+		return u.IsSuperAdmin()
+	case team:
+		if write {
+			return u.IsSuperAdmin() || u.IsTeamLead()
+		}
+		return u.CanReadGlobal() || u.InTeam()
+	}
+	return false
+}
+
+func (s *Server) guard(pol policy, h handler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		u, ok := s.auth.UserFor(r)
 		if !ok {
 			writeErr(w, http.StatusUnauthorized, "unauthenticated", "sign in first")
 			return
 		}
-		if r.Method != http.MethodGet && r.Method != http.MethodHead {
-			if !u.CanWrite() {
-				writeErr(w, http.StatusForbidden, "read_only", "your account is read-only")
-				return
-			}
+		write := r.Method != http.MethodGet && r.Method != http.MethodHead
+		if !pol.allows(u, write) {
+			writeErr(w, http.StatusForbidden, "forbidden", "your account may not do this")
+			return
+		}
+		if write {
 			if r.Header.Get(csrfHeader) != csrfValue {
 				writeErr(w, http.StatusForbidden, "csrf", "missing "+csrfHeader+" header")
 				return

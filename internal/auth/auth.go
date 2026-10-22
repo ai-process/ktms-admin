@@ -34,15 +34,17 @@ type TeamMemberInfo struct {
 	Role   string
 }
 
-// ParseTeamMemberships parses comma- or whitespace-separated entries:
-// email:team_id:role[:org_id] or email:team_id
+// ParseTeamMemberships parses comma-, semicolon- or whitespace-separated
+// entries email:team_id[:role[:org_id]], role "teamlead" or "member" (default).
+// An entry without a team or with another role is skipped and logged: a typo
+// must never sign someone in with powers nobody meant to grant.
 func ParseTeamMemberships(raw string) map[string]TeamMemberInfo {
 	out := make(map[string]TeamMemberInfo)
 	if strings.TrimSpace(raw) == "" {
 		return out
 	}
 	parts := strings.FieldsFunc(raw, func(r rune) bool {
-		return r == ',' || r == '\n' || r == '\t' || r == ';'
+		return r == ',' || r == ';' || r == ' ' || r == '\n' || r == '\t' || r == '\r'
 	})
 	for _, p := range parts {
 		p = strings.TrimSpace(p)
@@ -58,6 +60,10 @@ func ParseTeamMemberships(raw string) map[string]TeamMemberInfo {
 		role := RoleMember
 		if len(fields) >= 3 && strings.TrimSpace(fields[2]) != "" {
 			role = strings.ToLower(strings.TrimSpace(fields[2]))
+		}
+		if email == "" || teamID == "" || (role != RoleTeamLead && role != RoleMember) {
+			log.Warn().Str("entry", p).Msg("TEAM_MEMBERSHIPS: entry skipped (want email:team_id[:teamlead|member[:org_id]])")
+			continue
 		}
 		var orgID string
 		if len(fields) >= 4 {
@@ -87,8 +93,18 @@ func (u *User) IsSuperAdmin() bool {
 }
 
 func (u *User) IsTeamLead() bool {
-	return u.Role == RoleTeamLead
+	return u.Role == RoleTeamLead && u.TeamID != ""
 }
+
+func (u *User) IsViewer() bool { return u.Role == RoleViewer }
+
+// InTeam reports a team-scoped user: they see their own team, nothing global.
+func (u *User) InTeam() bool {
+	return (u.Role == RoleTeamLead || u.Role == RoleMember) && u.TeamID != ""
+}
+
+// CanReadGlobal: config, usage, nodes and every tenant's keys.
+func (u *User) CanReadGlobal() bool { return u.IsSuperAdmin() || u.IsViewer() }
 
 func (u *User) CanWrite() bool {
 	return u.IsSuperAdmin() || u.IsTeamLead()
@@ -170,11 +186,13 @@ func (h *Handler) oauthConfig(ctx context.Context) (*oauth2.Config, *oidc.Provid
 // memberFor is evaluated on every request so list changes apply at once.
 func (h *Handler) memberFor(email string) (role, teamID, orgID string) {
 	email = strings.ToLower(strings.TrimSpace(email))
-	if h.o.Admins != nil && h.o.Admins.Match(email) {
-		return RoleAdmin, "", ""
-	}
+	// An explicit membership names one person, so it beats an allowlist
+	// pattern such as *@example.com that would otherwise make them admin.
 	if info, ok := h.o.TeamMemberships[email]; ok {
 		return info.Role, info.TeamID, info.OrgID
+	}
+	if h.o.Admins != nil && h.o.Admins.Match(email) {
+		return RoleAdmin, "", ""
 	}
 	if h.o.Viewers != nil && h.o.Viewers.Match(email) {
 		return RoleViewer, "", ""
@@ -195,11 +213,11 @@ func (h *Handler) UserFor(r *http.Request) (*User, bool) {
 			role = RoleAdmin
 		}
 		return &User{
-			Email:   "dev@localhost",
-			Name:    "Local dev",
-			Role:    role,
-			TeamID:  h.o.DevUserTeamID,
-			OrgID:   h.o.DevUserOrgID,
+			Email:  "dev@localhost",
+			Name:   "Local dev",
+			Role:   role,
+			TeamID: h.o.DevUserTeamID,
+			OrgID:  h.o.DevUserOrgID,
 		}, true
 	}
 	c, err := r.Cookie(sessionCookie)
