@@ -6,6 +6,18 @@ Notable changes to ktms-admin. The format follows
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-10-22
+
+The first stable release, paired with Keystone. The Model Switchboard. (KTMS) 1.0: ktms-admin
+1.x works with every KTMS 1.x release (see [Compatibility](README.md#compatibility)).
+
+### Changed
+- The image is published only as `coyl/ktms-admin`. `coyl/llm-proxy-admin` stays at 0.4.0: switch
+  your deployments to the new name.
+- The binary and Go module are named `ktms-admin`; the console's internal CSRF header value
+  changed with them (the server and its UI ship together).
+- The README names the gateway Keystone. The Model Switchboard. (KTMS).
+
 ## [0.4.0] - 2026-10-22
 
 Needs KTMS 0.14.0 or later for the tenant and team pages.

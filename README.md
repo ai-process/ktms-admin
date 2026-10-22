@@ -1,10 +1,10 @@
-# KTMS admin (llm-proxy-admin)
+# Keystone. The Model Switchboard. (KTMS): admin console
 
 [![Test](https://github.com/ai-process/ktms-admin/actions/workflows/test.yml/badge.svg)](https://github.com/ai-process/ktms-admin/actions/workflows/test.yml)
 [![Docker image](https://img.shields.io/docker/v/coyl/ktms-admin?label=docker%20hub&sort=semver)](https://hub.docker.com/r/coyl/ktms-admin)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-A web console for [**KTMS**](https://github.com/ai-process/ktms) (the LLM gateway, formerly llm-proxy) and
+A web console for [**Keystone**](https://github.com/ai-process/ktms), the LLM gateway (KTMS, formerly llm-proxy), and
 [**light-tokenmeter**](https://github.com/ai-process/light-tokenmeter) (the usage meter). Use it with both,
 or with either one alone.
 
@@ -240,14 +240,15 @@ unmodified except that hooks import `./preact.mjs`). Restart the server after ed
 at build time. `proto/` is a copy of KTMS's
 protocol, so the console talks to it over gRPC without importing its code.
 
-Layout: `cmd/llm-proxy-admin` (entrypoint), `internal/auth` (Google sign-in, sessions, allowlists),
+Layout: `cmd/ktms-admin` (entrypoint), `internal/auth` (Google sign-in, sessions, allowlists),
 `internal/api` (JSON API and guards), `internal/usage` (light-tokenmeter client and the greedy/worthy
 analysis), `internal/config`, `internal/web` (embedded UI).
 
 ### Releasing
 
-Pushing a `vX.Y.Z` tag publishes a multi-arch image to Docker Hub as `coyl/ktms-admin:<version>`, also
-under the old name `coyl/llm-proxy-admin`. `latest` moves only with the newest stable release. The
+Pushing a `vX.Y.Z` tag publishes a multi-arch image to Docker Hub as `coyl/ktms-admin:<version>`.
+`latest` moves only with the newest stable release. The old name `coyl/llm-proxy-admin` gets no new
+releases after 0.4.0. The
 image is signed with keyless cosign and carries an SBOM and provenance (verify like the gateway's
 images, see [KTMS SECURITY.md](https://github.com/ai-process/ktms/blob/main/SECURITY.md#verifying-a-release),
 with `docker-publish.yml` of `ai-process/ktms-admin`). The repository needs the secrets

@@ -85,7 +85,7 @@ function Shell() {
   useEffect(() => { document.title = (name ? PAGES[name].title + ' · ' : '') + 'KTMS admin'; }, [name]);
   const u = session.me.user;
   const Page = name && PAGES[name].comp;
-  const signOut = async () => { await fetch('/auth/logout', { method: 'POST', headers: { 'X-Requested-With': 'llm-proxy-admin' } }); location.href = '/'; };
+  const signOut = async () => { await fetch('/auth/logout', { method: 'POST', headers: { 'X-Requested-With': 'ktms-admin' } }); location.href = '/'; };
 
   return html`<div class="shell">
     <nav class=${cx('side', open && 'open')} aria-label="Main">

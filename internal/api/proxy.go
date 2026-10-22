@@ -16,9 +16,9 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 
-	"github.com/ai-process/llm-proxy-admin/internal/auth"
-	pb "github.com/ai-process/llm-proxy-admin/internal/gen/ktms/v1"
-	"github.com/ai-process/llm-proxy-admin/internal/usage"
+	"github.com/ai-process/ktms-admin/internal/auth"
+	pb "github.com/ai-process/ktms-admin/internal/gen/ktms/v1"
+	"github.com/ai-process/ktms-admin/internal/usage"
 )
 
 const rpcTimeout = 20 * time.Second
@@ -1015,7 +1015,7 @@ func (s *Server) fetchPrices(ctx context.Context) (map[string]usage.Price, error
 	return out, nil
 }
 
-// modelPrices returns cached prices, or nil when llm-proxy is not configured
+// modelPrices returns cached prices, or nil when the gateway is not configured
 // or unreachable; the usage view then simply omits cost.
 func (s *Server) modelPrices(ctx context.Context) map[string]usage.Price {
 	if s.priceFetch == nil {

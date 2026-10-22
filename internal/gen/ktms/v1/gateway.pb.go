@@ -1297,12 +1297,15 @@ type GenerateTextRequest struct {
 	ModelOverride         string            `protobuf:"bytes,10,opt,name=model_override,json=modelOverride,proto3" json:"model_override,omitempty"`                          // exact registry model id; bypasses rules, not throttles
 	Tools                 []*Tool           `protobuf:"bytes,11,rep,name=tools,proto3" json:"tools,omitempty"`
 	ToolChoice            *ToolChoice       `protobuf:"bytes,12,opt,name=tool_choice,json=toolChoice,proto3" json:"tool_choice,omitempty"`
-	EnableCache           bool              `protobuf:"varint,13,opt,name=enable_cache,json=enableCache,proto3" json:"enable_cache,omitempty"`             // opt-in response cache: exact match, plus latent-similarity match when the proxy enables SEMANTIC_CACHE_ENABLED
-	Placement             string            `protobuf:"bytes,14,opt,name=placement,proto3" json:"placement,omitempty"`                                     // "nodes_first" | "nodes_only" | "cloud_first" | "cloud_only"
-	AutoRoute             bool              `protobuf:"varint,15,opt,name=auto_route,json=autoRoute,proto3" json:"auto_route,omitempty"`                   // true when smart model routing is enabled
-	EffortSpecified       bool              `protobuf:"varint,16,opt,name=effort_specified,json=effortSpecified,proto3" json:"effort_specified,omitempty"` // true when effort was explicitly pinned by caller
-	unknownFields         protoimpl.UnknownFields
-	sizeCache             protoimpl.SizeCache
+	EnableCache           bool              `protobuf:"varint,13,opt,name=enable_cache,json=enableCache,proto3" json:"enable_cache,omitempty"` // opt-in response cache: exact match, plus latent-similarity match when the proxy enables SEMANTIC_CACHE_ENABLED (that match is experimental)
+	Placement             string            `protobuf:"bytes,14,opt,name=placement,proto3" json:"placement,omitempty"`                         // "nodes_first" | "nodes_only" | "cloud_first" | "cloud_only"
+	// auto_route picks the chain by effort and placement instead of a model
+	// name. With effort_specified false a judge picks the effort, and that
+	// choice is experimental; with it true the routing is stable.
+	AutoRoute       bool `protobuf:"varint,15,opt,name=auto_route,json=autoRoute,proto3" json:"auto_route,omitempty"`
+	EffortSpecified bool `protobuf:"varint,16,opt,name=effort_specified,json=effortSpecified,proto3" json:"effort_specified,omitempty"` // true when effort was explicitly pinned by caller
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *GenerateTextRequest) Reset() {
@@ -1576,10 +1579,10 @@ type GenerateTextResponse struct {
 	MatchedRule    string                 `protobuf:"bytes,5,opt,name=matched_rule,json=matchedRule,proto3" json:"matched_rule,omitempty"`          // rule name, "" on model_override
 	Details        []*Choice              `protobuf:"bytes,6,rep,name=details,proto3" json:"details,omitempty"`
 	Cached         bool                   `protobuf:"varint,7,opt,name=cached,proto3" json:"cached,omitempty"`                             // true when served from cache
-	RouteMode      string                 `protobuf:"bytes,8,opt,name=route_mode,json=routeMode,proto3" json:"route_mode,omitempty"`       // "direct" | "override" | "auto-judge" | "auto-default" | "auto-effort"
+	RouteMode      string                 `protobuf:"bytes,8,opt,name=route_mode,json=routeMode,proto3" json:"route_mode,omitempty"`       // "direct" | "override" | "auto-judge" | "auto-default" | "auto-effort"; "auto-judge" and "auto-default" are experimental
 	Placement      string                 `protobuf:"bytes,9,opt,name=placement,proto3" json:"placement,omitempty"`                        // "nodes_first" | "nodes_only" | "cloud_first" | "cloud_only"
-	JudgeScore     float64                `protobuf:"fixed64,10,opt,name=judge_score,json=judgeScore,proto3" json:"judge_score,omitempty"` // score or confidence from judge evaluation
-	JudgeModel     string                 `protobuf:"bytes,11,opt,name=judge_model,json=judgeModel,proto3" json:"judge_model,omitempty"`   // judge model id if judge was invoked
+	JudgeScore     float64                `protobuf:"fixed64,10,opt,name=judge_score,json=judgeScore,proto3" json:"judge_score,omitempty"` // Experimental: score or confidence from judge evaluation
+	JudgeModel     string                 `protobuf:"bytes,11,opt,name=judge_model,json=judgeModel,proto3" json:"judge_model,omitempty"`   // Experimental: judge model id if judge was invoked
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -1701,10 +1704,10 @@ type GenerateTextChunk struct {
 	MatchedRule    string                 `protobuf:"bytes,6,opt,name=matched_rule,json=matchedRule,proto3" json:"matched_rule,omitempty"`
 	ToolCallChunks []*ToolCallChunk       `protobuf:"bytes,7,rep,name=tool_call_chunks,json=toolCallChunks,proto3" json:"tool_call_chunks,omitempty"`
 	Cached         bool                   `protobuf:"varint,8,opt,name=cached,proto3" json:"cached,omitempty"`                             // true when served from cache
-	RouteMode      string                 `protobuf:"bytes,9,opt,name=route_mode,json=routeMode,proto3" json:"route_mode,omitempty"`       // "direct" | "override" | "auto-judge" | "auto-default" | "auto-effort"
+	RouteMode      string                 `protobuf:"bytes,9,opt,name=route_mode,json=routeMode,proto3" json:"route_mode,omitempty"`       // "direct" | "override" | "auto-judge" | "auto-default" | "auto-effort"; "auto-judge" and "auto-default" are experimental
 	Placement      string                 `protobuf:"bytes,10,opt,name=placement,proto3" json:"placement,omitempty"`                       // "nodes_first" | "nodes_only" | "cloud_first" | "cloud_only"
-	JudgeScore     float64                `protobuf:"fixed64,11,opt,name=judge_score,json=judgeScore,proto3" json:"judge_score,omitempty"` // score or confidence from judge evaluation
-	JudgeModel     string                 `protobuf:"bytes,12,opt,name=judge_model,json=judgeModel,proto3" json:"judge_model,omitempty"`   // judge model id if judge was invoked
+	JudgeScore     float64                `protobuf:"fixed64,11,opt,name=judge_score,json=judgeScore,proto3" json:"judge_score,omitempty"` // Experimental: score or confidence from judge evaluation
+	JudgeModel     string                 `protobuf:"bytes,12,opt,name=judge_model,json=judgeModel,proto3" json:"judge_model,omitempty"`   // Experimental: judge model id if judge was invoked
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -2555,6 +2558,7 @@ func (x *JudgeAnswer) GetLegend() map[string]string {
 
 // EmbeddingPart is a latent state vector (JEPA, CLIP, ...) judged as-is, so a
 // caller with an encoder never has to decode it back to text first.
+// Experimental: may change in a 1.x minor release (README, API stability).
 type EmbeddingPart struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Values        []float32              `protobuf:"fixed32,1,rep,packed,name=values,proto3" json:"values,omitempty"`
@@ -4549,8 +4553,8 @@ const file_ktms_v1_gateway_proto_rawDesc = "" +
 	"\vSubmitBatch\x12\x1b.ktms.v1.SubmitBatchRequest\x1a\x1c.ktms.v1.SubmitBatchResponse\x124\n" +
 	"\bGetBatch\x12\x18.ktms.v1.GetBatchRequest\x1a\x0e.ktms.v1.Batch\x12W\n" +
 	"\x10ListBatchResults\x12 .ktms.v1.ListBatchResultsRequest\x1a!.ktms.v1.ListBatchResultsResponse\x12H\n" +
-	"\vCancelBatch\x12\x1b.ktms.v1.CancelBatchRequest\x1a\x1c.ktms.v1.CancelBatchResponseB\x9b\x01\n" +
-	"\vcom.ktms.v1B\fGatewayProtoP\x01ZAgithub.com/ai-process/llm-proxy-admin/internal/gen/ktms/v1;ktmsv1\xa2\x02\x03KXX\xaa\x02\aKtms.V1\xca\x02\aKtms\\V1\xe2\x02\x13Ktms\\V1\\GPBMetadata\xea\x02\bKtms::V1b\x06proto3"
+	"\vCancelBatch\x12\x1b.ktms.v1.CancelBatchRequest\x1a\x1c.ktms.v1.CancelBatchResponseB\x96\x01\n" +
+	"\vcom.ktms.v1B\fGatewayProtoP\x01Z<github.com/ai-process/ktms-admin/internal/gen/ktms/v1;ktmsv1\xa2\x02\x03KXX\xaa\x02\aKtms.V1\xca\x02\aKtms\\V1\xe2\x02\x13Ktms\\V1\\GPBMetadata\xea\x02\bKtms::V1b\x06proto3"
 
 var (
 	file_ktms_v1_gateway_proto_rawDescOnce sync.Once

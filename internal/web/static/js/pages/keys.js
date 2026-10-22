@@ -140,7 +140,7 @@ function VendorKeys({ vendorKeys, error, keys, loading, reload }) {
   const setKey = () => openDialog(VendorForm, { names: active }).then((ok) => ok && reload());
   const rotate = () => confirmAction({
     title: 'Re-encrypt vendor keys?', confirm: 'Re-encrypt', danger: false,
-    text: 'Re-encrypts every stored vendor credential with the newest key in LLMPROXY_ENCRYPTION_KEYS. Do this after adding a key version.',
+    text: 'Re-encrypts every stored vendor credential with the newest key in KTMS_ENCRYPTION_KEYS. Do this after adding a key version.',
     action: async () => { const r = await api('POST', '/api/proxy/rotate'); toast(`Re-encrypted ${r?.reencrypted ?? 0} credentials`); },
   });
   const remove = (v) => confirmAction({
