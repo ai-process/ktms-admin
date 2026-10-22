@@ -339,7 +339,8 @@ func (s *Server) proxySetSpendLimit(w http.ResponseWriter, r *http.Request, _ *a
 
 func (s *Server) proxyDeleteSpendLimit(w http.ResponseWriter, r *http.Request, _ *auth.User) {
 	q := r.URL.Query()
-	st, sid, period := strings.TrimSpace(q.Get("subject_type")), strings.TrimSpace(q.Get("subject_id")), strings.TrimSpace(q.Get("period"))
+	// subject_id is matched exactly: a delete must name the row that exists.
+	st, sid, period := q.Get("subject_type"), q.Get("subject_id"), q.Get("period")
 	if msg := checkSpendSubject(st, sid, period); msg != "" {
 		writeErr(w, http.StatusBadRequest, "bad_request", msg)
 		return
@@ -816,10 +817,18 @@ func (s *Server) proxyCreateTeam(w http.ResponseWriter, r *http.Request, u *auth
 	writeProto(w, resp)
 }
 
+// canAccessTeam lets global readers see any team and team users only their own.
+func canAccessTeam(w http.ResponseWriter, u *auth.User, id string) bool {
+	if u.CanReadGlobal() || u.TeamID == id {
+		return true
+	}
+	writeErr(w, http.StatusForbidden, "forbidden", "access to other teams is restricted")
+	return false
+}
+
 func (s *Server) proxyGetTeam(w http.ResponseWriter, r *http.Request, u *auth.User) {
 	id := r.PathValue("id")
-	if !u.CanReadGlobal() && u.TeamID != id {
-		writeErr(w, http.StatusForbidden, "forbidden", "access to other teams is restricted")
+	if !canAccessTeam(w, u, id) {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
@@ -861,8 +870,7 @@ func (s *Server) proxyDeleteTeam(w http.ResponseWriter, r *http.Request, u *auth
 
 func (s *Server) proxyTeamCabinet(w http.ResponseWriter, r *http.Request, u *auth.User) {
 	id := r.PathValue("id")
-	if !u.CanReadGlobal() && u.TeamID != id {
-		writeErr(w, http.StatusForbidden, "forbidden", "access to other teams is restricted")
+	if !canAccessTeam(w, u, id) {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
@@ -905,20 +913,64 @@ func (s *Server) proxyTeamCabinet(w http.ResponseWriter, r *http.Request, u *aut
 // teams and must not fetch every key once per team.
 func (s *Server) proxyTeamSpend(w http.ResponseWriter, r *http.Request, u *auth.User) {
 	id := r.PathValue("id")
-	if !u.CanReadGlobal() && u.TeamID != id {
-		writeErr(w, http.StatusForbidden, "forbidden", "access to other teams is restricted")
+	if !canAccessTeam(w, u, id) {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
 	defer cancel()
 	spend, err := s.admin.GetTeamSpend(ctx, &pb.GetTeamSpendRequest{Id: id})
-	if status.Code(err) == codes.NotFound {
+	if err != nil && !countersDown(err) {
 		backendErr(w, err)
 		return
 	}
 	out := map[string]any{}
 	addSpend(out, id, spend, err)
 	writeJSON(w, http.StatusOK, out)
+}
+
+// countersDown is a failure to read the counters themselves; anything else
+// (bad id, the console's key refused) is a real error the caller must see.
+func countersDown(err error) bool {
+	c := status.Code(err)
+	return c == codes.Unavailable || c == codes.DeadlineExceeded
+}
+
+// maxSpendReads bounds the GetTeamSpend calls one Usage page load can cause.
+const maxSpendReads = 8
+
+// proxyTeamsSpend reads every capped team's counter in one browser request,
+// at most maxSpendReads at a time against the gateway.
+func (s *Server) proxyTeamsSpend(w http.ResponseWriter, r *http.Request, _ *auth.User) {
+	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
+	defer cancel()
+	teams, err := s.admin.ListTeams(ctx, &pb.ListTeamsRequest{})
+	if err != nil {
+		backendErr(w, err)
+		return
+	}
+	var capped []*pb.Team
+	for _, t := range teams.Teams {
+		if t.MonthlyBudgetUsd > 0 {
+			capped = append(capped, t)
+		}
+	}
+	out := make([]map[string]any, len(capped))
+	sem := make(chan struct{}, maxSpendReads)
+	var wg sync.WaitGroup
+	for i, t := range capped {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			spend, err := s.admin.GetTeamSpend(ctx, &pb.GetTeamSpendRequest{Id: t.Id})
+			row := map[string]any{"team_id": t.Id, "name": t.Name, "monthly_budget_usd": t.MonthlyBudgetUsd}
+			addSpend(row, t.Id, spend, err)
+			out[i] = row
+		}()
+	}
+	wg.Wait()
+	writeJSON(w, http.StatusOK, map[string]any{"teams": out})
 }
 
 // addSpend reports the gateway's own counter, the one its team cap refuses

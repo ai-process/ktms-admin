@@ -92,7 +92,9 @@ export function PlaygroundPage({ params }) {
       }
       setConv([...history, { role: 'assistant', text, tool_calls: Object.values(calls).length ? Object.values(calls) : undefined, meta, ttft }]);
     } catch (e) {
-      const got = Object.values(calls);
+      // A call cut off mid-stream has no id or half its arguments, and
+      // answering it would only make the vendor refuse the next turn.
+      const got = Object.values(calls).filter((tc) => { try { return tc.id && JSON.parse(tc.function.arguments || '{}'); } catch { return false; } });
       if (e.name === 'AbortError') { if (text || got.length) setConv([...history, { role: 'assistant', text: text ? text + ' [stopped]' : '[stopped]', tool_calls: got.length ? got : undefined, meta, ttft }]); }
       else if (e.status !== 401) toast(e.message, true);
     } finally { setLive(null); setBusy(false); }
@@ -156,7 +158,7 @@ function Message({ m, answered, reply, busy }) {
   return html`<div class=${cx('msg', m.role)}>
     <span class="role">${m.role === 'tool' ? 'Tool output' : m.role}</span>
     ${m.text && html`<div class="text">${m.text}</div>`}
-    ${(m.tool_calls || []).map((tc) => html`<${ToolCall} key=${tc.id} tc=${tc} done=${answered(tc.id)} reply=${reply} busy=${busy} />`)}
+    ${(m.tool_calls || []).map((tc, i) => html`<${ToolCall} key=${tc.id || i} tc=${tc} done=${answered(tc.id)} reply=${reply} busy=${busy} />`)}
     ${m.meta && html`<span class="meta">${metaLine(m.meta, m.ttft)}</span>`}
   </div>`;
 }

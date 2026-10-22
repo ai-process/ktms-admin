@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/ai-process/llm-proxy-admin/internal/auth"
@@ -145,5 +147,29 @@ func TestParseTeamMembershipsSplitsOnSpaces(t *testing.T) {
 	m := auth.ParseTeamMemberships("a@corp.com:t1 b@corp.com:t2:teamlead")
 	if m["a@corp.com"].TeamID != "t1" || m["b@corp.com"].Role != auth.RoleTeamLead {
 		t.Fatalf("parsed %v", m)
+	}
+}
+
+// Usage reads every capped team's counter in one request; it is global data.
+func TestTeamsSpendBatch(t *testing.T) {
+	h, _ := tenantServer(t)
+	w := call(h, "GET", "/api/proxy/team-spend", "", sessionCookie(t, "p@view.com"), nil)
+	var res struct {
+		Teams []struct {
+			ID    string  `json:"team_id"`
+			Spent float64 `json:"current_spend_usd"`
+		} `json:"teams"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &res); err != nil || len(res.Teams) != 1 || res.Teams[0].ID != "team-1" || res.Teams[0].Spent != 40 {
+		t.Fatalf("team-spend = %d %s (%v)", w.Code, w.Body, err)
+	}
+	if w := call(h, "GET", "/api/proxy/team-spend", "", sessionCookie(t, "lead@corp.com"), nil); w.Code != http.StatusForbidden {
+		t.Fatalf("team lead team-spend = %d, want 403", w.Code)
+	}
+}
+
+func TestCountersDownIsOnlyAnOutage(t *testing.T) {
+	if !countersDown(status.Error(codes.Unavailable, "redis")) || countersDown(status.Error(codes.InvalidArgument, "bad id")) || countersDown(status.Error(codes.PermissionDenied, "key")) {
+		t.Fatal("only Unavailable and DeadlineExceeded may read as counters down")
 	}
 }

@@ -113,27 +113,29 @@ function GroupTable({ r, group, setGroup, loading, costKnown }) {
 // Team budgets read the gateway's enforced counters. Every capped team is
 // read so the ones nearest their cap are the ones shown.
 function TeamBudgets() {
-  const st = useAsync(async () => {
-    const teams = (await api('GET', '/api/proxy/teams')).teams || [];
-    const capped = teams.filter((t) => num(t.monthly_budget_usd) > 0);
-    return Promise.all(capped.map((t) => api('GET', `/api/proxy/teams/${encodeURIComponent(t.id)}/spend`).then((c) => ({ t, c }), () => ({ t, c: null }))));
-  }, []);
-  const all = useMemo(() => [...(st.data || [])].sort((a, b) => share(b) - share(a)), [st.data]);
+  const st = useAsync(() => api('GET', '/api/proxy/team-spend').then((r) => (r.teams || []).map((c) => ({ t: { id: c.team_id, name: c.name, monthly_budget_usd: c.monthly_budget_usd }, c }))), []);
+  // A team whose counter could not be read may be the one at its cap, so
+  // unknowns sort first rather than vanishing below the cut.
+  const all = useMemo(() => [...(st.data || [])].sort((a, b) => known(a) - known(b) || share(b) - share(a)), [st.data]);
   const items = all.slice(0, 8);
-  return html`<${Card} title="Team budgets" sub=${all.length > items.length ? `The ${items.length} closest to their cap, of ${all.length}` : ''} actions=${html`<a href="#/tenants" class="small">Manage</a>`}>
+  return html`<${Card} title="Team budgets" sub=${all.length > items.length ? `${items.length} of ${all.length}: unreadable first, then nearest their cap` : ''} actions=${html`<a href="#/tenants" class="small">Manage</a>`}>
     ${st.loading && html`<div class="skeleton" style=${{ height: '80px' }}></div>`}
+    <${LoadError} error=${st.error} retry=${st.reload} />
     ${!st.loading && !items.length && html`<p class="muted">No team has a monthly budget yet.</p>`}
     ${items.map(({ t, c }) => {
       const s = share({ t, c });
-      const known = c?.metered;
+      const metered = c?.metered;
       const tone = s >= 0.95 ? 'bad' : s >= 0.8 ? 'warn' : '';
       return html`<div class="budget" key=${t.id}>
-        <div class="line"><a href=${'#/cabinet?team_id=' + encodeURIComponent(t.id)} class="bold">${t.name}</a><span class="muted tabular">${known ? usd(c.current_spend_usd) : '—'} of ${usd(t.monthly_budget_usd)}</span></div>
-        <${Meter} value=${known ? s : 0} tone=${tone} />
-        <span class="small muted">${!c ? 'Spend unavailable' : !known ? 'Not metered' : s >= 1 ? 'Calls refused until the month resets' : 'Resets ' + new Date(c.resets_at).toLocaleDateString()}</span>
+        <div class="line"><a href=${'#/cabinet?team_id=' + encodeURIComponent(t.id)} class="bold">${t.name}</a><span class="muted tabular">${metered ? usd(c.current_spend_usd) : '—'} of ${usd(c?.limit_usd ?? t.monthly_budget_usd)}</span></div>
+        <${Meter} value=${metered ? s : 0} tone=${tone} />
+        <span class="small muted">${c?.spend_error ? 'Spend unavailable' : !metered ? 'Not metered' : s >= 1 ? 'Calls refused until the month resets' : 'Resets ' + new Date(c.resets_at).toLocaleDateString()}</span>
       </div>`;
     })}
   <//>`;
 }
 
-const share = ({ t, c }) => (c?.metered && num(t.monthly_budget_usd) > 0 ? num(c.current_spend_usd) / num(t.monthly_budget_usd) : 0);
+// The cap the gateway enforces, falling back to the team row's budget.
+const cap = ({ t, c }) => num(c?.limit_usd ?? t.monthly_budget_usd);
+const share = (x) => (x.c?.metered && cap(x) > 0 ? num(x.c.current_spend_usd) / cap(x) : 0);
+const known = (x) => (x.c?.metered ? 1 : 0);

@@ -13,10 +13,12 @@ export function KeysPage({ params }) {
     const [keys, teams, limits, cfg] = await Promise.all([
       api('GET', '/api/proxy/keys'),
       api('GET', '/api/proxy/teams').catch(() => ({ teams: [] })),
-      canReadGlobal() ? api('GET', '/api/proxy/spend-limits?subject_type=key').catch(() => ({ spend_limits: [] })) : { spend_limits: [] },
-      canReadGlobal() ? loadCfg(true).catch(() => null) : null,
+      canReadGlobal() ? api('GET', '/api/proxy/spend-limits?subject_type=key').catch((error) => ({ error })) : { spend_limits: [] },
+      canReadGlobal() ? loadCfg(true).catch((error) => ({ error })) : null,
     ]);
-    return { keys: keys.keys || [], teams: teams.teams || [], limits: limits.spend_limits || [], vendorKeys: cfg?.vendor_keys || [] };
+    // Side panels fail on their own: the key list still shows, and an
+    // unreadable panel says so instead of looking empty.
+    return { keys: keys.keys || [], teams: teams.teams || [], limits: limits.spend_limits || [], limitsError: limits.error, vendorKeys: cfg?.vendor_keys || [], cfgError: cfg?.error };
   }, []);
   const teamName = useMemo(() => Object.fromEntries((st.data?.teams || []).map((t) => [t.id, t.name])), [st.data]);
   const caps = useMemo(() => {
@@ -35,7 +37,7 @@ export function KeysPage({ params }) {
   const rows = keys.map((k) => html`<tr key=${k.name} class=${k.disabled ? 'off' : ''}>
     <td><div class="stacked"><span class="mono">${k.name}</span><span class="small">${k.team_id ? 'team ' + (teamName[k.team_id] || k.team_id.slice(0, 8) + '…') : 'no team'}</span></div></td>
     <td><div class="cluster">${(k.scopes || []).map((s) => html`<span class="chip" key=${s}>${Object.fromEntries(SCOPES.map(([id, t]) => [id, t]))[s] || s}</span>`)}</div></td>
-    ${canReadGlobal() && html`<td>${(caps[k.name] || []).length ? html`<div class="cluster">${caps[k.name].map((l) => html`<span class="chip" key=${l.period}>${usd(nanoUSD(l.limit_nanousd))} / ${l.period}</span>`)}</div>` : html`<span class="muted">—</span>`}</td>`}
+    ${canReadGlobal() && html`<td>${(caps[k.name] || []).length ? html`<div class="cluster">${caps[k.name].map((l) => html`<span class="chip" key=${l.period}>${usd(nanoUSD(l.limit_nanousd))} / ${l.period}</span>`)}</div>` : html`<span class="muted">${st.data?.limitsError ? 'unknown' : '—'}</span>`}</td>`}
     <td>${when(k.created_at)}</td>
     <td>${k.disabled ? html`<${Badge}>Revoked<//>` : html`<${Badge} tone="ok">Active<//>`}</td>
     <td class="actions-cell">${canMint && !k.disabled && html`<button type="button" class="sm danger" onClick=${() => revoke(k)}>Revoke</button>`}</td>
@@ -54,7 +56,8 @@ export function KeysPage({ params }) {
       </div>
       ${canMint && html`<div style=${{ flex: '2 1 360px' }}><${Wizard} teams=${st.data?.teams || []} team=${params.get('team_id') || ''} onDone=${st.reload} /></div>`}
     </div>
-    ${canReadGlobal() && html`<${VendorKeys} vendorKeys=${st.data?.vendorKeys || []} keys=${keys} loading=${st.loading} reload=${st.reload} />`}
+    ${st.data?.limitsError && html`<div class="notice warn">Spend caps could not be read: ${st.data.limitsError.message}</div>`}
+    ${canReadGlobal() && html`<${VendorKeys} vendorKeys=${st.data?.vendorKeys || []} error=${st.data?.cfgError} keys=${keys} loading=${st.loading} reload=${st.reload} />`}
   `;
 }
 
@@ -132,7 +135,7 @@ function Wizard({ teams, team, onDone }) {
   </section>`;
 }
 
-function VendorKeys({ vendorKeys, keys, loading, reload }) {
+function VendorKeys({ vendorKeys, error, keys, loading, reload }) {
   const active = keys.filter((k) => !k.disabled).map((k) => k.name);
   const setKey = () => openDialog(VendorForm, { names: active }).then((ok) => ok && reload());
   const rotate = () => confirmAction({
@@ -150,8 +153,8 @@ function VendorKeys({ vendorKeys, keys, loading, reload }) {
   </tr>`);
   return html`<${Card} title="Vendor credentials" sub="Which client key may use which vendor account. Stored encrypted; never shown again." flush
     actions=${isAdmin() && html`<button type="button" onClick=${rotate}>Re-encrypt all</button><button type="button" class="primary" onClick=${setKey} disabled=${!active.length}>Add credential</button>`}>
-    <${Table} loading=${loading} rows=${rows} head=${['API key', 'Vendor', { label: 'Key version', num: true }, 'Set', { label: 'Actions', sr: true }]}
-      empty=${{ title: 'No vendor credentials', children: 'Local models need none; cloud models need one per client key.' }} />
+    ${error ? html`<div class="card-body"><${LoadError} error=${error} retry=${reload} /></div>` : html`<${Table} loading=${loading} rows=${rows} head=${['API key', 'Vendor', { label: 'Key version', num: true }, 'Set', { label: 'Actions', sr: true }]}
+      empty=${{ title: 'No vendor credentials', children: 'Local models need none; cloud models need one per client key.' }} />`}
   <//>`;
 }
 

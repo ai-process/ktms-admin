@@ -91,7 +91,7 @@ export function RulesPage() {
   };
   const newRule = async () => {
     if (await keepEdits()) return;
-    setSel('__new'); setDraft(toDraft(blankRule(rules))); setDirty(true);
+    setSel('__new'); setDraft(toDraft(blankRule(rules))); setDirty(false);
   };
   const patch = (p) => { setDraft((d) => ({ ...d, ...p })); setDirty(true); };
 
@@ -124,7 +124,7 @@ export function RulesPage() {
     ${st.data && html`<div class="rules-layout">
       <${RuleList} rules=${rules} sel=${sel} choose=${choose} reorder=${editable && !dirty && reorder} canReorder=${editable} byId=${byId} draftNew=${sel === '__new' && draft} />
       ${draft && html`<${Editor} key=${sel} draft=${draft} patch=${patch} isNew=${sel === '__new'} rules=${rules} models=${models} byId=${byId}
-        dirty=${dirty} editable=${editable} save=${save} discard=${() => { const r = rules.find((x) => x.name === sel); setDraft(toDraft(r || blankRule(rules))); setDirty(false); }} />`}
+        dirty=${dirty} editable=${editable} save=${save} reorder=${reorder} discard=${() => { const r = rules.find((x) => x.name === sel); setDraft(toDraft(r || blankRule(rules))); setDirty(false); }} />`}
     </div>`}
     <p class="small muted">Speech, image and judgment calls route at low effort with the reserved attribute <code>modality</code> = tts, image or judge.</p>
   `;
@@ -167,7 +167,7 @@ function RuleList({ rules, sel, choose, reorder, canReorder, byId, draftNew }) {
   </section>`;
 }
 
-function Editor({ draft: d, patch, isNew, rules, models, byId, dirty, editable, save, discard }) {
+function Editor({ draft: d, patch, isNew, rules, models, byId, dirty, editable, save, discard, reorder }) {
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const [dragI, setDragI] = useState(null);
@@ -202,12 +202,7 @@ function Editor({ draft: d, patch, isNew, rules, models, byId, dirty, editable, 
     title: `Delete ${d.name}?`, text: 'The remaining rules must still cover every effort with a catch-all.',
     action: () => save(rules.filter((r) => r.name !== d.name), 'Rule deleted', null),
   });
-  const moveRule = async (dir) => {
-    const j = idx + dir;
-    if (j < 0 || j >= rules.length) return;
-    const a = rules[idx], b = rules[j];
-    try { await save(rules.map((r) => (r === a ? { ...a, priority: b.priority } : r === b ? { ...b, priority: a.priority } : r)), 'Order saved', d.name); } catch (e) { setErr(e.message); }
-  };
+  const moveRule = (dir) => { const j = idx + dir; if (j >= 0 && j < rules.length) reorder(idx, j); };
 
   // The preview reads the draft as the router would: split first, then
   // fallbacks in order; a split only picks who goes first.
