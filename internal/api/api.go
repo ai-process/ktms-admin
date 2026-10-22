@@ -73,7 +73,7 @@ func New(cfg *config.Config, a *auth.Handler) (*Server, func(), error) {
 		s.priceFetch = s.fetchPrices
 	}
 	if cfg.UsageEnabled() {
-		s.usage = usage.NewClient(cfg.TokenmeterURL)
+		s.usage = usage.NewClient(cfg.TokenmeterURL, cfg.TokenmeterToken)
 	}
 	return s, closer, nil
 }

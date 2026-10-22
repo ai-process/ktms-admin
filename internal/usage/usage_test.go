@@ -1,6 +1,13 @@
 package usage
 
-import "testing"
+import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+)
 
 func TestBuildAggregatesAndJudges(t *testing.T) {
 	rows := []Row{
@@ -45,5 +52,59 @@ func TestSingleGroupHasNoVerdict(t *testing.T) {
 	rep := Build([]Row{{Bucket: "2026-10-01T00:00:00Z", ProjectID: "only", Status: "success", TokensTotal: 100, RequestCount: 50}}, "project", nil)
 	if rep.Groups[0].Verdict != "" {
 		t.Errorf("a lone group cannot be greedy or worthy")
+	}
+}
+
+// fakeTokenmeter answers like light-tokenmeter with auth on: only "r" may read.
+func fakeTokenmeter(t *testing.T) string {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/readyz" {
+			return
+		}
+		switch r.Header.Get("Authorization") {
+		case "Bearer r":
+		case "Bearer w":
+			w.WriteHeader(http.StatusForbidden)
+			return
+		default:
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		if r.URL.Query().Get("from") == "" {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		_, _ = w.Write([]byte(`{"rows":[{"model":"m","tokens_total":7}]}`))
+	}))
+	t.Cleanup(srv.Close)
+	return srv.URL
+}
+
+func TestTokenIsSentAndRefusalsAreNamed(t *testing.T) {
+	base := fakeTokenmeter(t)
+	ctx := context.Background()
+	now := time.Now()
+
+	ok := NewClient(base, "r")
+	if err := ok.Ready(ctx); err != nil {
+		t.Fatalf("Ready with a read token: %v", err)
+	}
+	rows, err := ok.Summary(ctx, now.AddDate(0, 0, -1), now, "none")
+	if err != nil || len(rows) != 1 || rows[0].TokensTotal != 7 {
+		t.Fatalf("Summary with a read token: %v, %+v", err, rows)
+	}
+
+	for token, want := range map[string]string{
+		"":    "set TOKENMETER_TOKEN",
+		"bad": "TOKENMETER_TOKEN was rejected",
+		"w":   "lacks the read scope",
+	} {
+		c := NewClient(base, token)
+		if err := c.Ready(ctx); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("Ready with token %q: %v, want %q", token, err, want)
+		}
+		if _, err := c.Summary(ctx, now.AddDate(0, 0, -1), now, "none"); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("Summary with token %q: %v, want %q", token, err, want)
+		}
 	}
 }

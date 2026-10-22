@@ -5,6 +5,7 @@ package usage
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -36,29 +37,59 @@ type Row struct {
 }
 
 type Client struct {
-	base string
-	http *http.Client
+	base  string
+	token string
+	http  *http.Client
 }
 
-func NewClient(base string) *Client {
-	return &Client{base: base, http: &http.Client{Timeout: 30 * time.Second}}
+// NewClient talks to light-tokenmeter at base; a non-empty token is sent as
+// a bearer token and needs the read scope.
+func NewClient(base, token string) *Client {
+	return &Client{base: base, token: token, http: &http.Client{Timeout: 30 * time.Second}}
 }
 
-// Ready checks light-tokenmeter's readiness probe.
+func (c *Client) get(ctx context.Context, pathAndQuery string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+pathAndQuery, nil)
+	if err != nil {
+		return nil, err
+	}
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+	return c.http.Do(req)
+}
+
+// authError explains a refusal of the token; nil for any other status.
+func (c *Client) authError(status int) error {
+	switch {
+	case status == http.StatusUnauthorized && c.token == "":
+		return errors.New("a token is required: set TOKENMETER_TOKEN")
+	case status == http.StatusUnauthorized:
+		return errors.New("TOKENMETER_TOKEN was rejected")
+	case status == http.StatusForbidden:
+		return errors.New("TOKENMETER_TOKEN lacks the read scope")
+	}
+	return nil
+}
+
+// Ready checks light-tokenmeter's readiness probe, then the token: a summary
+// call without parameters passes auth and fails validation (400) without
+// touching the database, while a refused token gets 401 or 403.
 func (c *Client) Ready(ctx context.Context) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+"/readyz", nil)
+	resp, err := c.get(ctx, "/readyz")
 	if err != nil {
 		return err
 	}
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
+	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("light-tokenmeter not ready: HTTP %d", resp.StatusCode)
 	}
-	return nil
+	resp, err = c.get(ctx, "/v1/usage/summary")
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	return c.authError(resp.StatusCode)
 }
 
 // Summary fetches rows between from (inclusive) and to (exclusive), split by
@@ -76,16 +107,15 @@ func (c *Client) Summary(ctx context.Context, from, to time.Time, dim string) ([
 	if col != "" {
 		q.Set("group_by_"+col, "true")
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+"/v1/usage/summary?"+q.Encode(), nil)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := c.http.Do(req)
+	resp, err := c.get(ctx, "/v1/usage/summary?"+q.Encode())
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
+	if err := c.authError(resp.StatusCode); err != nil {
+		return nil, err
+	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("light-tokenmeter returned HTTP %d", resp.StatusCode)
 	}

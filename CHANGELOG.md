@@ -7,6 +7,9 @@ Notable changes to ktms-admin. The format follows
 ## [Unreleased]
 
 ### Added
+- `TOKENMETER_TOKEN`: a light-tokenmeter bearer token with the `read` scope, for its authentication.
+  The usage dot turns red and names the setting when the token is missing, rejected or lacks the scope;
+  `examples/compose.yaml` wires tokens through the whole stack.
 - Any OpenID Connect provider by its generic settings (`OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_ISSUER`,
   `OIDC_NAME`), several at once through `OIDC_PROVIDERS`, and GitHub sign-in (`GITHUB_CLIENT_ID`,
   `GITHUB_CLIENT_SECRET`, `GITHUB_URL` for Enterprise Server).

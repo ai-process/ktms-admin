@@ -50,6 +50,8 @@ type Config struct {
 	ProxyTLS      bool
 
 	TokenmeterURL string
+	// TokenmeterToken is a light-tokenmeter bearer token with the read scope.
+	TokenmeterToken string
 
 	// Notices name deprecated settings in use, for a startup warning; they
 	// keep working through 1.x.
@@ -114,6 +116,8 @@ func Load() (*Config, error) {
 		ProxyAdminKey:      env("KTMS_ADMIN_KEY", env("LLM_PROXY_ADMIN_KEY", "")),
 		ProxyTLS:           env("KTMS_TLS", env("LLM_PROXY_TLS", "")) == "true",
 		TokenmeterURL:      strings.TrimRight(env("TOKENMETER_URL", ""), "/"),
+		// Trimmed: a secret written with echo ends in a newline, which no header may carry.
+		TokenmeterToken: strings.TrimSpace(env("TOKENMETER_TOKEN", "")),
 	}
 	for _, name := range strings.FieldsFunc(env("OIDC_PROVIDERS", ""), func(r rune) bool { return r == ',' || r == ' ' }) {
 		p := OIDCProvider{Name: strings.ToLower(name)}

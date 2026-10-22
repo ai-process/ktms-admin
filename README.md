@@ -255,6 +255,7 @@ All settings are environment variables; see [`env.example`](env.example).
 | `KTMS_ADMIN_KEY` | – | Key with the `admin` scope. Required with `KTMS_ADDR`. (`LLM_PROXY_ADMIN_KEY` still works, deprecated.) |
 | `KTMS_TLS` | `false` | Use TLS to reach the gateway. (`LLM_PROXY_TLS` still works, deprecated.) |
 | `TOKENMETER_URL` | empty | Base URL of light-tokenmeter's HTTP port. |
+| `TOKENMETER_TOKEN` | empty | Bearer token for light-tokenmeter with the `read` scope, when its authentication is on. A missing or refused token turns the usage dot red and names the setting. |
 | `LISTEN_ADDR` | `:8080` | Listen address. |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error`. |
 | `INSECURE_NO_AUTH` | `false` | Skip sign-in. Localhost `PUBLIC_URL` only. |
