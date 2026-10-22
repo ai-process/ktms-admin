@@ -5,9 +5,11 @@ const burstText = (b) => (num(b) > 0 ? `+${num(b)}` : num(b) < 0 ? 'none' : 'def
 
 export function LimitsPage() {
   const st = useAsync(async () => {
-    const [cfg, res] = await Promise.all([loadCfg(true), api('GET', '/api/proxy/user-rate-limits')]);
-    const spend = await api('GET', '/api/proxy/spend-limits').catch(() => ({ spend_limits: [] }));
-    return { models: cfg.models || [], limits: res?.rate_limits || cfg.user_rate_limits || [], spend: (spend.spend_limits || []).filter((l) => l.subject_type !== 'team') };
+    const [cfg, res, spend] = await Promise.all([
+      loadCfg(true), api('GET', '/api/proxy/user-rate-limits'),
+      api('GET', '/api/proxy/spend-limits').then((r) => ({ items: (r.spend_limits || []).filter((l) => l.subject_type !== 'team') }), (error) => ({ items: [], error })),
+    ]);
+    return { models: cfg.models || [], limits: res?.rate_limits || cfg.user_rate_limits || [], spend };
   }, []);
   const limits = st.data?.limits || [];
   const edit = (l) => openDialog(LimitForm, { limit: l, models: st.data?.models || [] }).then((ok) => ok && st.reload());
@@ -38,7 +40,7 @@ export function LimitsPage() {
         head=${['User', 'Model', { label: 'Requests / min', num: true }, { label: 'Burst', num: true }, { label: 'Queue timeout', num: true }, { label: 'Daily tokens', num: true }, { label: 'Actions', sr: true }]}
         empty=${{ title: 'No user limits', children: 'Every user gets the limits set on each model.' }} />
     <//>
-    <${SpendLimits} items=${st.data?.spend || []} loading=${st.loading} reload=${st.reload} />
+    <${SpendLimits} items=${st.data?.spend.items || []} error=${st.data?.spend.error} loading=${st.loading} reload=${st.reload} />
     <p class="small muted">Team budgets are set on the Tenants page.</p>
   `;
 }
@@ -74,7 +76,7 @@ const subjectText = (l) => (l.subject_id === '*' ? `every ${l.subject_type}` : l
 
 // Spend limits cap what a key or a user may spend per UTC day or month, at
 // list prices; the gateway refuses calls past the cap.
-function SpendLimits({ items, loading, reload }) {
+function SpendLimits({ items, error, loading, reload }) {
   const add = () => openDialog(SpendForm).then((ok) => ok && reload());
   const del = (l) => confirmAction({
     title: 'Remove this spend limit?', text: `${subjectText(l)} is no longer capped per ${l.period}.`, confirm: 'Remove',
@@ -87,8 +89,9 @@ function SpendLimits({ items, loading, reload }) {
   </tr>`);
   return html`<${Card} title="Spend limits" sub="Caps in USD at list prices, per UTC day or month." flush
     actions=${isAdmin() && html`<button type="button" onClick=${add}>Add spend limit</button>`}>
-    <${Table} loading=${loading} rows=${rows} head=${['Subject', 'Who', 'Period', { label: 'Cap', num: true }, { label: 'Actions', sr: true }]}
-      empty=${{ title: 'No spend limits', children: 'Keys and users spend without a cap.' }} />
+    ${error && html`<div class="card-body"><${LoadError} error=${error} retry=${reload} /></div>`}
+    ${!error && html`<${Table} loading=${loading} rows=${rows} head=${['Subject', 'Who', 'Period', { label: 'Cap', num: true }, { label: 'Actions', sr: true }]}
+      empty=${{ title: 'No spend limits', children: 'Keys and users spend without a cap.' }} />`}
   <//>`;
 }
 

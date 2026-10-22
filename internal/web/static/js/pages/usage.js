@@ -26,7 +26,10 @@ export function UsagePage() {
     if (!r) return;
     const head = ['key', 'tokens_input', 'tokens_output', 'tokens_total', 'requests', 'failed', 'failure_rate', 'avg_latency_ms', 'cost_usd', 'verdict'];
     const rows = [head, ...r.groups.map((g) => head.map((k) => (k === 'key' ? g.key : g[k] ?? '')))];
-    const csv = rows.map((row) => row.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+    // Group keys are client-supplied attributes: a leading = + - @ would run
+    // as a formula in a spreadsheet, so such cells get a quote prefix.
+    const cell = (v) => { let s = String(v); if (/^[=+\-@\t\r]/.test(s)) s = "'" + s; return `"${s.replace(/"/g, '""')}"`; };
+    const csv = rows.map((row) => row.map(cell).join(',')).join('\n');
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
     a.download = `ktms-usage-${group}-${range.from}-${range.to}.csv`;
@@ -107,15 +110,17 @@ function GroupTable({ r, group, setGroup, loading, costKnown }) {
   <//>`;
 }
 
-// Team budgets read the gateway's enforced counters, one cabinet call per team.
+// Team budgets read the gateway's enforced counters. Every capped team is
+// read so the ones nearest their cap are the ones shown.
 function TeamBudgets() {
   const st = useAsync(async () => {
     const teams = (await api('GET', '/api/proxy/teams')).teams || [];
-    const capped = teams.filter((t) => num(t.monthly_budget_usd) > 0).slice(0, 8);
-    return Promise.all(capped.map((t) => api('GET', `/api/proxy/teams/${encodeURIComponent(t.id)}/cabinet`).then((c) => ({ t, c }), () => ({ t, c: null }))));
+    const capped = teams.filter((t) => num(t.monthly_budget_usd) > 0);
+    return Promise.all(capped.map((t) => api('GET', `/api/proxy/teams/${encodeURIComponent(t.id)}/spend`).then((c) => ({ t, c }), () => ({ t, c: null }))));
   }, []);
-  const items = useMemo(() => (st.data || []).sort((a, b) => share(b) - share(a)), [st.data]);
-  return html`<${Card} title="Team budgets" actions=${html`<a href="#/tenants" class="small">Manage</a>`}>
+  const all = useMemo(() => [...(st.data || [])].sort((a, b) => share(b) - share(a)), [st.data]);
+  const items = all.slice(0, 8);
+  return html`<${Card} title="Team budgets" sub=${all.length > items.length ? `The ${items.length} closest to their cap, of ${all.length}` : ''} actions=${html`<a href="#/tenants" class="small">Manage</a>`}>
     ${st.loading && html`<div class="skeleton" style=${{ height: '80px' }}></div>`}
     ${!st.loading && !items.length && html`<p class="muted">No team has a monthly budget yet.</p>`}
     ${items.map(({ t, c }) => {

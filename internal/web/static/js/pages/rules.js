@@ -82,13 +82,17 @@ export function RulesPage() {
     if (sel !== '__new' || !draft) { setSel(keep ? keep.name : '__new'); setDraft(toDraft(keep || blankRule(rules))); setDirty(false); }
   }, [st.data]);
 
+  const keepEdits = async () => dirty && !(await confirmAction({ title: 'Discard changes?', text: 'This rule has unsaved edits.', confirm: 'Discard', action: async () => {} }));
   const choose = async (name) => {
     if (name === sel) return;
-    if (dirty && !(await confirmAction({ title: 'Discard changes?', text: 'This rule has unsaved edits.', confirm: 'Discard', action: async () => {} }))) return;
+    if (await keepEdits()) return;
     const r = rules.find((x) => x.name === name);
     setSel(name); setDraft(toDraft(r || blankRule(rules))); setDirty(false);
   };
-  const newRule = () => { setSel('__new'); setDraft(toDraft(blankRule(rules))); setDirty(true); };
+  const newRule = async () => {
+    if (await keepEdits()) return;
+    setSel('__new'); setDraft(toDraft(blankRule(rules))); setDirty(true);
+  };
   const patch = (p) => { setDraft((d) => ({ ...d, ...p })); setDirty(true); };
 
   const save = async (next, msg, keepName) => {
@@ -118,7 +122,7 @@ export function RulesPage() {
     <${LoadError} error=${st.error} retry=${st.reload} />
     ${st.loading && !st.data && html`<div class="rules-layout"><div class="rule-list">${[1, 2, 3].map((i) => html`<div key=${i} class="skeleton" style=${{ height: '92px', borderRadius: '12px' }}></div>`)}</div><div class="rule-editor skeleton" style=${{ height: '520px', borderRadius: '14px' }}></div></div>`}
     ${st.data && html`<div class="rules-layout">
-      <${RuleList} rules=${rules} sel=${sel} choose=${choose} reorder=${editable && reorder} byId=${byId} draftNew=${sel === '__new' && draft} />
+      <${RuleList} rules=${rules} sel=${sel} choose=${choose} reorder=${editable && !dirty && reorder} canReorder=${editable} byId=${byId} draftNew=${sel === '__new' && draft} />
       ${draft && html`<${Editor} key=${sel} draft=${draft} patch=${patch} isNew=${sel === '__new'} rules=${rules} models=${models} byId=${byId}
         dirty=${dirty} editable=${editable} save=${save} discard=${() => { const r = rules.find((x) => x.name === sel); setDraft(toDraft(r || blankRule(rules))); setDirty(false); }} />`}
     </div>`}
@@ -134,7 +138,7 @@ function chainText(r) {
   return r.use.map((id, i) => `${id} ${Math.round((num(w[i]) / total) * 100)}%`).join(' · ');
 }
 
-function RuleList({ rules, sel, choose, reorder, byId, draftNew }) {
+function RuleList({ rules, sel, choose, reorder, canReorder, byId, draftNew }) {
   const [drag, setDrag] = useState(null);
   const [over, setOver] = useState(null);
   const card = (r, i, isNew) => {
@@ -143,8 +147,8 @@ function RuleList({ rules, sel, choose, reorder, byId, draftNew }) {
     return html`<button type="button" key=${isNew ? '__new' : r.name} class=${cx('rule-card', drag === i && 'dragging', over === i && drag !== null && drag !== i && 'drop-before')}
       aria-current=${(isNew ? sel === '__new' : r.name === sel) ? 'true' : 'false'} onClick=${() => choose(isNew ? '__new' : r.name)}
       draggable=${!!reorder && !isNew} onDragStart=${() => setDrag(i)} onDragEnd=${() => { setDrag(null); setOver(null); }}
-      onDragOver=${(e) => { if (drag !== null) { e.preventDefault(); setOver(i); } }}
-      onDrop=${(e) => { e.preventDefault(); if (drag !== null && reorder) reorder(drag, i); setDrag(null); setOver(null); }}>
+      onDragOver=${(e) => { if (drag !== null && !isNew) { e.preventDefault(); setOver(i); } }}
+      onDrop=${(e) => { e.preventDefault(); if (drag !== null && reorder && !isNew) reorder(drag, i); setDrag(null); setOver(null); }}>
       <div class="top"><span class="mono bold">${r.name || 'new rule'}</span><span class="small muted">${isNew ? 'unsaved' : 'priority ' + r.priority}</span></div>
       <div class="cluster">
         <span class="chip">${r.effort && r.effort !== 'EFFORT_UNSPECIFIED' ? 'effort: ' + effortName(r.effort) : 'any effort'}</span>
@@ -159,7 +163,7 @@ function RuleList({ rules, sel, choose, reorder, byId, draftNew }) {
     ${draftNew && card(fromDraft(draftNew), -1, true)}
     ${rules.map((r, i) => card(r, i, false))}
     ${!rules.length && !draftNew && html`<div class="card"><${Empty} title="No rules yet">Start with a catch-all rule: no conditions, any effort.<//></div>`}
-    ${reorder && rules.length > 1 && html`<p class="small muted">Drag a card to change its priority. The editor's Move buttons do the same from the keyboard.</p>`}
+    ${canReorder && rules.length > 1 && html`<p class="small muted">${reorder ? 'Drag a card to change its priority. The editor\u2019s Move buttons do the same from the keyboard.' : 'Save or discard the open edits to reorder rules.'}</p>`}
   </section>`;
 }
 

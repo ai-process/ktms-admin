@@ -14,7 +14,7 @@ export function KeysPage({ params }) {
       api('GET', '/api/proxy/keys'),
       api('GET', '/api/proxy/teams').catch(() => ({ teams: [] })),
       canReadGlobal() ? api('GET', '/api/proxy/spend-limits?subject_type=key').catch(() => ({ spend_limits: [] })) : { spend_limits: [] },
-      canReadGlobal() ? loadCfg(true) : null,
+      canReadGlobal() ? loadCfg(true).catch(() => null) : null,
     ]);
     return { keys: keys.keys || [], teams: teams.teams || [], limits: limits.spend_limits || [], vendorKeys: cfg?.vendor_keys || [] };
   }, []);

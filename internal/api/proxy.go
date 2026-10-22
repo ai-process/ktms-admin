@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/rs/zerolog/log"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 
@@ -298,10 +299,33 @@ func (s *Server) proxyListSpendLimits(w http.ResponseWriter, r *http.Request, _ 
 	writeProto(w, resp)
 }
 
+// checkSpendSubject keeps the console to key and user caps: a team's cap
+// belongs to the team row (Create/UpdateTeam), or the two would drift apart.
+func checkSpendSubject(subjectType, subjectID, period string) string {
+	switch {
+	case subjectType != "key" && subjectType != "user":
+		return "subject_type must be key or user; team budgets are set on the team"
+	case subjectID == "":
+		return "subject_id is required (* for the default)"
+	case period != "day" && period != "month":
+		return "period must be day or month"
+	}
+	return ""
+}
+
 func (s *Server) proxySetSpendLimit(w http.ResponseWriter, r *http.Request, _ *auth.User) {
 	var spec pb.SpendLimitSpec
 	if err := readProto(r, &spec); err != nil {
 		backendErr(w, badBody(err))
+		return
+	}
+	spec.SubjectType, spec.SubjectId, spec.Period = strings.TrimSpace(spec.SubjectType), strings.TrimSpace(spec.SubjectId), strings.TrimSpace(spec.Period)
+	if msg := checkSpendSubject(spec.SubjectType, spec.SubjectId, spec.Period); msg != "" {
+		writeErr(w, http.StatusBadRequest, "bad_request", msg)
+		return
+	}
+	if spec.LimitNanousd <= 0 {
+		writeErr(w, http.StatusBadRequest, "bad_request", "the cap must be above 0")
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
@@ -315,9 +339,14 @@ func (s *Server) proxySetSpendLimit(w http.ResponseWriter, r *http.Request, _ *a
 
 func (s *Server) proxyDeleteSpendLimit(w http.ResponseWriter, r *http.Request, _ *auth.User) {
 	q := r.URL.Query()
+	st, sid, period := strings.TrimSpace(q.Get("subject_type")), strings.TrimSpace(q.Get("subject_id")), strings.TrimSpace(q.Get("period"))
+	if msg := checkSpendSubject(st, sid, period); msg != "" {
+		writeErr(w, http.StatusBadRequest, "bad_request", msg)
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
 	defer cancel()
-	if _, err := s.admin.DeleteSpendLimit(ctx, &pb.DeleteSpendLimitRequest{SubjectType: q.Get("subject_type"), SubjectId: q.Get("subject_id"), Period: q.Get("period")}); err != nil {
+	if _, err := s.admin.DeleteSpendLimit(ctx, &pb.DeleteSpendLimitRequest{SubjectType: st, SubjectId: sid, Period: period}); err != nil {
 		backendErr(w, err)
 		return
 	}
@@ -868,11 +897,37 @@ func (s *Server) proxyTeamCabinet(w http.ResponseWriter, r *http.Request, u *aut
 		return
 	}
 	out := map[string]any{"team": team, "keys": keys["keys"]}
-	// The gateway's own counter, the one its team cap refuses calls on. When it
-	// cannot be read the page says so instead of showing the whole budget as free.
+	addSpend(out, id, spend, spendErr)
+	writeJSON(w, http.StatusOK, out)
+}
+
+// proxyTeamSpend is the cabinet's spend part alone, for pages that list many
+// teams and must not fetch every key once per team.
+func (s *Server) proxyTeamSpend(w http.ResponseWriter, r *http.Request, u *auth.User) {
+	id := r.PathValue("id")
+	if !u.CanReadGlobal() && u.TeamID != id {
+		writeErr(w, http.StatusForbidden, "forbidden", "access to other teams is restricted")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
+	defer cancel()
+	spend, err := s.admin.GetTeamSpend(ctx, &pb.GetTeamSpendRequest{Id: id})
+	if status.Code(err) == codes.NotFound {
+		backendErr(w, err)
+		return
+	}
+	out := map[string]any{}
+	addSpend(out, id, spend, err)
+	writeJSON(w, http.StatusOK, out)
+}
+
+// addSpend reports the gateway's own counter, the one its team cap refuses
+// calls on. When it cannot be read the reply says so instead of showing the
+// whole budget as free.
+func addSpend(out map[string]any, id string, spend *pb.GetTeamSpendResponse, err error) {
 	switch {
-	case spendErr != nil:
-		log.Warn().Err(spendErr).Str("team", id).Msg("cabinet: team spend unavailable")
+	case err != nil:
+		log.Warn().Err(err).Str("team", id).Msg("team spend unavailable")
 		out["spend_error"] = "spend counters unavailable"
 	case !spend.GetMetered():
 		out["metered"] = false
@@ -882,10 +937,10 @@ func (s *Server) proxyTeamCabinet(w http.ResponseWriter, r *http.Request, u *aut
 		out["current_spend_usd"] = spent
 		out["resets_at"] = spend.GetResetsAt().AsTime()
 		if limit := spend.GetLimitNanousd(); limit > 0 {
+			out["limit_usd"] = float64(limit) / 1e9
 			out["remaining_usd"] = max(0, float64(limit)/1e9-spent)
 		}
 	}
-	writeJSON(w, http.StatusOK, out)
 }
 
 // ---- prices (for cost estimates in the usage view) ----

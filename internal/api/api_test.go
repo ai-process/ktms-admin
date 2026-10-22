@@ -872,4 +872,21 @@ func TestSpendLimitRoutes(t *testing.T) {
 	if w := call(h, "DELETE", "/api/proxy/spend-limits?subject_type=key&subject_id=search&period=day", "", admin, csrf); w.Code != http.StatusOK || len(fa.spendLimits) != 0 {
 		t.Fatalf("admin delete = %d, limits %v", w.Code, fa.spendLimits)
 	}
+	// Team caps belong to the team row; zero and blank caps never reach the gateway.
+	for _, bad := range []string{
+		`{"subject_type":"team","subject_id":"t1","period":"month","limit_nanousd":"5"}`,
+		`{"subject_type":"key","subject_id":" ","period":"day","limit_nanousd":"5"}`,
+		`{"subject_type":"key","subject_id":"k","period":"week","limit_nanousd":"5"}`,
+		`{"subject_type":"key","subject_id":"k","period":"day","limit_nanousd":"0"}`,
+	} {
+		if w := call(h, "PUT", "/api/proxy/spend-limits", bad, admin, csrf); w.Code != http.StatusBadRequest {
+			t.Errorf("PUT %s = %d, want 400", bad, w.Code)
+		}
+	}
+	if w := call(h, "DELETE", "/api/proxy/spend-limits?subject_type=team&subject_id=t1&period=month", "", admin, csrf); w.Code != http.StatusBadRequest {
+		t.Errorf("team delete = %d, want 400", w.Code)
+	}
+	if len(fa.spendLimits) != 0 {
+		t.Fatalf("refused writes reached the gateway: %v", fa.spendLimits)
+	}
 }

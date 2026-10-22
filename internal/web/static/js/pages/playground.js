@@ -92,7 +92,8 @@ export function PlaygroundPage({ params }) {
       }
       setConv([...history, { role: 'assistant', text, tool_calls: Object.values(calls).length ? Object.values(calls) : undefined, meta, ttft }]);
     } catch (e) {
-      if (e.name === 'AbortError') { if (text) setConv([...history, { role: 'assistant', text: text + ' [stopped]', meta, ttft }]); }
+      const got = Object.values(calls);
+      if (e.name === 'AbortError') { if (text || got.length) setConv([...history, { role: 'assistant', text: text ? text + ' [stopped]' : '[stopped]', tool_calls: got.length ? got : undefined, meta, ttft }]); }
       else if (e.status !== 401) toast(e.message, true);
     } finally { setLive(null); setBusy(false); }
   };
