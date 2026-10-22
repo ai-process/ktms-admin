@@ -8,8 +8,10 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/rs/zerolog/log"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 
@@ -125,10 +127,6 @@ func hasField(m map[string]json.RawMessage, keys ...string) bool {
 }
 
 func (s *Server) proxyUpsertModel(w http.ResponseWriter, r *http.Request, u *auth.User) {
-	if !u.CanManageGlobal() {
-		writeErr(w, http.StatusForbidden, "forbidden", "superadmin required")
-		return
-	}
 	raw, err := io.ReadAll(http.MaxBytesReader(nil, r.Body, 1<<20))
 	if err != nil {
 		backendErr(w, badBody(err))
@@ -177,10 +175,6 @@ func (s *Server) proxyUpsertModel(w http.ResponseWriter, r *http.Request, u *aut
 }
 
 func (s *Server) proxyDeleteModel(w http.ResponseWriter, r *http.Request, u *auth.User) {
-	if !u.CanManageGlobal() {
-		writeErr(w, http.StatusForbidden, "forbidden", "superadmin required")
-		return
-	}
 	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
 	defer cancel()
 	if _, err := s.admin.DeleteModel(ctx, &pb.DeleteModelRequest{Id: r.PathValue("id")}); err != nil {
@@ -192,10 +186,6 @@ func (s *Server) proxyDeleteModel(w http.ResponseWriter, r *http.Request, u *aut
 }
 
 func (s *Server) proxyReplaceRules(w http.ResponseWriter, r *http.Request, u *auth.User) {
-	if !u.CanManageGlobal() {
-		writeErr(w, http.StatusForbidden, "forbidden", "superadmin required")
-		return
-	}
 	raw, err := io.ReadAll(http.MaxBytesReader(nil, r.Body, 1<<20))
 	if err != nil {
 		backendErr(w, badBody(err))
@@ -255,10 +245,6 @@ func (s *Server) proxyListUserRateLimits(w http.ResponseWriter, r *http.Request,
 }
 
 func (s *Server) proxySetUserRateLimit(w http.ResponseWriter, r *http.Request, u *auth.User) {
-	if !u.CanManageGlobal() {
-		writeErr(w, http.StatusForbidden, "forbidden", "superadmin required")
-		return
-	}
 	var spec pb.UserRateLimitSpec
 	if err := readProto(r, &spec); err != nil {
 		backendErr(w, badBody(err))
@@ -284,10 +270,6 @@ func (s *Server) proxySetUserRateLimit(w http.ResponseWriter, r *http.Request, u
 }
 
 func (s *Server) proxyDeleteUserRateLimit(w http.ResponseWriter, r *http.Request, u *auth.User) {
-	if !u.CanManageGlobal() {
-		writeErr(w, http.StatusForbidden, "forbidden", "superadmin required")
-		return
-	}
 	q := r.URL.Query()
 	userID := strings.TrimSpace(q.Get("user_id"))
 	modelID := strings.TrimSpace(q.Get("model_id"))
@@ -305,10 +287,6 @@ func (s *Server) proxyDeleteUserRateLimit(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) proxySetVendorKey(w http.ResponseWriter, r *http.Request, u *auth.User) {
-	if !u.CanManageGlobal() {
-		writeErr(w, http.StatusForbidden, "forbidden", "superadmin required")
-		return
-	}
 	var req pb.SetVendorKeyRequest
 	if err := readProto(r, &req); err != nil {
 		backendErr(w, badBody(err))
@@ -324,10 +302,6 @@ func (s *Server) proxySetVendorKey(w http.ResponseWriter, r *http.Request, u *au
 }
 
 func (s *Server) proxyDeleteVendorKey(w http.ResponseWriter, r *http.Request, u *auth.User) {
-	if !u.CanManageGlobal() {
-		writeErr(w, http.StatusForbidden, "forbidden", "superadmin required")
-		return
-	}
 	q := r.URL.Query()
 	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
 	defer cancel()
@@ -339,10 +313,6 @@ func (s *Server) proxyDeleteVendorKey(w http.ResponseWriter, r *http.Request, u 
 }
 
 func (s *Server) proxyRotate(w http.ResponseWriter, r *http.Request, u *auth.User) {
-	if !u.CanManageGlobal() {
-		writeErr(w, http.StatusForbidden, "forbidden", "superadmin required")
-		return
-	}
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
 	defer cancel()
 	resp, err := s.admin.RotateEncryption(ctx, &pb.RotateEncryptionRequest{})
@@ -649,10 +619,6 @@ func (s *Server) proxyListNodes(w http.ResponseWriter, r *http.Request, _ *auth.
 }
 
 func (s *Server) proxyDrainNode(w http.ResponseWriter, r *http.Request, u *auth.User) {
-	if !u.CanManageGlobal() {
-		writeErr(w, http.StatusForbidden, "forbidden", "superadmin required")
-		return
-	}
 	nodeID := r.PathValue("id")
 	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
 	defer cancel()
@@ -675,10 +641,6 @@ func (s *Server) proxyListNodeKeys(w http.ResponseWriter, r *http.Request, _ *au
 }
 
 func (s *Server) proxyMintNodeKey(w http.ResponseWriter, r *http.Request, u *auth.User) {
-	if !u.CanManageGlobal() {
-		writeErr(w, http.StatusForbidden, "forbidden", "superadmin required")
-		return
-	}
 	var req pb.MintNodeKeyRequest
 	if err := readProto(r, &req); err != nil {
 		backendErr(w, badBody(err))
@@ -695,10 +657,6 @@ func (s *Server) proxyMintNodeKey(w http.ResponseWriter, r *http.Request, u *aut
 }
 
 func (s *Server) proxyRevokeNodeKey(w http.ResponseWriter, r *http.Request, u *auth.User) {
-	if !u.CanManageGlobal() {
-		writeErr(w, http.StatusForbidden, "forbidden", "superadmin required")
-		return
-	}
 	var req struct {
 		ID int64 `json:"id"`
 	}
@@ -729,10 +687,6 @@ func (s *Server) proxyListOrganizations(w http.ResponseWriter, r *http.Request, 
 }
 
 func (s *Server) proxyCreateOrganization(w http.ResponseWriter, r *http.Request, u *auth.User) {
-	if !u.CanManageGlobal() {
-		writeErr(w, http.StatusForbidden, "forbidden", "superadmin required")
-		return
-	}
 	var req pb.CreateOrganizationRequest
 	if err := readProto(r, &req); err != nil {
 		backendErr(w, badBody(err))
@@ -749,10 +703,6 @@ func (s *Server) proxyCreateOrganization(w http.ResponseWriter, r *http.Request,
 }
 
 func (s *Server) proxyDeleteOrganization(w http.ResponseWriter, r *http.Request, u *auth.User) {
-	if !u.CanManageGlobal() {
-		writeErr(w, http.StatusForbidden, "forbidden", "superadmin required")
-		return
-	}
 	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
 	defer cancel()
 	if _, err := s.admin.DeleteOrganization(ctx, &pb.DeleteOrganizationRequest{Id: r.PathValue("id")}); err != nil {
@@ -784,10 +734,6 @@ func (s *Server) proxyListTeams(w http.ResponseWriter, r *http.Request, u *auth.
 }
 
 func (s *Server) proxyCreateTeam(w http.ResponseWriter, r *http.Request, u *auth.User) {
-	if !u.CanManageGlobal() {
-		writeErr(w, http.StatusForbidden, "forbidden", "superadmin required")
-		return
-	}
 	var req pb.CreateTeamRequest
 	if err := readProto(r, &req); err != nil {
 		backendErr(w, badBody(err))
@@ -820,10 +766,6 @@ func (s *Server) proxyGetTeam(w http.ResponseWriter, r *http.Request, u *auth.Us
 }
 
 func (s *Server) proxyUpdateTeam(w http.ResponseWriter, r *http.Request, u *auth.User) {
-	if !u.CanManageGlobal() {
-		writeErr(w, http.StatusForbidden, "forbidden", "superadmin required")
-		return
-	}
 	var req pb.UpdateTeamRequest
 	if err := readProto(r, &req); err != nil {
 		backendErr(w, badBody(err))
@@ -841,10 +783,6 @@ func (s *Server) proxyUpdateTeam(w http.ResponseWriter, r *http.Request, u *auth
 }
 
 func (s *Server) proxyDeleteTeam(w http.ResponseWriter, r *http.Request, u *auth.User) {
-	if !u.CanManageGlobal() {
-		writeErr(w, http.StatusForbidden, "forbidden", "superadmin required")
-		return
-	}
 	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
 	defer cancel()
 	if _, err := s.admin.DeleteTeam(ctx, &pb.DeleteTeamRequest{Id: r.PathValue("id")}); err != nil {
@@ -862,25 +800,41 @@ func (s *Server) proxyTeamCabinet(w http.ResponseWriter, r *http.Request, u *aut
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
 	defer cancel()
+	var (
+		wg       sync.WaitGroup
+		keysResp *pb.ListAPIKeysResponse
+		keysErr  error
+		spend    *pb.GetTeamSpendResponse
+		spendErr error
+	)
+	wg.Add(2)
+	go func() { defer wg.Done(); keysResp, keysErr = s.admin.ListAPIKeys(ctx, &pb.ListAPIKeysRequest{}) }()
+	go func() { defer wg.Done(); spend, spendErr = s.admin.GetTeamSpend(ctx, &pb.GetTeamSpendRequest{Id: id}) }()
 	teamResp, err := s.admin.GetTeam(ctx, &pb.GetTeamRequest{Id: id})
+	wg.Wait()
+	if err == nil {
+		err = keysErr
+	}
 	if err != nil {
 		backendErr(w, err)
 		return
 	}
-	keysResp, err := s.admin.ListAPIKeys(ctx, &pb.ListAPIKeysRequest{})
+	team, err := protoValue(teamResp.Team)
 	if err != nil {
-		backendErr(w, err)
+		writeErr(w, http.StatusInternalServerError, "internal", "cannot encode response")
 		return
 	}
-	out := map[string]any{
-		"team": teamResp.Team,
-		"keys": keysOfTeam(keysResp.Keys, id),
+	keys, err := protoValue(&pb.ListAPIKeysResponse{Keys: keysOfTeam(keysResp.Keys, id)})
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal", "cannot encode response")
+		return
 	}
+	out := map[string]any{"team": team, "keys": keys["keys"]}
 	// The gateway's own counter, the one its team cap refuses calls on. When it
 	// cannot be read the page says so instead of showing the whole budget as free.
-	spend, err := s.admin.GetTeamSpend(ctx, &pb.GetTeamSpendRequest{Id: id})
 	switch {
-	case err != nil:
+	case spendErr != nil:
+		log.Warn().Err(spendErr).Str("team", id).Msg("cabinet: team spend unavailable")
 		out["spend_error"] = "spend counters unavailable"
 	case !spend.GetMetered():
 		out["metered"] = false

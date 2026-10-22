@@ -31,7 +31,7 @@ func tenantServer(t *testing.T) (http.Handler, *fakeAdmin) {
 	fa := &fakeAdmin{
 		teams: map[string]*pb.Team{"team-1": {Id: "team-1", OrgId: "org-1", Name: "search", MonthlyBudgetUsd: 100}},
 		keys: []*pb.APIKeyInfo{
-			{Name: "search-service", TeamId: "team-1", OrgId: "org-1"},
+			{Name: "search-service", TeamId: "team-1", OrgId: "org-1", CreatedAt: timestamppb.New(time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC))},
 			{Name: "billing-service"},
 			{Name: "ops-admin", Scopes: []string{"admin"}},
 		},
@@ -114,9 +114,19 @@ func TestCabinetShowsEnforcedSpend(t *testing.T) {
 		Metered   bool    `json:"metered"`
 		Spend     float64 `json:"current_spend_usd"`
 		Remaining float64 `json:"remaining_usd"`
+		Team      struct {
+			Budget float64 `json:"monthly_budget_usd"`
+		} `json:"team"`
+		Keys []struct {
+			CreatedAt string `json:"created_at"`
+		} `json:"keys"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &cab); err != nil || !cab.Metered || cab.Spend != 40 || cab.Remaining != 60 {
 		t.Fatalf("cabinet = %s (%v), want the gateway counter: $40 spent, $60 left", w.Body, err)
+	}
+	// Same encoding as every other endpoint: proto field names, RFC 3339 times.
+	if cab.Team.Budget != 100 || len(cab.Keys) != 1 || cab.Keys[0].CreatedAt != "2026-10-01T00:00:00Z" {
+		t.Fatalf("cabinet = %s, want protojson team and keys", w.Body)
 	}
 	if w := call(h, "GET", "/api/proxy/teams/team-2/cabinet", "", sessionCookie(t, "dev@corp.com"), nil); w.Code != http.StatusForbidden {
 		t.Fatalf("another team's cabinet = %d, want 403", w.Code)

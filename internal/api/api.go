@@ -173,9 +173,6 @@ func securityHeaders(next http.Handler) http.Handler {
 
 type handler func(w http.ResponseWriter, r *http.Request, u *auth.User)
 
-// guard requires a session and, for anything that changes state, an admin
-// role, a same-origin Origin (when sent) and the custom CSRF header that a
-// cross-site form or fetch cannot set without a CORS preflight.
 // policy is who may reach a route at all; handlers of team routes then narrow
 // a team user to their own team. Anything not listed is denied.
 type policy int
@@ -204,6 +201,8 @@ func (p policy) allows(u *auth.User, write bool) bool {
 	return false
 }
 
+// guard requires a session, the route's policy and, for writes, a same-origin
+// Origin (when sent) and a CSRF header a cross-site form cannot set.
 func (s *Server) guard(pol policy, h handler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		u, ok := s.auth.UserFor(r)
@@ -256,6 +255,16 @@ func writeProto(w http.ResponseWriter, m proto.Message) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(b)
+}
+
+// protoValue encodes m the way writeProto does, for embedding in a larger reply.
+func protoValue(m proto.Message) (map[string]any, error) {
+	b, err := protojson.MarshalOptions{UseProtoNames: true, EmitUnpopulated: true}.Marshal(m)
+	if err != nil {
+		return nil, err
+	}
+	var v map[string]any
+	return v, json.Unmarshal(b, &v)
 }
 
 func readProto(r *http.Request, m proto.Message) error {

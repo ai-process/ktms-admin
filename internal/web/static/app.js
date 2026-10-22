@@ -89,13 +89,12 @@ function emptyRow(cols, text) { return h('tr', {}, h('td', { colspan: cols, clas
 
 // ---------- state ----------
 const S = { me: null, health: null, cfg: null };
-const isSuperAdmin = () => S.me?.user?.role === 'admin' || S.me?.user?.role === 'superadmin';
+const isSuperAdmin = () => S.me?.user?.role === 'admin';
 const isTeamLead = () => S.me?.user?.role === 'teamlead';
 const isViewer = () => S.me?.user?.role === 'viewer';
 const isMember = () => S.me?.user?.role === 'member';
 // Viewers read everything an admin reads; team users only their own team.
 const canReadGlobal = () => isSuperAdmin() || isViewer();
-const canWrite = () => isSuperAdmin();
 
 async function loadCfg(force) {
   if (!S.cfg || force) S.cfg = await api('GET', '/api/proxy/config');
@@ -213,7 +212,7 @@ pages.models = async (root) => {
     h('td', { class: 'num' }, `$${m.price_in_per_mtok} / $${m.price_out_per_mtok}`),
     h('td', { class: 'num' }, num(m.daily_tokens_per_key) ? compact(m.daily_tokens_per_key) : '∞'),
     h('td', {}, m.enabled ? 'on' : 'off'),
-    h('td', {}, canWrite() && h('div', { class: 'actions' },
+    h('td', {}, isSuperAdmin() && h('div', { class: 'actions' },
       h('button', { class: 'sm', onclick: () => editModel(m) }, 'Edit'),
       h('button', { class: 'sm danger', onclick: () => confirmBox('Delete model', `Delete ${m.id}? Rules that use it must be changed first.`, async () => { await api('DELETE', '/api/proxy/models/' + encodeURIComponent(m.id)); toast('Model deleted'); await render(true); }) }, 'Delete'))));
 
@@ -263,7 +262,7 @@ pages.models = async (root) => {
 
   root.append(
     h('div', { class: 'head' }, h('div', {}, h('h1', {}, 'Models'), h('p', { class: 'sub' }, 'The registry rules route to. Prices feed the cost estimates.')),
-      canWrite() && h('button', { class: 'primary', onclick: () => editModel(null) }, 'Add model')),
+      isSuperAdmin() && h('button', { class: 'primary', onclick: () => editModel(null) }, 'Add model')),
     h('div', { class: 'panel flush' }, h('table', {}, h('thead', {}, h('tr', {}, ['Id', 'Vendor', 'Efforts', 'Capabilities'].map((x) => h('th', {}, x)),
       h('th', { class: 'num' }, 'RPM'), h('th', { class: 'num' }, 'In / out $/Mtok'), h('th', { class: 'num' }, 'Daily tokens'), h('th', {}, 'State'), h('th'))), body)));
   render();
@@ -293,7 +292,7 @@ pages.rules = async (root) => {
       r.weights && r.weights[i] ? h('span', { class: 'note' }, ` (${r.weights[i]})`) : '',
     ])),
     h('td', {}, r.enabled ? 'on' : 'off'),
-    h('td', {}, canWrite() && h('div', { class: 'actions' },
+    h('td', {}, isSuperAdmin() && h('div', { class: 'actions' },
       h('button', { class: 'sm', onclick: () => edit(r) }, 'Edit'),
       h('button', { class: 'sm danger', onclick: () => confirmBox('Delete rule', `Delete ${r.name}? The remaining rules must still cover every effort.`, () => save(rules.filter((x) => x.name !== r.name), 'Rule deleted')) }, 'Delete'))));
 
@@ -351,7 +350,7 @@ pages.rules = async (root) => {
 
   root.append(
     h('div', { class: 'head' }, h('div', {}, h('h1', {}, 'Rules'), h('p', { class: 'sub' }, 'The highest-priority matching rule decides which models answer. Every effort needs a catch-all.')),
-      canWrite() && h('button', { class: 'primary', onclick: () => edit(null) }, 'Add rule')),
+      isSuperAdmin() && h('button', { class: 'primary', onclick: () => edit(null) }, 'Add rule')),
     h('div', { class: 'panel flush' }, h('table', {}, h('thead', {}, h('tr', {}, h('th', { class: 'num' }, 'Priority'), ['Name', 'Effort', 'Matches', 'Chain', 'State'].map((x) => h('th', {}, x)), h('th'))), body)),
     h('p', { class: 'note' }, 'Speech, image and judgment calls route at low effort with the reserved attribute modality=tts|image|judge.'));
   render();
@@ -386,7 +385,7 @@ pages.limits = async (root) => {
     h('td', { class: 'num' }, burstDisplay(l.rpm_burst)),
     h('td', { class: 'num' }, `${num(l.queue_timeout_ms)} ms`),
     h('td', { class: 'num' }, num(l.daily_tokens) ? compact(l.daily_tokens) : '∞'),
-    h('td', {}, canWrite() && h('div', { class: 'actions' },
+    h('td', {}, isSuperAdmin() && h('div', { class: 'actions' },
       h('button', { class: 'sm', onclick: () => editLimit(l) }, 'Edit'),
       h('button', { class: 'sm danger', onclick: () => confirmBox(
         'Delete rate limit',
@@ -434,7 +433,7 @@ pages.limits = async (root) => {
   root.append(
     h('div', { class: 'head' },
       h('div', {}, h('h1', {}, 'User Rate Limits'), h('p', { class: 'sub' }, 'Per-user and wildcard rate limit overrides across models. Checked before model default limits.')),
-      canWrite() && h('button', { class: 'primary', onclick: () => editLimit(null) }, 'Add user limit')),
+      isSuperAdmin() && h('button', { class: 'primary', onclick: () => editLimit(null) }, 'Add user limit')),
     h('div', { class: 'panel flush' }, h('table', {},
       h('thead', {}, h('tr', {},
         h('th', {}, 'User ID'), h('th', {}, 'Model ID'),
@@ -450,7 +449,7 @@ pages.keys = async (root) => {
   const keysBody = h('tbody'), vendorBody = h('tbody');
   const render = async (force) => {
     const promises = [guarded(() => api('GET', '/api/proxy/keys'))];
-    if (isSuperAdmin()) promises.push(guarded(() => loadCfg(force)));
+    if (canReadGlobal()) promises.push(guarded(() => loadCfg(force)));
     const [keys, cfg] = await Promise.all(promises);
     if (!keys) return;
     keysBody.replaceChildren(...(keys.keys.length ? keys.keys.map((k) => h('tr', { class: k.disabled ? 'off' : '' },
@@ -464,10 +463,10 @@ pages.keys = async (root) => {
           toast('Key revoked');
           await render(true);
         }, 'Revoke') }, 'Revoke'))))) : [emptyRow(5, 'No API keys.')]));
-    if (isSuperAdmin() && cfg) {
+    if (canReadGlobal() && cfg) {
       vendorBody.replaceChildren(...(cfg.vendor_keys.length ? cfg.vendor_keys.map((v) => h('tr', {},
         h('td', {}, h('span', { class: 'mono' }, v.api_key_name)), h('td', {}, v.vendor), h('td', {}, 'v' + v.key_version), h('td', {}, when(v.created_at)),
-        h('td', {}, canWrite() && h('div', { class: 'actions' }, h('button', { class: 'sm danger', onclick: () => confirmBox('Remove vendor key', `Remove the ${v.vendor} credential of ${v.api_key_name}?`, async () => { await api('DELETE', `/api/proxy/vendor-keys?api_key_name=${encodeURIComponent(v.api_key_name)}&vendor=${encodeURIComponent(v.vendor)}`); toast('Credential removed'); await render(true); }, 'Remove') }, 'Remove'))))) : [emptyRow(5, 'No vendor credentials yet.')]));
+        h('td', {}, isSuperAdmin() && h('div', { class: 'actions' }, h('button', { class: 'sm danger', onclick: () => confirmBox('Remove vendor key', `Remove the ${v.vendor} credential of ${v.api_key_name}?`, async () => { await api('DELETE', `/api/proxy/vendor-keys?api_key_name=${encodeURIComponent(v.api_key_name)}&vendor=${encodeURIComponent(v.vendor)}`); toast('Credential removed'); await render(true); }, 'Remove') }, 'Remove'))))) : [emptyRow(5, 'No vendor credentials yet.')]));
       keysBody.dataset.names = keys.keys.filter((k) => !k.disabled).map((k) => k.name).join(',');
     }
   };
@@ -504,14 +503,14 @@ pages.keys = async (root) => {
   }, 'Re-encrypt');
 
   const panels = [
-    h('div', { class: 'head' }, h('div', {}, h('h1', {}, 'Keys'), h('p', { class: 'sub' }, isSuperAdmin() ? 'Client API keys, and the vendor credentials each client may use.' : 'API keys for your team.'))),
+    h('div', { class: 'head' }, h('div', {}, h('h1', {}, 'Keys'), h('p', { class: 'sub' }, canReadGlobal() ? 'Client API keys, and the vendor credentials each client may use.' : 'API keys for your team.'))),
     h('div', { class: 'panel' }, h('div', { class: 'head' }, h('h2', {}, 'API keys'), (isSuperAdmin() || isTeamLead()) && h('button', { class: 'primary', onclick: mint }, 'Mint key')),
       h('div', { class: 'flush', style: 'overflow-x:auto' }, h('table', {}, h('thead', {}, h('tr', {}, ['Name', 'Scopes', 'Created', 'State'].map((x) => h('th', {}, x)), h('th'))), keysBody)))
   ];
 
-  if (isSuperAdmin()) {
+  if (canReadGlobal()) {
     panels.push(
-      h('div', { class: 'panel' }, h('div', { class: 'head' }, h('h2', {}, 'Vendor credentials'), canWrite() && h('div', { class: 'actions' }, h('button', { onclick: rotate }, 'Re-encrypt all'), h('button', { class: 'primary', onclick: setVendor }, 'Set credential'))),
+      h('div', { class: 'panel' }, h('div', { class: 'head' }, h('h2', {}, 'Vendor credentials'), isSuperAdmin() && h('div', { class: 'actions' }, h('button', { onclick: rotate }, 'Re-encrypt all'), h('button', { class: 'primary', onclick: setVendor }, 'Set credential'))),
         h('div', { style: 'overflow-x:auto' }, h('table', {}, h('thead', {}, h('tr', {}, ['API key', 'Vendor', 'Key version', 'Set'].map((x) => h('th', {}, x)), h('th'))), vendorBody)))
     );
   }
@@ -1169,7 +1168,7 @@ pages.nodes = async (root) => {
         h('td', { class: 'num' }, n.vram_total_mb ? `${Math.round(n.vram_free_mb / 1024)}G / ${Math.round(n.vram_total_mb / 1024)}G` : '—'),
         h('td', { class: 'num' }, n.tps_ema ? `${n.tps_ema.toFixed(1)} tps` : '—'),
         h('td', {}, when(n.last_heartbeat)),
-        h('td', {}, canWrite() && n.state !== 'NODE_STATE_DRAINING' && n.state !== 'NODE_STATE_OFFLINE' && h('div', { class: 'actions' },
+        h('td', {}, isSuperAdmin() && n.state !== 'NODE_STATE_DRAINING' && n.state !== 'NODE_STATE_OFFLINE' && h('div', { class: 'actions' },
           h('button', { class: 'sm danger', onclick: () => confirmBox('Drain node', `Drain ${n.name}? It will stop accepting new requests.`, async () => {
             await api('POST', `/api/proxy/nodes/${encodeURIComponent(n.node_id)}/drain`);
             toast('Node marked for drain');
@@ -1183,7 +1182,7 @@ pages.nodes = async (root) => {
         h('td', {}, h('span', { class: 'mono' }, k.node_id)),
         h('td', {}, when(k.created_at)),
         h('td', {}, k.disabled ? 'revoked' : 'active'),
-        h('td', {}, canWrite() && !k.disabled && h('div', { class: 'actions' },
+        h('td', {}, isSuperAdmin() && !k.disabled && h('div', { class: 'actions' },
           h('button', { class: 'sm danger', onclick: () => confirmBox('Revoke node key', `Revoke key for node ${k.node_id}?`, async () => {
             await api('POST', '/api/proxy/node-keys/revoke', { id: k.id });
             toast('Node key revoked');
@@ -1232,7 +1231,7 @@ pages.nodes = async (root) => {
         h('thead', {}, h('tr', {}, ['Node ID', 'Name', 'State', 'Models', 'Slots', 'VRAM', 'Speed', 'Heartbeat'].map((x) => h('th', {}, x)), h('th'))),
         nodesBody))),
     h('div', { class: 'panel' },
-      h('div', { class: 'head' }, h('h2', {}, 'Node Keys'), canWrite() && h('button', { class: 'primary', onclick: mint }, 'Mint node key')),
+      h('div', { class: 'head' }, h('h2', {}, 'Node Keys'), isSuperAdmin() && h('button', { class: 'primary', onclick: mint }, 'Mint node key')),
       h('div', { style: 'overflow-x:auto' }, h('table', {},
         h('thead', {}, h('tr', {}, ['Name', 'Node ID', 'Created', 'State'].map((x) => h('th', {}, x)), h('th'))),
         nodeKeysBody)))
@@ -1274,7 +1273,7 @@ pages.tenants = async (root) => {
         h('td', { class: 'num' }, fmt(orgTeams.length)),
         h('td', { class: 'num' }, usd(orgBudget)),
         h('td', {}, when(o.created_at)),
-        h('td', {}, canWrite() && h('div', { class: 'actions' },
+        h('td', {}, isSuperAdmin() && h('div', { class: 'actions' },
           h('button', { class: 'sm danger', onclick: () => confirmBox('Delete Organization', `Delete organization "${o.name}" (${o.id})? Teams in this organization must be deleted first.`, async () => {
             await api('DELETE', '/api/proxy/organizations/' + encodeURIComponent(o.id));
             toast('Organization deleted');
@@ -1297,8 +1296,8 @@ pages.tenants = async (root) => {
         h('td', {}, when(t.created_at)),
         h('td', {}, h('div', { class: 'actions' },
           h('button', { class: 'sm', onclick: () => { location.hash = '#/cabinet?team_id=' + encodeURIComponent(t.id); } }, 'Cabinet'),
-          canWrite() && h('button', { class: 'sm', onclick: () => editTeam(t, orgs, cfg) }, 'Edit'),
-          canWrite() && h('button', { class: 'sm danger', onclick: () => confirmBox('Delete Team', `Delete team "${t.name}"? API keys bound to this team will stop functioning.`, async () => {
+          isSuperAdmin() && h('button', { class: 'sm', onclick: () => editTeam(t, orgs, cfg) }, 'Edit'),
+          isSuperAdmin() && h('button', { class: 'sm danger', onclick: () => confirmBox('Delete Team', `Delete team "${t.name}"? API keys bound to this team will stop functioning.`, async () => {
             await api('DELETE', '/api/proxy/teams/' + encodeURIComponent(t.id));
             toast('Team deleted');
             await render();
@@ -1326,7 +1325,8 @@ pages.tenants = async (root) => {
   const editTeam = (t, orgs, cfg) => {
     const isNew = !t;
     t = t || { org_id: orgs[0]?.id || '', name: '', monthly_budget_usd: 0, allowed_models: [] };
-    const allModels = (cfg?.models || []).map((m) => m.id);
+    // Models outside the loaded catalog stay listed so saving never drops them.
+    const allModels = [...new Set([...(cfg?.models || []).map((m) => m.id), ...(t.allowed_models || [])])];
 
     const modelChecks = h('div', { style: 'display:grid;grid-template-columns:repeat(auto-fill, minmax(200px, 1fr));gap:6px;max-height:160px;overflow-y:auto;padding:8px;border:1px solid var(--line);border-radius:6px;' },
       allModels.map((m) => check('model_' + m, m, (t.allowed_models || []).includes(m)))
@@ -1370,7 +1370,7 @@ pages.tenants = async (root) => {
       h('div', {},
         h('h1', {}, 'Organizations & Teams'),
         h('p', { class: 'sub' }, 'Hierarchical multi-tenancy: manage organizations, teams, monthly spend caps, and model allowlists.')),
-      canWrite() && h('div', { class: 'actions' },
+      isSuperAdmin() && h('div', { class: 'actions' },
         h('button', { class: 'primary', onclick: addOrg }, '+ Add Organization'),
         h('button', { onclick: async () => {
           const [orgsRes, cfg] = await Promise.all([guarded(() => api('GET', '/api/proxy/organizations')), guarded(() => loadCfg())]);
@@ -1431,9 +1431,10 @@ pages.cabinet = async (root) => {
     const known = cab.metered === true;
     const spend = num(cab.current_spend_usd);
     const budget = num(t.monthly_budget_usd);
+    const capped = known && cab.remaining_usd !== undefined;
     const remaining = num(cab.remaining_usd);
     const spendPct = known && budget > 0 ? Math.min(100, (spend / budget) * 100) : 0;
-    const isExhausted = known && budget > 0 && remaining <= 0;
+    const isExhausted = capped && remaining <= 0;
     const unknownSpend = cab.spend_error ? 'Spend counters unavailable' : 'Not metered (no Redis on the gateway)';
 
     headContainer.replaceChildren(
@@ -1453,7 +1454,7 @@ pages.cabinet = async (root) => {
     tilesContainer.replaceChildren(
       tile('Monthly Budget', budget > 0 ? usd(budget) : 'Unlimited', 'Configured spend cap'),
       tile('Current Month Spend', known ? usd(spend) : '—', known ? spendSubtitle : unknownSpend),
-      tile('Budget Remaining', budget > 0 ? (known ? usd(remaining) : '—') : 'Unlimited', isExhausted ? 'Quota exhausted! Requests blocked.' : (known ? 'Available for this month' : unknownSpend)),
+      tile('Budget Remaining', budget > 0 ? (capped ? usd(remaining) : '—') : 'Unlimited', isExhausted ? 'Quota exhausted! Requests blocked.' : (known ? 'Available for this month' : unknownSpend)),
       tile('Team Keys', fmt(keys.filter((k) => !k.disabled).length), `${keys.length} total keys minted`)
     );
 
@@ -1521,6 +1522,9 @@ pages.cabinet = async (root) => {
   render();
 };
 
+// Shown when no configured backend has a page this account may open.
+pages.none = (root) => root.append(h('div', { class: 'panel' }, 'Nothing to show: no backend this account can use is configured.'));
+
 // ---------- shell ----------
 function route() {
   const hash = location.hash.replace(/^#\/?/, '') || defaultPage();
@@ -1529,18 +1533,20 @@ function route() {
 }
 
 const available = (n) => {
-  if (n === 'cabinet') return !!(S.me?.user?.team_id || canReadGlobal());
-  if (n === 'tenants' || n === 'models' || n === 'rules' || n === 'limits' || n === 'nodes') return canReadGlobal();
+  const proxy = !!S.me?.features?.proxy;
+  if (n === 'cabinet') return proxy && !!(S.me?.user?.team_id || canReadGlobal());
+  if (n === 'tenants' || n === 'models' || n === 'rules' || n === 'limits' || n === 'nodes') return proxy && canReadGlobal();
   if (n === 'usage') return !!S.me?.features?.usage && canReadGlobal();
-  if (n === 'keys') return !!S.me?.features?.proxy;
+  if (n === 'keys') return proxy;
   // Run with the console's own key, outside any team's models and budget.
-  if (n === 'playground' || n === 'judge') return !!S.me?.features?.proxy && isSuperAdmin();
+  if (n === 'playground' || n === 'judge') return proxy && isSuperAdmin();
   return false;
 };
 
 const defaultPage = () => {
-  if (isTeamLead() || isMember()) return 'cabinet';
-  return S.me?.features?.usage ? 'usage' : 'models';
+  const first = ['cabinet', 'usage', 'models', 'keys'].filter(available);
+  if ((isTeamLead() || isMember()) && first.includes('cabinet')) return 'cabinet';
+  return first.find((n) => n !== 'cabinet') || first[0] || 'none';
 };
 
 function shell() {
@@ -1581,16 +1587,12 @@ function shell() {
     }
   } else {
     // TeamLead or Member
-    navItems.push(
-      h('div', { class: 'grp' }, 'My Team'),
-      link('cabinet', 'Team Cabinet')
-    );
     if (f.proxy) {
-      navItems.push(link('keys', 'API Keys'));
+      navItems.push(h('div', { class: 'grp' }, 'My Team'), link('cabinet', 'Team Cabinet'), link('keys', 'API Keys'));
     }
   }
 
-  const roleBadge = u.role === 'superadmin' || u.role === 'admin'
+  const roleBadge = isSuperAdmin()
     ? h('span', { class: 'badge admin' }, 'superadmin')
     : u.role === 'teamlead'
     ? h('span', { class: 'badge worthy' }, 'teamlead')

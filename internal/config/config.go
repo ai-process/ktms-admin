@@ -21,7 +21,7 @@ type Config struct {
 	AllowedEmails      string
 	ViewerEmails       string
 	TeamMemberships    string // email:team_id:role[:org_id]
-	DevUserRole        string // superadmin | teamlead | member
+	DevUserRole        string // admin | viewer | teamlead | member
 	DevUserTeamID      string
 	DevUserOrgID       string
 	SessionSecret      string
@@ -100,8 +100,8 @@ func (c *Config) Validate() error {
 		return errors.New("PUBLIC_URL is required (e.g. https://admin.example.com)")
 	case c.GoogleClientID == "" || c.GoogleClientSecret == "":
 		return errors.New("GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are required")
-	case strings.TrimSpace(c.AllowedEmails) == "" && strings.TrimSpace(c.ViewerEmails) == "":
-		return errors.New("ALLOWED_EMAILS is empty: nobody could sign in")
+	case strings.TrimSpace(c.AllowedEmails) == "" && strings.TrimSpace(c.ViewerEmails) == "" && strings.TrimSpace(c.TeamMemberships) == "":
+		return errors.New("ALLOWED_EMAILS, VIEWER_EMAILS and TEAM_MEMBERSHIPS are empty: nobody could sign in")
 	}
 	return nil
 }

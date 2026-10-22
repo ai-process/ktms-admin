@@ -78,10 +78,10 @@ func withSession(t *testing.T, h *Handler, email string, exp time.Time) *http.Re
 
 func TestSessionRolesAndExpiry(t *testing.T) {
 	h := newHandler(t)
-	if u, ok := h.UserFor(withSession(t, h, "admin@x.com", time.Now().Add(time.Hour))); !ok || !u.CanWrite() {
+	if u, ok := h.UserFor(withSession(t, h, "admin@x.com", time.Now().Add(time.Hour))); !ok || !u.IsSuperAdmin() {
 		t.Errorf("admin: %+v %v", u, ok)
 	}
-	if u, ok := h.UserFor(withSession(t, h, "p@view.com", time.Now().Add(time.Hour))); !ok || u.CanWrite() || u.Role != RoleViewer {
+	if u, ok := h.UserFor(withSession(t, h, "p@view.com", time.Now().Add(time.Hour))); !ok || u.IsSuperAdmin() || !u.CanReadGlobal() || u.Role != RoleViewer {
 		t.Errorf("viewer: %+v %v", u, ok)
 	}
 	if _, ok := h.UserFor(withSession(t, h, "admin@x.com", time.Now().Add(-time.Minute))); ok {
@@ -126,11 +126,11 @@ func TestTeamMemberships(t *testing.T) {
 		TeamMemberships: m,
 	})
 	uLead, ok := h.UserFor(withSession(t, h, "lead@corp.com", time.Now().Add(time.Hour)))
-	if !ok || !uLead.IsTeamLead() || !uLead.CanWrite() || uLead.CanManageGlobal() {
+	if !ok || !uLead.IsTeamLead() || uLead.IsSuperAdmin() || uLead.CanReadGlobal() {
 		t.Fatalf("unexpected lead user: %+v", uLead)
 	}
 	uDev, ok := h.UserFor(withSession(t, h, "dev@corp.com", time.Now().Add(time.Hour)))
-	if !ok || uDev.CanWrite() || uDev.IsTeamLead() || uDev.Role != RoleMember {
+	if !ok || uDev.IsSuperAdmin() || uDev.IsTeamLead() || !uDev.InTeam() || uDev.Role != RoleMember {
 		t.Fatalf("unexpected dev user: %+v", uDev)
 	}
 }

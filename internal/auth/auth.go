@@ -21,11 +21,10 @@ const (
 	flowCookie    = "lpa_login"
 	flowTTL       = 10 * time.Minute
 
-	RoleSuperAdmin = "superadmin"
-	RoleAdmin      = "admin"
-	RoleTeamLead   = "teamlead"
-	RoleMember     = "member"
-	RoleViewer     = "viewer"
+	RoleAdmin    = "admin"
+	RoleTeamLead = "teamlead"
+	RoleMember   = "member"
+	RoleViewer   = "viewer"
 )
 
 type TeamMemberInfo struct {
@@ -34,10 +33,8 @@ type TeamMemberInfo struct {
 	Role   string
 }
 
-// ParseTeamMemberships parses comma-, semicolon- or whitespace-separated
-// entries email:team_id[:role[:org_id]], role "teamlead" or "member" (default).
-// An entry without a team or with another role is skipped and logged: a typo
-// must never sign someone in with powers nobody meant to grant.
+// ParseTeamMemberships reads email:team_id[:teamlead|member[:org_id]] entries.
+// A malformed entry is skipped and logged: a typo must never grant powers.
 func ParseTeamMemberships(raw string) map[string]TeamMemberInfo {
 	out := make(map[string]TeamMemberInfo)
 	if strings.TrimSpace(raw) == "" {
@@ -89,7 +86,7 @@ type User struct {
 }
 
 func (u *User) IsSuperAdmin() bool {
-	return u.Role == RoleSuperAdmin || u.Role == RoleAdmin
+	return u.Role == RoleAdmin
 }
 
 func (u *User) IsTeamLead() bool {
@@ -105,14 +102,6 @@ func (u *User) InTeam() bool {
 
 // CanReadGlobal: config, usage, nodes and every tenant's keys.
 func (u *User) CanReadGlobal() bool { return u.IsSuperAdmin() || u.IsViewer() }
-
-func (u *User) CanWrite() bool {
-	return u.IsSuperAdmin() || u.IsTeamLead()
-}
-
-func (u *User) CanManageGlobal() bool {
-	return u.IsSuperAdmin()
-}
 
 type sessionData struct {
 	Email   string `json:"e"`
