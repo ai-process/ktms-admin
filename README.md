@@ -12,8 +12,8 @@ or with either one alone.
   with failure rates, latency, estimated cost and a *greedy / worthy* verdict.
 - **Gateway:** manage models, routing rules, client API keys and vendor credentials, and try a prompt in the
   playground. No more `grpcurl`.
-- **Sign-in** with Google, or through the access proxy you already run (oauth2-proxy, Authelia, Authentik,
-  Pomerium, Cloudflare Access), limited to an allowlist with wildcards such as `*@example.com`. Optional
+- **Sign-in** with a password, Google, or the access proxy you already run (oauth2-proxy, Authelia,
+  Authentik, Pomerium, Cloudflare Access), limited to an allowlist with wildcards such as `*@example.com`. Optional
   read-only users.
 - **One binary:** a static Go binary with the UI embedded: Preact and htm as vendored ES modules, no
   front-end build step, light and dark themes, usable from a phone.
@@ -21,6 +21,7 @@ or with either one alone.
 ## Contents
 
 - [Quick start](#quick-start)
+- [Password sign-in](#password-sign-in)
 - [Setting up Google sign-in](#setting-up-google-sign-in)
 - [Sign-in behind an access proxy](#sign-in-behind-an-access-proxy)
 - [Who may sign in](#who-may-sign-in)
@@ -34,26 +35,29 @@ or with either one alone.
 
 ## Quick start
 
-You need a sign-in method, either a Google OAuth client ([how](#setting-up-google-sign-in)) or an access
-proxy you already run ([how](#sign-in-behind-an-access-proxy)), and, for the gateway pages, a KTMS admin key
-(`MintAPIKey` with scope `admin`).
+You need a sign-in method and, for the gateway pages, a KTMS admin key (`MintAPIKey` with scope `admin`).
+The quickest method is a password ([more](#password-sign-in)); Google ([how](#setting-up-google-sign-in)) and
+access proxies ([how](#sign-in-behind-an-access-proxy)) work too, alone or together.
 
 ```bash
+# Prints you@example.com:$argon2id$… after asking for a password twice.
+docker run --rm -it coyl/ktms-admin:latest hash-password you@example.com
+
 docker run -d --name ktms-admin -p 8080:8080 \
   -e PUBLIC_URL=https://admin.example.com \
-  -e GOOGLE_CLIENT_ID=… -e GOOGLE_CLIENT_SECRET=… \
-  -e ALLOWED_EMAILS='*@example.com' \
+  -e ADMIN_USERS='you@example.com:$argon2id$…' \
+  -e ALLOWED_EMAILS='you@example.com' \
   -e SESSION_SECRET="$(openssl rand -base64 36)" \
   -e KTMS_ADDR=ktms:9090 -e KTMS_ADMIN_KEY=ktms_… \
   -e TOKENMETER_URL=http://light-tokenmeter:8080 \
   coyl/ktms-admin:latest
 ```
 
-Open `PUBLIC_URL`, sign in with a Google account that matches `ALLOWED_EMAILS`, and you are in.
+Open `PUBLIC_URL`, sign in with that e-mail and password, and you are in.
 [`examples/compose.yaml`](examples/compose.yaml) starts the whole family (KTMS, light-tokenmeter and
 this console on one Postgres) with the first-run steps in its header.
 
-**Just looking around on your machine?** Skip Google entirely, on localhost only:
+**Just looking around on your machine?** Skip sign-in entirely, on localhost only:
 
 ```bash
 docker run --rm -p 8081:8080 -e PUBLIC_URL=http://localhost:8081 -e INSECURE_NO_AUTH=true \
@@ -61,6 +65,25 @@ docker run --rm -p 8081:8080 -e PUBLIC_URL=http://localhost:8081 -e INSECURE_NO_
 ```
 
 `INSECURE_NO_AUTH` is refused unless `PUBLIC_URL` host is `localhost`, `127.0.0.1`, or `[::1]`.
+
+## Password sign-in
+
+Passwords live in the configuration as hashes. The console needs no database and no identity provider.
+
+1. Hash a password: `ktms-admin hash-password you@example.com` (or the `docker run` line above). It asks
+   twice without echo, or reads one line from a pipe, requires at least 12 characters, and prints an
+   `email:hash` entry. The hash is argon2id; bcrypt hashes from `htpasswd -nB` work too.
+2. Put the entries in `ADMIN_USERS`, separated by spaces or newlines, or one per line in a file named by
+   `ADMIN_USERS_FILE` (lines starting with `#` are comments). Hashes contain `$`, so quote them: single
+   quotes in a shell or a `.env` file, `$$` inside `compose.yaml`.
+3. Add the same e-mails to `ALLOWED_EMAILS`, `VIEWER_EMAILS` or `TEAM_MEMBERSHIPS`. A password only proves
+   who someone is. The allowlists decide whether they get in and with which role.
+
+A malformed entry stops the console at start. To change a password or add someone, edit the entries and
+restart. After 5 wrong passwords for one e-mail the console makes that account wait, doubling the wait with
+each further failure up to 5 minutes. One client address gets 30 tries before a wait of up to a minute.
+The counters are kept in memory per replica. Sign-in forms carry a token tied to a cookie, so another site
+cannot post one.
 
 ## Setting up Google sign-in
 
@@ -175,6 +198,8 @@ All settings are environment variables; see [`env.example`](env.example).
 | Variable | Default | Description |
 | --- | --- | --- |
 | `PUBLIC_URL` | – | **Required.** External base URL, e.g. `https://admin.example.com`. |
+| `ADMIN_USERS` | empty | Turns on [password sign-in](#password-sign-in): `email:hash` entries from `hash-password`. |
+| `ADMIN_USERS_FILE` | empty | A file with one `email:hash` entry per line, merged with `ADMIN_USERS`. |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | – | Turns on Google sign-in. At least one sign-in method is required unless `INSECURE_NO_AUTH` is set. |
 | `TRUSTED_PROXY_CIDRS` | empty | Turns on [proxy sign-in](#sign-in-behind-an-access-proxy): the addresses or CIDRs of the access proxy. |
 | `AUTH_HEADER_EMAIL` | `X-Forwarded-Email` | The header the proxy names the user's e-mail in. |
@@ -264,6 +289,8 @@ shows its spend this month against the budget and its keys.
 - Session cookies are signed (HMAC-SHA256), `HttpOnly`, `SameSite=Lax` and `Secure` over HTTPS. They carry
   only name, e-mail, sign-in method and expiry; the role is recomputed from the allowlists on every request,
   and turning a sign-in method off ends its sessions.
+- Passwords are stored only as argon2id (or bcrypt) hashes, compared in constant time; unknown e-mails take
+  as long as known ones, and failures back off per account and per client address.
 - Proxy sign-in trusts an identity header only from `TRUSTED_PROXY_CIDRS`, and only as far as that proxy
   overwrites the header; Cloudflare Access tokens are verified cryptographically on every request.
 - Anything that changes state needs the admin role, a custom `X-Requested-With` header (which a cross-site
@@ -278,7 +305,7 @@ shows its spend this month against the budget and its keys.
 
 ```bash
 make test    # go test -race ./...
-make dev     # run on :8080 without Google sign-in (set KTMS_* and/or TOKENMETER_URL)
+make dev     # run on :8080 without sign-in (set KTMS_* and/or TOKENMETER_URL)
 make proto   # regenerate internal/gen from proto/ (needs buf)
 ```
 

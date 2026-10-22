@@ -7,6 +7,9 @@ Notable changes to ktms-admin. The format follows
 ## [Unreleased]
 
 ### Added
+- Password sign-in: `ADMIN_USERS` or `ADMIN_USERS_FILE` hold `email:hash` entries made by the new
+  `ktms-admin hash-password` command (argon2id; bcrypt from `htpasswd -nB` works too). Failed attempts
+  back off per account and per client address.
 - Sign-in through an access proxy: an e-mail header from `TRUSTED_PROXY_CIDRS` (oauth2-proxy, Authelia,
   Authentik, Pomerium) or a verified Cloudflare Access token (`CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD`).
   Google sign-in is now optional when one of these is set.

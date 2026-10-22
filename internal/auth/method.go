@@ -37,6 +37,14 @@ type Button interface {
 	StartURL(next string) string
 }
 
+// Form is a method with fields on the sign-in page, such as a password.
+type Form interface {
+	Mounter
+	// Form returns the method's part of the sign-in page. It may set cookies
+	// on w, which has not been written yet.
+	Form(w http.ResponseWriter, r *http.Request, next string) template.HTML
+}
+
 // Identifier is a method that identifies every request on its own, such as
 // an access proxy in front of the console. It needs no session: when the
 // proxy stops vouching for someone, their access ends with the next request.
@@ -49,8 +57,11 @@ type Identifier interface {
 type Host interface {
 	// SignIn applies the allowlists, starts a session and redirects to next.
 	SignIn(w http.ResponseWriter, r *http.Request, method string, id Identity, next string)
-	// Fail shows a plain-text error on the sign-in page.
+	// Fail shows a plain-text error instead of the sign-in page.
 	Fail(w http.ResponseWriter, code int, msg string)
+	// LoginPage shows the sign-in page again with a plain-text message, such
+	// as a wrong password.
+	LoginPage(w http.ResponseWriter, r *http.Request, code int, next, msg string)
 	// SaveFlow keeps v in a short-lived signed cookie across a redirect.
 	SaveFlow(w http.ResponseWriter, method string, v any) error
 	// TakeFlow reads and clears it; false when missing, forged, expired or another method's.
@@ -136,35 +147,57 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, next, http.StatusFound)
 		return
 	}
-	var d pageData
+	buttons := 0
 	for _, m := range h.o.Methods {
-		switch m := m.(type) {
-		case Button:
-			d.Buttons = append(d.Buttons, pageButton{Label: m.Label(), URL: m.StartURL(next)})
-		case Identifier:
-			// The proxy vouched for someone the allowlists do not know.
+		if _, ok := m.(Button); ok {
+			buttons++
+		}
+		// The proxy vouched for someone the allowlists do not know.
+		if m, ok := m.(Identifier); ok {
 			if id, ok := m.Identify(r); ok {
 				h.Fail(w, http.StatusForbidden, id.Email+" is not allowed to use this console.")
 				return
 			}
-			d.Proxy = true
 		}
 	}
 	switch {
 	case len(h.o.Methods) == 0:
 		h.Fail(w, http.StatusInternalServerError, "No sign-in method is configured.")
-	case len(h.o.Methods) == 1 && len(d.Buttons) == 1:
-		http.Redirect(w, r, d.Buttons[0].URL, http.StatusFound)
+	case len(h.o.Methods) == 1 && buttons == 1:
+		http.Redirect(w, r, h.o.Methods[0].(Button).StartURL(next), http.StatusFound)
 	default:
-		h.page(w, http.StatusOK, d)
+		h.LoginPage(w, r, http.StatusOK, next, "")
 	}
+}
+
+func (h *Handler) LoginPage(w http.ResponseWriter, r *http.Request, code int, next, msg string) {
+	next = SafeNext(next)
+	d := pageData{Message: msg}
+	for _, m := range h.o.Methods {
+		switch m := m.(type) {
+		case Form:
+			d.Items = append(d.Items, pageItem{Form: m.Form(w, r, next)})
+		case Button:
+			d.Items = append(d.Items, pageItem{Button: &pageButton{Label: m.Label(), URL: m.StartURL(next)}})
+		case Identifier:
+			d.Proxy = true
+		}
+	}
+	h.page(w, code, d)
 }
 
 type pageButton struct{ Label, URL string }
 
+// pageItem is one method on the sign-in page: a button or a form.
+type pageItem struct {
+	Button *pageButton
+	Form   template.HTML
+}
+
 type pageData struct {
-	Error   string
-	Buttons []pageButton
+	// Error replaces the page; Message sits above the methods.
+	Error, Message string
+	Items          []pageItem
 	// Proxy notes that an access proxy can sign you in too.
 	Proxy bool
 }
@@ -178,11 +211,19 @@ var pageTmpl = template.Must(template.New("page").Parse(`<!doctype html>
 <p class="error">{{.Error}}</p><p><a href="/auth/login">Try again</a></p>
 {{- else}}
 <p class="muted">KTMS admin console</p>
-{{- range .Buttons}}
-<a class="btn" href="{{.URL}}">{{.Label}}</a>
+{{- with .Message}}
+<p class="error" role="alert">{{.}}</p>
+{{- end}}
+{{- range $i, $it := .Items}}
+{{- if $i}}<p class="or"><span>or</span></p>{{end}}
+{{- if $it.Button}}
+<a class="btn" href="{{$it.Button.URL}}">{{$it.Button.Label}}</a>
+{{- else}}
+{{$it.Form}}
+{{- end}}
 {{- end}}
 {{- if .Proxy}}
-<p class="note">{{if .Buttons}}Or open{{else}}Open{{end}} this console through your organisation's access proxy, which signs you in.</p>
+<p class="note">{{if .Items}}Or open{{else}}Open{{end}} this console through your organisation's access proxy, which signs you in.</p>
 {{- end}}
 {{- end}}
 </main></body></html>
