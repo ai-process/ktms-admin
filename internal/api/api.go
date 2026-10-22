@@ -120,6 +120,9 @@ func (s *Server) Handler() http.Handler {
 		api("GET /api/proxy/user-rate-limits", globalRead, s.proxyListUserRateLimits)
 		api("PUT /api/proxy/user-rate-limits", adminOnly, s.proxySetUserRateLimit)
 		api("DELETE /api/proxy/user-rate-limits", adminOnly, s.proxyDeleteUserRateLimit)
+		api("GET /api/proxy/spend-limits", globalRead, s.proxyListSpendLimits)
+		api("PUT /api/proxy/spend-limits", adminOnly, s.proxySetSpendLimit)
+		api("DELETE /api/proxy/spend-limits", adminOnly, s.proxyDeleteSpendLimit)
 		api("PUT /api/proxy/vendor-keys", adminOnly, s.proxySetVendorKey)
 		api("DELETE /api/proxy/vendor-keys", adminOnly, s.proxyDeleteVendorKey)
 		api("GET /api/proxy/organizations", globalRead, s.proxyListOrganizations)
@@ -305,10 +308,10 @@ func backendErr(w http.ResponseWriter, err error) {
 	}
 	msg := st.Message()
 	if st.Code() == codes.Unauthenticated || st.Code() == codes.PermissionDenied {
-		msg = "llm-proxy rejected the console's admin key: " + msg
+		msg = "the KTMS gateway rejected the console's admin key: " + msg
 	}
 	if st.Code() == codes.Unavailable {
-		msg = "llm-proxy is unreachable: " + msg
+		msg = "the KTMS gateway is unreachable: " + msg
 	}
 	log.Warn().Str("grpc", st.Code().String()).Str("msg", st.Message()).Msg("backend error")
 	writeErr(w, code, strings.ToLower(st.Code().String()), msg)

@@ -286,6 +286,44 @@ func (s *Server) proxyDeleteUserRateLimit(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
+func (s *Server) proxyListSpendLimits(w http.ResponseWriter, r *http.Request, _ *auth.User) {
+	q := r.URL.Query()
+	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
+	defer cancel()
+	resp, err := s.admin.ListSpendLimits(ctx, &pb.ListSpendLimitsRequest{SubjectType: q.Get("subject_type"), SubjectId: q.Get("subject_id")})
+	if err != nil {
+		backendErr(w, err)
+		return
+	}
+	writeProto(w, resp)
+}
+
+func (s *Server) proxySetSpendLimit(w http.ResponseWriter, r *http.Request, _ *auth.User) {
+	var spec pb.SpendLimitSpec
+	if err := readProto(r, &spec); err != nil {
+		backendErr(w, badBody(err))
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
+	defer cancel()
+	if _, err := s.admin.SetSpendLimit(ctx, &pb.SetSpendLimitRequest{SpendLimit: &spec}); err != nil {
+		backendErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) proxyDeleteSpendLimit(w http.ResponseWriter, r *http.Request, _ *auth.User) {
+	q := r.URL.Query()
+	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
+	defer cancel()
+	if _, err := s.admin.DeleteSpendLimit(ctx, &pb.DeleteSpendLimitRequest{SubjectType: q.Get("subject_type"), SubjectId: q.Get("subject_id"), Period: q.Get("period")}); err != nil {
+		backendErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
 func (s *Server) proxySetVendorKey(w http.ResponseWriter, r *http.Request, u *auth.User) {
 	var req pb.SetVendorKeyRequest
 	if err := readProto(r, &req); err != nil {
@@ -405,7 +443,7 @@ func (s *Server) buildPlaygroundReq(req playgroundReq, u *auth.User) (*pb.Genera
 // admin key, which the proxy accepts for every scope.
 func (s *Server) proxyPlayground(w http.ResponseWriter, r *http.Request, u *auth.User) {
 	if s.data == nil {
-		writeErr(w, http.StatusNotFound, "not_found", "llm-proxy data client not available")
+		writeErr(w, http.StatusNotFound, "not_found", "the KTMS gateway data client is not available")
 		return
 	}
 	var req playgroundReq
@@ -432,7 +470,7 @@ func (s *Server) proxyPlayground(w http.ResponseWriter, r *http.Request, u *auth
 // keeping the connection alive and flushing increments as they arrive.
 func (s *Server) proxyPlaygroundStream(w http.ResponseWriter, r *http.Request, u *auth.User) {
 	if s.data == nil {
-		writeErr(w, http.StatusNotFound, "not_found", "llm-proxy data client not available")
+		writeErr(w, http.StatusNotFound, "not_found", "the KTMS gateway data client is not available")
 		return
 	}
 	var req playgroundReq
@@ -522,7 +560,7 @@ type judgeReq struct {
 // proxyJudge evaluates typed criteria against an arbitrary JSON state via the Judge RPC.
 func (s *Server) proxyJudge(w http.ResponseWriter, r *http.Request, u *auth.User) {
 	if s.data == nil {
-		writeErr(w, http.StatusNotFound, "not_found", "llm-proxy data client not available")
+		writeErr(w, http.StatusNotFound, "not_found", "the KTMS gateway data client is not available")
 		return
 	}
 	var req judgeReq

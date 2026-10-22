@@ -31,6 +31,7 @@ type fakeAdmin struct {
 	keys             []*pb.APIKeyInfo
 	lastMint         *pb.MintAPIKeyRequest
 	lastRevoke       string
+	spendLimits      []*pb.SpendLimitSpec
 }
 
 type fakeData struct {
@@ -206,6 +207,24 @@ func (f *fakeAdmin) DeleteUserRateLimit(_ context.Context, r *pb.DeleteUserRateL
 		delete(f.userLimits, r.UserId+":"+r.ModelId)
 	}
 	return &pb.DeleteUserRateLimitResponse{}, nil
+}
+
+func (f *fakeAdmin) ListSpendLimits(_ context.Context, _ *pb.ListSpendLimitsRequest, _ ...grpc.CallOption) (*pb.ListSpendLimitsResponse, error) {
+	return &pb.ListSpendLimitsResponse{SpendLimits: f.spendLimits}, nil
+}
+func (f *fakeAdmin) SetSpendLimit(_ context.Context, r *pb.SetSpendLimitRequest, _ ...grpc.CallOption) (*pb.SetSpendLimitResponse, error) {
+	f.spendLimits = append(f.spendLimits, r.SpendLimit)
+	return &pb.SetSpendLimitResponse{}, nil
+}
+func (f *fakeAdmin) DeleteSpendLimit(_ context.Context, r *pb.DeleteSpendLimitRequest, _ ...grpc.CallOption) (*pb.DeleteSpendLimitResponse, error) {
+	kept := f.spendLimits[:0]
+	for _, l := range f.spendLimits {
+		if l.SubjectType != r.SubjectType || l.SubjectId != r.SubjectId || l.Period != r.Period {
+			kept = append(kept, l)
+		}
+	}
+	f.spendLimits = kept
+	return &pb.DeleteSpendLimitResponse{}, nil
 }
 
 func newServer(t *testing.T, tokenmeterURL string) (*Server, *fakeAdmin, *auth.Handler) {
@@ -832,5 +851,25 @@ func TestMultiTenancy_EndpointsAndRBAC(t *testing.T) {
 	w = call(handler, "DELETE", "/api/proxy/keys/team1-key", "", devCookie, csrf)
 	if w.Code != 403 {
 		t.Fatalf("expected 403 for member revoke key, got %d", w.Code)
+	}
+}
+
+// Spend caps are admin writes; viewers may read them.
+func TestSpendLimitRoutes(t *testing.T) {
+	s, fa, _ := newServer(t, "")
+	h := s.Handler()
+	admin, viewer := sessionCookie(t, "boss@x.com"), sessionCookie(t, "p@view.com")
+	body := `{"subject_type":"key","subject_id":"search","period":"day","limit_nanousd":"5000000000"}`
+	if w := call(h, "PUT", "/api/proxy/spend-limits", body, viewer, csrf); w.Code != http.StatusForbidden {
+		t.Fatalf("viewer set = %d, want 403", w.Code)
+	}
+	if w := call(h, "PUT", "/api/proxy/spend-limits", body, admin, csrf); w.Code != http.StatusOK || len(fa.spendLimits) != 1 || fa.spendLimits[0].LimitNanousd != 5e9 {
+		t.Fatalf("admin set = %d %s, limits %v", w.Code, w.Body, fa.spendLimits)
+	}
+	if w := call(h, "GET", "/api/proxy/spend-limits", "", viewer, nil); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"subject_id":"search"`) {
+		t.Fatalf("viewer list = %d %s", w.Code, w.Body)
+	}
+	if w := call(h, "DELETE", "/api/proxy/spend-limits?subject_type=key&subject_id=search&period=day", "", admin, csrf); w.Code != http.StatusOK || len(fa.spendLimits) != 0 {
+		t.Fatalf("admin delete = %d, limits %v", w.Code, fa.spendLimits)
 	}
 }
