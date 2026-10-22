@@ -11,12 +11,38 @@ Notable changes to ktms-admin. The format follows
 The first stable release, paired with Keystone. The Model Switchboard. (KTMS) 1.0: ktms-admin
 1.x works with every KTMS 1.x release (see [Compatibility](README.md#compatibility)).
 
+### Added
+- Password sign-in: `ADMIN_USERS` or `ADMIN_USERS_FILE` hold `email:hash` entries made by the new
+  `ktms-admin hash-password` command (argon2id; bcrypt from `htpasswd -nB` works too). Failed attempts
+  back off per account and per client address.
+- Any OpenID Connect provider by its generic settings (`OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_ISSUER`,
+  `OIDC_NAME`), several at once through `OIDC_PROVIDERS`, and GitHub sign-in (`GITHUB_CLIENT_ID`,
+  `GITHUB_CLIENT_SECRET`, `GITHUB_URL` for Enterprise Server).
+- Sign-in through an access proxy: an e-mail header from `TRUSTED_PROXY_CIDRS` (oauth2-proxy, Authelia,
+  Authentik, Pomerium, Tailscale) or a verified Cloudflare Access token (`CF_ACCESS_TEAM_DOMAIN`,
+  `CF_ACCESS_AUD`).
+
 ### Changed
+- Google sign-in is optional: configure any of the methods above, alone or together. Sign-in methods
+  are pluggable adapters behind one core that owns sessions, roles and the sign-in page; Google works as
+  before, with the same redirect URI.
+- The console and sign-in page use the ai-process.dev palette and logo. The dark theme runs orange to
+  yellow on warm near-black, and the light theme has orange accents. Warnings are yellow and errors red,
+  so they no longer look like the accent; the third chart and rule colour is blue.
 - The image is published only as `coyl/ktms-admin`. `coyl/llm-proxy-admin` stays at 0.4.0: switch
   your deployments to the new name.
 - The binary and Go module are named `ktms-admin`; the console's internal CSRF header value
   changed with them (the server and its UI ship together).
 - The README names the gateway Keystone. The Model Switchboard. (KTMS).
+- The license is Apache 2.0, with a `NOTICE` file.
+
+### Deprecated
+- `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`: use `OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET`. The old names
+  keep working with a startup warning and are removed in 2.0.
+
+### Fixed
+- Sign-in error pages are styled again: the CSP blocked their inline styles.
+- A profile picture the CSP blocks no longer shows as a broken image.
 
 ## [0.4.0] - 2026-10-22
 

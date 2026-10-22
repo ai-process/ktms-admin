@@ -2,7 +2,7 @@
 
 [![Test](https://github.com/ai-process/ktms-admin/actions/workflows/test.yml/badge.svg)](https://github.com/ai-process/ktms-admin/actions/workflows/test.yml)
 [![Docker image](https://img.shields.io/docker/v/coyl/ktms-admin?label=docker%20hub&sort=semver)](https://hub.docker.com/r/coyl/ktms-admin)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache_2.0-blue.svg)](LICENSE)
 
 A web console for [**Keystone**](https://github.com/ai-process/ktms), the LLM gateway (KTMS, formerly llm-proxy), and
 [**light-tokenmeter**](https://github.com/ai-process/light-tokenmeter) (the usage meter). Use it with both,
@@ -12,14 +12,19 @@ or with either one alone.
   with failure rates, latency, estimated cost and a *greedy / worthy* verdict.
 - **Gateway:** manage models, routing rules, client API keys and vendor credentials, and try a prompt in the
   playground. No more `grpcurl`.
-- **Sign-in with Google**, limited to an allowlist with wildcards such as `*@example.com`. Optional read-only users.
+- **Sign-in** with a password, Google or any OpenID Connect provider, GitHub, or the access proxy you already
+  run (oauth2-proxy, Authelia, Authentik, Pomerium, Cloudflare Access), limited to an allowlist with wildcards such as `*@example.com`. Optional
+  read-only users.
 - **One binary:** a static Go binary with the UI embedded: Preact and htm as vendored ES modules, no
   front-end build step, light and dark themes, usable from a phone.
 
 ## Contents
 
 - [Quick start](#quick-start)
-- [Setting up Google sign-in](#setting-up-google-sign-in)
+- [Password sign-in](#password-sign-in)
+- [Google and other OpenID Connect providers](#google-and-other-openid-connect-providers)
+- [GitHub sign-in](#github-sign-in)
+- [Sign-in behind an access proxy](#sign-in-behind-an-access-proxy)
 - [Who may sign in](#who-may-sign-in)
 - [Compatibility](#compatibility)
 - [Running with one backend or both](#running-with-one-backend-or-both)
@@ -31,25 +36,30 @@ or with either one alone.
 
 ## Quick start
 
-You need a Google OAuth client ([how](#setting-up-google-sign-in)) and, for the gateway pages, a KTMS
-admin key (`MintAPIKey` with scope `admin`).
+You need a sign-in method and, for the gateway pages, a KTMS admin key (`MintAPIKey` with scope `admin`).
+The quickest method is a password ([more](#password-sign-in)). Google and other OpenID Connect providers
+([how](#google-and-other-openid-connect-providers)), GitHub ([how](#github-sign-in)) and access proxies
+([how](#sign-in-behind-an-access-proxy)) work too, alone or together.
 
 ```bash
+# Prints you@example.com:$argon2id$… after asking for a password twice.
+docker run --rm -it coyl/ktms-admin:latest hash-password you@example.com
+
 docker run -d --name ktms-admin -p 8080:8080 \
   -e PUBLIC_URL=https://admin.example.com \
-  -e GOOGLE_CLIENT_ID=… -e GOOGLE_CLIENT_SECRET=… \
-  -e ALLOWED_EMAILS='*@example.com' \
+  -e ADMIN_USERS='you@example.com:$argon2id$…' \
+  -e ALLOWED_EMAILS='you@example.com' \
   -e SESSION_SECRET="$(openssl rand -base64 36)" \
   -e KTMS_ADDR=ktms:9090 -e KTMS_ADMIN_KEY=ktms_… \
   -e TOKENMETER_URL=http://light-tokenmeter:8080 \
   coyl/ktms-admin:latest
 ```
 
-Open `PUBLIC_URL`, sign in with a Google account that matches `ALLOWED_EMAILS`, and you are in.
+Open `PUBLIC_URL`, sign in with that e-mail and password, and you are in.
 [`examples/compose.yaml`](examples/compose.yaml) starts the whole family (KTMS, light-tokenmeter and
 this console on one Postgres) with the first-run steps in its header.
 
-**Just looking around on your machine?** Skip Google entirely, on localhost only:
+**Just looking around on your machine?** Skip sign-in entirely, on localhost only:
 
 ```bash
 docker run --rm -p 8081:8080 -e PUBLIC_URL=http://localhost:8081 -e INSECURE_NO_AUTH=true \
@@ -58,21 +68,110 @@ docker run --rm -p 8081:8080 -e PUBLIC_URL=http://localhost:8081 -e INSECURE_NO_
 
 `INSECURE_NO_AUTH` is refused unless `PUBLIC_URL` host is `localhost`, `127.0.0.1`, or `[::1]`.
 
-## Setting up Google sign-in
+## Password sign-in
+
+Passwords live in the configuration as hashes. The console needs no database and no identity provider.
+
+1. Hash a password: `ktms-admin hash-password you@example.com` (or the `docker run` line above). It asks
+   twice without echo, or reads one line from a pipe, requires at least 12 characters, and prints an
+   `email:hash` entry. The hash is argon2id; bcrypt hashes from `htpasswd -nB` work too.
+2. Put the entries in `ADMIN_USERS`, separated by spaces or newlines, or one per line in a file named by
+   `ADMIN_USERS_FILE` (lines starting with `#` are comments). Hashes contain `$`, so quote them: single
+   quotes in a shell or a `.env` file, `$$` inside `compose.yaml`.
+3. Add the same e-mails to `ALLOWED_EMAILS`, `VIEWER_EMAILS` or `TEAM_MEMBERSHIPS`. A password only proves
+   who someone is. The allowlists decide whether they get in and with which role.
+
+A malformed entry stops the console at start. To change a password or add someone, edit the entries and
+restart. After 5 wrong passwords for one e-mail the console makes that account wait, doubling the wait with
+each further failure up to 5 minutes. One client address gets 30 tries before a wait of up to a minute.
+The counters are kept in memory per replica. Sign-in forms carry a token tied to a cookie, so another site
+cannot post one.
+
+## Google and other OpenID Connect providers
+
+**Google:**
 
 1. In the [Google Cloud console](https://console.cloud.google.com/apis/credentials) create an
    **OAuth client ID** of type **Web application** (configure the consent screen first; *Internal* works
    if everyone is in your Google Workspace, otherwise *External*).
 2. Under **Authorized redirect URIs** add `PUBLIC_URL` + `/auth/callback`, for example
    `https://admin.example.com/auth/callback` (and `http://localhost:8080/auth/callback` for local tests).
-3. Put the client id and secret into `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
+3. Put the client id and secret into `OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET`.
 
-The console uses the authorization-code flow with PKCE, state and nonce, and requires a **verified** e-mail.
-Only the `openid email profile` scopes are requested.
+**Another provider** works the same way: register a confidential web client with the redirect URI
+`PUBLIC_URL/auth/callback`, then set `OIDC_ISSUER` and, for the button, `OIDC_NAME`:
+
+| Provider | `OIDC_ISSUER` |
+| --- | --- |
+| Keycloak | `https://keycloak.example.com/realms/<realm>` |
+| Zitadel | `https://<instance>.zitadel.cloud` |
+| GitLab | `https://gitlab.com` or your instance |
+| Authentik | `https://authentik.example.com/application/o/<slug>/` (the `email` scope mapping must return `email_verified: true`) |
+| Okta | `https://<org>.okta.com` |
+
+**Several providers at once:** list names in `OIDC_PROVIDERS` (lower-case letters, digits and dashes) and
+give each one `OIDC_<NAME>_ISSUER`, `OIDC_<NAME>_CLIENT_ID`, `OIDC_<NAME>_CLIENT_SECRET` and optionally
+`OIDC_<NAME>_NAME`. A dash in the name becomes `_` in the variables. Their redirect URI is
+`PUBLIC_URL/auth/oidc-<name>/callback`. For example, `OIDC_PROVIDERS=corp-sso` with `OIDC_CORP_SSO_ISSUER=…` and
+the redirect URI `https://admin.example.com/auth/oidc-corp-sso/callback`. They can sit next to the unnamed
+provider above.
+
+The console uses the authorization-code flow with PKCE, state and nonce, requests only the
+`openid email profile` scopes, and requires the provider to mark the e-mail **verified**
+(`email_verified`). Microsoft Entra ID does not send that claim, so put it behind an
+[access proxy](#sign-in-behind-an-access-proxy) such as oauth2-proxy instead. The older
+`GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` names still work with a startup warning until 2.0.
+
+## GitHub sign-in
+
+1. Under GitHub **Settings → Developer settings → OAuth Apps** (or your organization's), create an app with the
+   **Authorization callback URL** `PUBLIC_URL/auth/github/callback`.
+2. Generate a client secret and set `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`. For GitHub Enterprise
+   Server also set `GITHUB_URL`, such as `https://github.example.com`.
+
+The console asks for `read:user user:email` and uses the account's **primary, verified** e-mail. To limit
+access to your organization, list its people or its domain in the allowlists.
+
+## Sign-in behind an access proxy
+
+If the console already sits behind an access proxy that signs people in, let the proxy name the user and
+skip the OAuth client. The proxy checks identity on every request, so revoking someone there ends their
+console access at once. The console's allowlists still decide who gets in and with which role.
+
+**A proxy that sends the e-mail in a header** (oauth2-proxy, Authelia, Authentik, Pomerium, Tailscale
+Serve, or Caddy `forward_auth` / nginx `auth_request` in front of one of them):
+
+1. Make the proxy put the user's e-mail in a request header. Set `AUTH_HEADER_EMAIL` to its name if it is not
+   `X-Forwarded-Email`:
+
+   | Proxy | `AUTH_HEADER_EMAIL` |
+   | --- | --- |
+   | oauth2-proxy as the reverse proxy | `X-Forwarded-Email` (the default; `--pass-user-headers` is on by default) |
+   | oauth2-proxy behind nginx `auth_request` | `X-Auth-Request-Email` (with `--set-xauthrequest`, copied by nginx) |
+   | Authelia | `Remote-Email` |
+   | Authentik proxy outpost | `X-authentik-email` |
+   | Pomerium | `X-Pomerium-Claim-Email` (with `jwt_claims_headers: email`) |
+   | Tailscale Serve | `Tailscale-User-Login` |
+
+   `AUTH_HEADER_NAME` optionally names a display-name header (`Remote-Name`, `Tailscale-User-Name`, …).
+2. Set `TRUSTED_PROXY_CIDRS` to the addresses the proxy connects from, such as `10.0.0.0/8` or `172.18.0.2`.
+   The console ignores the header from any other address.
+3. **The proxy must set that header on every request and overwrite any value the client sent**, and the
+   console must be unreachable except through it. The proxies above do this for their own headers. A plain
+   TLS terminator does not, so never put one in `TRUSTED_PROXY_CIDRS` unless it removes the header from
+   incoming requests.
+
+**Cloudflare Access:** set `CF_ACCESS_TEAM_DOMAIN` (`myteam` or `myteam.cloudflareaccess.com`) and
+`CF_ACCESS_AUD` (the application's *Application Audience (AUD) Tag*). The console verifies the signed
+`Cf-Access-Jwt-Assertion` token on every request (signature, issuer, audience, expiry), so it needs no trusted
+network path. Service tokens carry no e-mail and are refused.
+
+Proxy sign-in works alongside the other methods. Without the proxy, the sign-in page offers the other methods. Signing out
+happens at the proxy, so the console hides its own *Sign out* button for these users.
 
 ## Who may sign in
 
-`ALLOWED_EMAILS` is a comma- or space-separated list of patterns matched against the verified Google
+`ALLOWED_EMAILS` is a comma- or space-separated list of patterns matched against the verified e-mail
 address, case-insensitively. `*` matches any run of characters within the part before or after the `@`,
 never across it.
 
@@ -82,7 +181,7 @@ never across it.
 | `*@example.com` | everyone at example.com (not `x@sub.example.com`) |
 | `*@*.example.com` | everyone on any subdomain of example.com |
 | `ops-*@example.com` | `ops-eu@example.com`, `ops-us@example.com`, … |
-| `*@*` | every verified Google account (the explicit "open to all", logged at start) |
+| `*@*` | everyone who can sign in (the explicit "open to all", logged at start) |
 
 Patterns need exactly one `@`; a bare `*` or `example.com` is rejected at startup so a typo can never open
 the door. An empty list admits nobody.
@@ -134,7 +233,18 @@ All settings are environment variables; see [`env.example`](env.example).
 | Variable | Default | Description |
 | --- | --- | --- |
 | `PUBLIC_URL` | – | **Required.** External base URL, e.g. `https://admin.example.com`. |
-| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | – | **Required** (unless `INSECURE_NO_AUTH`). |
+| `ADMIN_USERS` | empty | Turns on [password sign-in](#password-sign-in): `email:hash` entries from `hash-password`. |
+| `ADMIN_USERS_FILE` | empty | A file with one `email:hash` entry per line, merged with `ADMIN_USERS`. |
+| `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` | – | Turns on [OpenID Connect sign-in](#google-and-other-openid-connect-providers), Google unless `OIDC_ISSUER` says otherwise. At least one sign-in method is required unless `INSECURE_NO_AUTH` is set. (`GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` still work, deprecated.) |
+| `OIDC_ISSUER` | Google | Another OpenID Connect issuer that returns verified e-mails. |
+| `OIDC_NAME` | Google or SSO | The provider's name on the sign-in button. |
+| `OIDC_PROVIDERS` | empty | More providers by name, each with `OIDC_<NAME>_ISSUER`, `_CLIENT_ID`, `_CLIENT_SECRET` and optionally `_NAME`. |
+| `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | – | Turn on [GitHub sign-in](#github-sign-in). |
+| `GITHUB_URL` | `https://github.com` | GitHub Enterprise Server address. |
+| `TRUSTED_PROXY_CIDRS` | empty | Turns on [proxy sign-in](#sign-in-behind-an-access-proxy): the addresses or CIDRs of the access proxy. |
+| `AUTH_HEADER_EMAIL` | `X-Forwarded-Email` | The header the proxy names the user's e-mail in. |
+| `AUTH_HEADER_NAME` | empty | Optional header with the user's display name. |
+| `CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD` | empty | Turn on [Cloudflare Access](#sign-in-behind-an-access-proxy) sign-in. |
 | `ALLOWED_EMAILS` | – | Admin patterns. At least one of the two lists must be non-empty. |
 | `VIEWER_EMAILS` | empty | Read-only patterns. |
 | `TEAM_MEMBERSHIPS` | empty | Team workspaces: `email:team_id[:teamlead\|member[:org_id]]`, see [Who may sign in](#who-may-sign-in). |
@@ -148,7 +258,6 @@ All settings are environment variables; see [`env.example`](env.example).
 | `LISTEN_ADDR` | `:8080` | Listen address. |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error`. |
 | `INSECURE_NO_AUTH` | `false` | Skip sign-in. Localhost `PUBLIC_URL` only. |
-| `OIDC_ISSUER` | Google | Advanced: another OpenID Connect issuer that returns verified e-mails. |
 
 ## Deployment
 
@@ -217,7 +326,12 @@ shows its spend this month against the budget and its keys.
 - The console holds the gateway's admin key **on the server**; it never reaches the browser, and vendor keys are
   write-only.
 - Session cookies are signed (HMAC-SHA256), `HttpOnly`, `SameSite=Lax` and `Secure` over HTTPS. They carry
-  only name, e-mail and expiry; the role is recomputed from the allowlists on every request.
+  only name, e-mail, sign-in method and expiry; the role is recomputed from the allowlists on every request,
+  and turning a sign-in method off ends its sessions.
+- Passwords are stored only as argon2id (or bcrypt) hashes, compared in constant time; unknown e-mails take
+  as long as known ones, and failures back off per account and per client address.
+- Proxy sign-in trusts an identity header only from `TRUSTED_PROXY_CIDRS`, and only as far as that proxy
+  overwrites the header; Cloudflare Access tokens are verified cryptographically on every request.
 - Anything that changes state needs the admin role, a custom `X-Requested-With` header (which a cross-site
   page cannot send without a CORS preflight this server never grants) and a same-origin `Origin` when one is
   sent.
@@ -230,7 +344,7 @@ shows its spend this month against the budget and its keys.
 
 ```bash
 make test    # go test -race ./...
-make dev     # run on :8080 without Google sign-in (set KTMS_* and/or TOKENMETER_URL)
+make dev     # run on :8080 without sign-in (set KTMS_* and/or TOKENMETER_URL)
 make proto   # regenerate internal/gen from proto/ (needs buf)
 ```
 
@@ -240,7 +354,7 @@ unmodified except that hooks import `./preact.mjs`). Restart the server after ed
 at build time. `proto/` is a copy of KTMS's
 protocol, so the console talks to it over gRPC without importing its code.
 
-Layout: `cmd/ktms-admin` (entrypoint), `internal/auth` (Google sign-in, sessions, allowlists),
+Layout: `cmd/ktms-admin` (entrypoint), `internal/auth` (sessions, allowlists, sign-in page; one package per sign-in method below it),
 `internal/api` (JSON API and guards), `internal/usage` (light-tokenmeter client and the greedy/worthy
 analysis), `internal/config`, `internal/web` (embedded UI).
 
@@ -258,4 +372,4 @@ with `docker-publish.yml` of `ai-process/ktms-admin`). The repository needs the 
 git tag v1.0.0 && git push origin v1.0.0
 ```
 
-Contributions are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md). Licensed under the [MIT License](LICENSE).
+Contributions are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md). Licensed under the [Apache License 2.0](LICENSE).

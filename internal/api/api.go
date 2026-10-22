@@ -94,9 +94,7 @@ func attachStreamKey(key string) grpc.StreamClientInterceptor {
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /auth/login", s.auth.Login)
-	mux.HandleFunc("GET /auth/callback", s.auth.Callback)
-	mux.HandleFunc("POST /auth/logout", s.auth.Logout)
+	s.auth.Mount(mux)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, 200, map[string]string{"status": "ok"}) })
 
 	api := func(pattern string, pol policy, h func(w http.ResponseWriter, r *http.Request, u *auth.User)) {
@@ -164,7 +162,7 @@ func (s *Server) Handler() http.Handler {
 func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
-		h.Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data: https://*.googleusercontent.com; style-src 'self'; script-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+		h.Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data: https://*.googleusercontent.com https://avatars.githubusercontent.com; style-src 'self'; script-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("Referrer-Policy", "same-origin")

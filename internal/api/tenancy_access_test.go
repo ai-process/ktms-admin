@@ -13,6 +13,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/ai-process/ktms-admin/internal/auth"
+	"github.com/ai-process/ktms-admin/internal/auth/oidc"
 	"github.com/ai-process/ktms-admin/internal/config"
 	pb "github.com/ai-process/ktms-admin/internal/gen/ktms/v1"
 )
@@ -28,7 +29,7 @@ func tenantServer(t *testing.T) (http.Handler, *fakeAdmin) {
 	admins, _ := auth.ParseAllowlist("boss@x.com,*@corp.com")
 	viewers, _ := auth.ParseAllowlist("*@view.com")
 	members := auth.ParseTeamMemberships("lead@corp.com:team-1:teamlead dev@corp.com:team-1:member ghost@corp.com::teamlead")
-	h := auth.New(auth.Options{PublicURL: "https://admin.example.com", Admins: admins, Viewers: viewers, TeamMemberships: members,
+	h := auth.New(auth.Options{Methods: []auth.Method{oidc.New(oidc.Options{})}, PublicURL: "https://admin.example.com", Admins: admins, Viewers: viewers, TeamMemberships: members,
 		Signer: auth.NewSigner("0123456789abcdef0123456789abcdef"), SessionTTL: time.Hour})
 	fa := &fakeAdmin{
 		teams: map[string]*pb.Team{"team-1": {Id: "team-1", OrgId: "org-1", Name: "search", MonthlyBudgetUsd: 100}},

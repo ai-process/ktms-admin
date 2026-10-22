@@ -1,19 +1,21 @@
 /* KTMS admin design system. Every colour is a token so both themes share one
-   set of rules; components below use tokens only. */
+   set of rules; components below use tokens only. The palette follows the
+   ai-process.dev landing: orange to yellow on near-black, orange on light. */
 @font-face { font-family: "Inter"; font-style: normal; font-weight: 100 900; font-display: swap; src: url("/fonts/inter-latin-wght-normal.woff2") format("woff2"); }
 @font-face { font-family: "JetBrains Mono"; font-style: normal; font-weight: 100 800; font-display: swap; src: url("/fonts/jetbrains-mono-latin-wght-normal.woff2") format("woff2"); }
 
 :root {
-  --bg: #F5F6F8; --surface: #FFFFFF; --surface-2: #FAFBFC; --sunken: #F1F3F6; --subtle: #EEF0F3;
-  --line: #E4E7EC; --line-strong: #D5D9E0; --line-dash: #B9C0CC;
-  --text: #15171C; --text-2: #3A3F4B; --muted: #5B6270;
-  --accent: #2448C7; --accent-hover: #1A3496; --on-accent: #FFFFFF; --accent-text: #2448C7; --accent-soft: #EEF2FD; --accent-soft-text: #1A3496;
+  --bg: #FAF7F3; --surface: #FFFFFF; --surface-2: #FDFBF8; --sunken: #F5EFE8; --subtle: #F0E8DF;
+  --line: #EAE1D6; --line-strong: #DACDBE; --line-dash: #C2B19F;
+  --text: #1D140C; --text-2: #3F3328; --muted: #6B5E52;
+  --accent: #FF7A1A; --accent-hover: #F26508; --on-accent: #1D0F02; --accent-text: #C2410C; --accent-soft: #FFF0E3; --accent-soft-text: #9A3412;
+  --accent-fill: var(--accent); --accent-fill-hover: var(--accent-hover);
   --ok: #12805C; --ok-soft: #E3F6EE; --ok-text: #0B6B4C;
-  --warn: #E08A1E; --warn-soft: #FFF1DC; --warn-text: #8A4B00;
-  --bad: #C2410C; --bad-soft: #FFF1E6; --bad-text: #9A3412;
-  --series-1: #2448C7; --series-2: #E08A1E; --series-3: #7C8DF0; --series-4: #12805C; --series-5: #9AA3B2;
-  --shadow: 0 1px 2px rgba(21, 23, 28, .06); --shadow-lg: 0 12px 32px rgba(21, 23, 28, .18);
-  --focus: 0 0 0 3px rgba(36, 72, 199, .28);
+  --warn: #CA8A04; --warn-soft: #FEF6D8; --warn-text: #854D0E;
+  --bad: #DC2626; --bad-soft: #FDECEC; --bad-text: #B91C1C;
+  --series-1: #FF7A1A; --series-2: #E3A008; --series-3: #2563EB; --series-4: #12805C; --series-5: #A89A8C;
+  --shadow: 0 1px 2px rgba(29, 20, 12, .06); --shadow-lg: 0 12px 32px rgba(29, 20, 12, .18);
+  --focus: 0 0 0 3px rgba(255, 122, 26, .3);
   --radius: 12px; --radius-sm: 8px;
   --font: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -21,30 +23,34 @@
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #0E1014; --surface: #161920; --surface-2: #1A1E26; --sunken: #1E222B; --subtle: #232833;
-    --line: #262B34; --line-strong: #333A45; --line-dash: #4A5260;
-    --text: #E8EAEE; --text-2: #C2C7D0; --muted: #8D95A3;
-    --accent: #4567E0; --accent-hover: #5A7AEB; --on-accent: #FFFFFF; --accent-text: #8AA4FF; --accent-soft: #1C2647; --accent-soft-text: #B3C3FF;
-    --ok: #34B386; --ok-soft: #12302A; --ok-text: #6FD6AE;
-    --warn: #E9A23B; --warn-soft: #33260F; --warn-text: #F2C27A;
-    --bad: #F0703C; --bad-soft: #3A1D14; --bad-text: #FFA27C;
-    --series-1: #6E8EF5; --series-2: #E9A23B; --series-3: #A9B6F7; --series-4: #34B386; --series-5: #6B7383;
-    --shadow: none; --shadow-lg: 0 12px 32px rgba(0, 0, 0, .5);
-    --focus: 0 0 0 3px rgba(138, 164, 255, .4);
+    --bg: #0C0805; --surface: #1A120B; --surface-2: #1F160D; --sunken: #22180E; --subtle: #2A1D10;
+    --line: #2E2114; --line-strong: #44311C; --line-dash: #6B5233;
+    --text: #F8F2E9; --text-2: #DCCFBE; --muted: #B9AA96;
+    --accent: #FF9A1F; --accent-hover: #FFB13F; --on-accent: #1D0F02; --accent-text: #FFA928; --accent-soft: #3A230C; --accent-soft-text: #FFD08A;
+    --accent-fill: linear-gradient(120deg, #FF6414 0%, #FF9A1F 45%, #FFD43F 100%);
+    --accent-fill-hover: linear-gradient(120deg, #FF7A2E 0%, #FFAD3F 45%, #FFE066 100%);
+    --ok: #7BD88F; --ok-soft: #16291A; --ok-text: #9BE3A9;
+    --warn: #FFD54A; --warn-soft: #332A0C; --warn-text: #FFE08A;
+    --bad: #DC2626; --bad-soft: #3A1513; --bad-text: #FF8F86;
+    --series-1: #FF9A1F; --series-2: #FFD54A; --series-3: #7AA7FF; --series-4: #7BD88F; --series-5: #85776A;
+    --shadow: none; --shadow-lg: 0 12px 32px rgba(0, 0, 0, .6);
+    --focus: 0 0 0 3px rgba(255, 154, 31, .45);
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --bg: #0E1014; --surface: #161920; --surface-2: #1A1E26; --sunken: #1E222B; --subtle: #232833;
-  --line: #262B34; --line-strong: #333A45; --line-dash: #4A5260;
-  --text: #E8EAEE; --text-2: #C2C7D0; --muted: #8D95A3;
-  --accent: #4567E0; --accent-hover: #5A7AEB; --on-accent: #FFFFFF; --accent-text: #8AA4FF; --accent-soft: #1C2647; --accent-soft-text: #B3C3FF;
-  --ok: #34B386; --ok-soft: #12302A; --ok-text: #6FD6AE;
-  --warn: #E9A23B; --warn-soft: #33260F; --warn-text: #F2C27A;
-  --bad: #F0703C; --bad-soft: #3A1D14; --bad-text: #FFA27C;
-  --series-1: #6E8EF5; --series-2: #E9A23B; --series-3: #A9B6F7; --series-4: #34B386; --series-5: #6B7383;
-  --shadow: none; --shadow-lg: 0 12px 32px rgba(0, 0, 0, .5);
-  --focus: 0 0 0 3px rgba(138, 164, 255, .4);
+  --bg: #0C0805; --surface: #1A120B; --surface-2: #1F160D; --sunken: #22180E; --subtle: #2A1D10;
+  --line: #2E2114; --line-strong: #44311C; --line-dash: #6B5233;
+  --text: #F8F2E9; --text-2: #DCCFBE; --muted: #B9AA96;
+  --accent: #FF9A1F; --accent-hover: #FFB13F; --on-accent: #1D0F02; --accent-text: #FFA928; --accent-soft: #3A230C; --accent-soft-text: #FFD08A;
+  --accent-fill: linear-gradient(120deg, #FF6414 0%, #FF9A1F 45%, #FFD43F 100%);
+  --accent-fill-hover: linear-gradient(120deg, #FF7A2E 0%, #FFAD3F 45%, #FFE066 100%);
+  --ok: #7BD88F; --ok-soft: #16291A; --ok-text: #9BE3A9;
+  --warn: #FFD54A; --warn-soft: #332A0C; --warn-text: #FFE08A;
+  --bad: #DC2626; --bad-soft: #3A1513; --bad-text: #FF8F86;
+  --series-1: #FF9A1F; --series-2: #FFD54A; --series-3: #7AA7FF; --series-4: #7BD88F; --series-5: #85776A;
+  --shadow: none; --shadow-lg: 0 12px 32px rgba(0, 0, 0, .6);
+  --focus: 0 0 0 3px rgba(255, 154, 31, .45);
   color-scheme: dark;
 }
 
@@ -72,7 +78,7 @@ code, .mono { font-family: var(--mono); font-size: 13px; }
 .shell { display: flex; min-height: 100vh; }
 .side { flex: 0 0 240px; background: var(--surface); border-right: 1px solid var(--line); padding: 20px 14px; display: flex; flex-direction: column; gap: 22px; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
 .brand { display: flex; align-items: center; gap: 10px; padding: 4px 8px; }
-.brand .logo { width: 28px; height: 28px; border-radius: 8px; background: var(--accent); color: var(--on-accent); display: grid; place-items: center; flex: none; }
+.brand .logo { width: 28px; height: 28px; border-radius: 8px; display: block; flex: none; }
 .brand b { display: block; font-size: 15px; }
 .brand span { display: block; font-size: 12px; color: var(--muted); }
 .navgrp { display: flex; flex-direction: column; gap: 2px; }
@@ -149,8 +155,8 @@ button, .btn { font: inherit; font-weight: 500; height: 36px; padding: 0 14px; b
 button:hover:not(:disabled) { background: var(--sunken); }
 button:disabled { opacity: .55; cursor: not-allowed; }
 .btn:hover { text-decoration: none; }
-button.primary, .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
-button.primary:hover:not(:disabled), .btn.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+button.primary, .btn.primary { background: var(--accent-fill); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
+button.primary:hover:not(:disabled), .btn.primary:hover { background: var(--accent-fill-hover); border-color: var(--accent-hover); }
 button.danger { color: var(--bad-text); }
 button.danger.solid { background: var(--bad); border-color: var(--bad); color: #FFFFFF; }
 button.ghost { border-color: transparent; background: transparent; }
@@ -161,7 +167,7 @@ button.icon { width: 30px; height: 30px; padding: 0; border-radius: 7px; }
 button.pill { border-radius: 999px; }
 .seg { display: inline-flex; background: var(--sunken); border-radius: 9px; padding: 3px; gap: 2px; }
 .seg button { height: 30px; padding: 0 12px; border: 0; border-radius: 7px; background: transparent; color: var(--text-2); font-size: 13px; }
-.seg button[aria-pressed="true"] { background: var(--surface); color: var(--text); font-weight: 600; box-shadow: 0 1px 2px rgba(21, 23, 28, .12); }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--text); font-weight: 600; box-shadow: 0 1px 2px rgba(29, 20, 12, .12); }
 .seg.dark button[aria-pressed="true"] { background: var(--text); color: var(--bg); }
 
 .field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--text-2); font-weight: 500; min-width: 0; }
@@ -199,7 +205,7 @@ legend { font-size: 13px; font-weight: 500; color: var(--text-2); padding: 0; ma
 /* ---------- dialog, toast ---------- */
 dialog { border: 0; padding: 0; border-radius: 14px; background: var(--surface); color: var(--text); box-shadow: var(--shadow-lg); width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 48px); }
 dialog.wide { width: min(760px, calc(100vw - 32px)); }
-dialog::backdrop { background: rgba(14, 16, 20, .45); }
+dialog::backdrop { background: rgba(12, 8, 5, .5); }
 dialog form { display: flex; flex-direction: column; max-height: calc(100vh - 48px); }
 dialog .dlg-head { padding: 18px 22px 0; display: flex; flex-direction: column; gap: 4px; }
 dialog .dlg-head p { color: var(--muted); font-size: 13px; }
@@ -245,7 +251,7 @@ dialog .dlg-foot { padding: 14px 22px; border-top: 1px solid var(--line); displa
 .rule-list { flex: 1 1 340px; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
 .rule-card { display: flex; flex-direction: column; align-items: stretch; gap: 8px; width: 100%; text-align: left; padding: 14px 16px; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--line); height: auto; white-space: normal; font-weight: 400; cursor: pointer; }
 .rule-card:hover:not(:disabled) { background: var(--surface); border-color: var(--line-strong); }
-.rule-card[aria-current="true"] { border: 2px solid var(--accent); padding: 13px 15px; box-shadow: 0 2px 8px rgba(36, 72, 199, .12); }
+.rule-card[aria-current="true"] { border: 2px solid var(--accent); padding: 13px 15px; box-shadow: 0 2px 8px rgba(255, 122, 26, .15); }
 .rule-card .top { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
 .rule-card .chain-text { font-size: 13px; color: var(--text-2); overflow-wrap: anywhere; }
 .rule-card.dragging { opacity: .5; }

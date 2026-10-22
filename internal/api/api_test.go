@@ -14,6 +14,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/ai-process/ktms-admin/internal/auth"
+	"github.com/ai-process/ktms-admin/internal/auth/oidc"
 	"github.com/ai-process/ktms-admin/internal/config"
 	pb "github.com/ai-process/ktms-admin/internal/gen/ktms/v1"
 	"github.com/ai-process/ktms-admin/internal/usage"
@@ -232,7 +233,7 @@ func newServer(t *testing.T, tokenmeterURL string) (*Server, *fakeAdmin, *auth.H
 	admins, _ := auth.ParseAllowlist("boss@x.com")
 	viewers, _ := auth.ParseAllowlist("*@view.com")
 	signer := auth.NewSigner("0123456789abcdef0123456789abcdef")
-	h := auth.New(auth.Options{PublicURL: "https://admin.example.com", Admins: admins, Viewers: viewers, Signer: signer, SessionTTL: time.Hour})
+	h := auth.New(auth.Options{Methods: []auth.Method{oidc.New(oidc.Options{})}, PublicURL: "https://admin.example.com", Admins: admins, Viewers: viewers, Signer: signer, SessionTTL: time.Hour})
 	cfg := &config.Config{PublicURL: "https://admin.example.com"}
 	s := &Server{cfg: cfg, auth: h}
 	fa := &fakeAdmin{}
@@ -757,7 +758,7 @@ func TestMultiTenancy_EndpointsAndRBAC(t *testing.T) {
 	viewers, _ := auth.ParseAllowlist("*@view.com")
 	memberships := auth.ParseTeamMemberships("lead@corp.com:team-1:teamlead:org-1, dev@corp.com:team-1:member:org-1")
 	signer := auth.NewSigner("0123456789abcdef0123456789abcdef")
-	authHandler := auth.New(auth.Options{
+	authHandler := auth.New(auth.Options{Methods: []auth.Method{oidc.New(oidc.Options{})},
 		PublicURL:       "https://admin.example.com",
 		Admins:          admins,
 		Viewers:         viewers,

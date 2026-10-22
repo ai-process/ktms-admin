@@ -1,8 +1,10 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -14,10 +16,18 @@ import (
 
 	"github.com/ai-process/ktms-admin/internal/api"
 	"github.com/ai-process/ktms-admin/internal/auth"
+	"github.com/ai-process/ktms-admin/internal/auth/cfaccess"
+	"github.com/ai-process/ktms-admin/internal/auth/github"
+	"github.com/ai-process/ktms-admin/internal/auth/header"
+	"github.com/ai-process/ktms-admin/internal/auth/oidc"
+	"github.com/ai-process/ktms-admin/internal/auth/password"
 	"github.com/ai-process/ktms-admin/internal/config"
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "hash-password" {
+		os.Exit(hashPassword(os.Args[2:]))
+	}
 	log.Logger = log.Output(os.Stderr)
 	cfg, err := config.Load()
 	if cfg != nil {
@@ -43,7 +53,7 @@ func main() {
 		log.Fatal().Err(err).Msg("VIEWER_EMAILS")
 	}
 	if admins.AllowsAll() || viewers.AllowsAll() {
-		log.Warn().Msg("an allowlist contains *@*: every verified Google account can sign in")
+		log.Warn().Msg("an allowlist contains *@*: everyone who can sign in gets access")
 	}
 	secret := cfg.SessionSecret
 	switch {
@@ -59,12 +69,16 @@ func main() {
 
 	memberships := auth.ParseTeamMemberships(cfg.TeamMemberships)
 
+	methods, err := signInMethods(cfg)
+	if err != nil {
+		log.Fatal().Err(err).Msg("sign-in")
+	}
 	handler := auth.New(auth.Options{
-		PublicURL: cfg.PublicURL, ClientID: cfg.GoogleClientID, ClientSecret: cfg.GoogleClientSecret,
+		PublicURL: cfg.PublicURL, Methods: methods,
 		Admins: admins, Viewers: viewers, TeamMemberships: memberships,
 		DevUserRole: cfg.DevUserRole, DevUserTeamID: cfg.DevUserTeamID, DevUserOrgID: cfg.DevUserOrgID,
 		Signer: auth.NewSigner(secret), SessionTTL: cfg.SessionTTL,
-		SecureCookies: cfg.SecureCookies(), InsecureNoAuth: cfg.InsecureNoAuth, Issuer: cfg.OIDCIssuer,
+		SecureCookies: cfg.SecureCookies(), InsecureNoAuth: cfg.InsecureNoAuth,
 	})
 	srv, closeBackends, err := api.New(cfg, handler)
 	if err != nil {
@@ -97,4 +111,50 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	_ = httpSrv.Shutdown(ctx)
+}
+
+// signInMethods builds the methods the configuration turns on; order is the
+// order of the buttons on the sign-in page.
+func signInMethods(cfg *config.Config) ([]auth.Method, error) {
+	var methods []auth.Method
+	if cfg.PasswordEnabled() {
+		users, err := password.LoadUsers(cfg.AdminUsers, cfg.AdminUsersFile)
+		if err != nil {
+			return nil, err
+		}
+		m, err := password.New(users)
+		if err != nil {
+			return nil, fmt.Errorf("ADMIN_USERS: %w", err)
+		}
+		methods = append(methods, m)
+	}
+	if cfg.OIDC.Enabled() {
+		p := cfg.OIDC
+		methods = append(methods, oidc.New(oidc.Options{Issuer: p.Issuer, ClientID: p.ClientID, ClientSecret: p.ClientSecret, Name: p.Label}))
+	}
+	for _, p := range cfg.OIDCProviders {
+		methods = append(methods, oidc.New(oidc.Options{ID: "oidc-" + p.Name, Issuer: p.Issuer,
+			ClientID: p.ClientID, ClientSecret: p.ClientSecret, Name: cmp.Or(p.Label, p.Name)}))
+	}
+	if cfg.GitHubEnabled() {
+		methods = append(methods, github.New(github.Options{ClientID: cfg.GitHubClientID, ClientSecret: cfg.GitHubClientSecret, BaseURL: cfg.GitHubURL}))
+	}
+	if cfg.HeaderEnabled() {
+		m, err := header.New(header.Options{TrustedProxies: cfg.TrustedProxyCIDRs, EmailHeader: cfg.AuthHeaderEmail, NameHeader: cfg.AuthHeaderName})
+		if err != nil {
+			return nil, err
+		}
+		methods = append(methods, m)
+	}
+	if cfg.CFAccessEnabled() {
+		m, err := cfaccess.New(cfaccess.Options{TeamDomain: cfg.CFAccessTeamDomain, Audience: cfg.CFAccessAUD})
+		if err != nil {
+			return nil, err
+		}
+		methods = append(methods, m)
+	}
+	for _, m := range methods {
+		log.Info().Str("method", m.ID()).Msg("sign-in method on")
+	}
+	return methods, nil
 }
