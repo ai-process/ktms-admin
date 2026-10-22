@@ -28,6 +28,14 @@ type Config struct {
 	SessionTTL         time.Duration
 	// OIDCIssuer replaces Google as the identity provider (any OIDC provider that returns verified e-mails).
 	OIDCIssuer string
+	// TrustedProxyCIDRs turns on the header method: an access proxy at these
+	// addresses names the user in AuthHeaderEmail.
+	TrustedProxyCIDRs string
+	AuthHeaderEmail   string
+	AuthHeaderName    string
+	// CFAccessTeamDomain and CFAccessAUD turn on Cloudflare Access.
+	CFAccessTeamDomain string
+	CFAccessAUD        string
 	// InsecureNoAuth skips login entirely. Only honoured for localhost PublicURLs.
 	InsecureNoAuth bool
 
@@ -69,6 +77,11 @@ func Load() (*Config, error) {
 		SessionSecret:      env("SESSION_SECRET", ""),
 		SessionTTL:         ttl,
 		OIDCIssuer:         env("OIDC_ISSUER", ""),
+		TrustedProxyCIDRs:  env("TRUSTED_PROXY_CIDRS", ""),
+		AuthHeaderEmail:    env("AUTH_HEADER_EMAIL", ""),
+		AuthHeaderName:     env("AUTH_HEADER_NAME", ""),
+		CFAccessTeamDomain: env("CF_ACCESS_TEAM_DOMAIN", ""),
+		CFAccessAUD:        env("CF_ACCESS_AUD", ""),
 		InsecureNoAuth:     env("INSECURE_NO_AUTH", "") == "true",
 		ProxyAddr:          env("KTMS_ADDR", env("LLM_PROXY_ADDR", "")),
 		ProxyAdminKey:      env("KTMS_ADMIN_KEY", env("LLM_PROXY_ADMIN_KEY", "")),
@@ -85,6 +98,10 @@ func Load() (*Config, error) {
 	}
 	return c, c.Validate()
 }
+
+func (c *Config) GoogleEnabled() bool   { return c.GoogleClientID != "" && c.GoogleClientSecret != "" }
+func (c *Config) HeaderEnabled() bool   { return c.TrustedProxyCIDRs != "" }
+func (c *Config) CFAccessEnabled() bool { return c.CFAccessTeamDomain != "" && c.CFAccessAUD != "" }
 
 func (c *Config) ProxyEnabled() bool { return c.ProxyAddr != "" }
 func (c *Config) UsageEnabled() bool { return c.TokenmeterURL != "" }
@@ -117,8 +134,12 @@ func (c *Config) Validate() error {
 	switch {
 	case c.PublicURL == "":
 		return errors.New("PUBLIC_URL is required (e.g. https://admin.example.com)")
-	case c.GoogleClientID == "" || c.GoogleClientSecret == "":
-		return errors.New("GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are required")
+	case (c.GoogleClientID == "") != (c.GoogleClientSecret == ""):
+		return errors.New("set both GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET, or neither")
+	case (c.CFAccessTeamDomain == "") != (c.CFAccessAUD == ""):
+		return errors.New("set both CF_ACCESS_TEAM_DOMAIN and CF_ACCESS_AUD, or neither")
+	case !c.GoogleEnabled() && !c.HeaderEnabled() && !c.CFAccessEnabled():
+		return errors.New("configure a sign-in method: GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET, TRUSTED_PROXY_CIDRS, or CF_ACCESS_TEAM_DOMAIN + CF_ACCESS_AUD")
 	case strings.TrimSpace(c.AllowedEmails) == "" && strings.TrimSpace(c.ViewerEmails) == "" && strings.TrimSpace(c.TeamMemberships) == "":
 		return errors.New("ALLOWED_EMAILS, VIEWER_EMAILS and TEAM_MEMBERSHIPS are empty: nobody could sign in")
 	}

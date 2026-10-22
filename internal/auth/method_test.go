@@ -134,3 +134,42 @@ func TestFlowCookie(t *testing.T) {
 		t.Fatal("expired flow accepted")
 	}
 }
+
+// fakeProxy vouches for whoever X-Test-User names.
+type fakeProxy struct{}
+
+func (fakeProxy) ID() string { return "proxy" }
+func (fakeProxy) Identify(r *http.Request) (Identity, bool) {
+	e := r.Header.Get("X-Test-User")
+	return Identity{Email: e}, e != ""
+}
+
+func TestIdentifierMethod(t *testing.T) {
+	h, mux := coreMux(t, fakeProxy{})
+	r := httptest.NewRequest("GET", "/", nil)
+	r.Header.Set("X-Test-User", "boss@x.com")
+	if u, ok := h.UserFor(r); !ok || !u.Proxied || u.Method != "proxy" || !u.IsSuperAdmin() {
+		t.Fatalf("proxied user = %+v %v", u, ok)
+	}
+	w := serve(mux, "/auth/login")
+	if w.Code != 200 || !strings.Contains(w.Body.String(), "access proxy") {
+		t.Fatalf("login without the proxy = %d\n%s", w.Code, w.Body)
+	}
+	r = httptest.NewRequest("GET", "/auth/login", nil)
+	r.Header.Set("X-Test-User", "eve@evil.com")
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, r)
+	if w.Code != 403 || !strings.Contains(w.Body.String(), "eve@evil.com is not allowed") {
+		t.Fatalf("proxied stranger = %d\n%s", w.Code, w.Body)
+	}
+	if _, ok := h.UserFor(r); ok {
+		t.Fatal("proxied stranger accepted")
+	}
+
+	both, mux := coreMux(t, fakeProxy{}, fakeButton{"a"})
+	session := cookieNamed(serve(mux, "/auth/a/as?email=boss@x.com"), sessionCookie)
+	r.AddCookie(session)
+	if u, ok := both.UserFor(r); !ok || u.Proxied || u.Email != "boss@x.com" {
+		t.Fatalf("own session behind a stranger's proxy identity = %+v %v", u, ok)
+	}
+}

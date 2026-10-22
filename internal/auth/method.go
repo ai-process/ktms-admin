@@ -17,19 +17,32 @@ type Identity struct {
 	Picture string
 }
 
-// Method is one way to sign in. A method owns its routes, normally under
-// /auth/<ID>/, and finishes a successful sign-in with Host.SignIn.
+// Method is one way to sign in. It is also a Button, an Identifier, or both.
 type Method interface {
 	ID() string
+}
+
+// Mounter is a method with routes of its own, normally under /auth/<ID>/. It
+// finishes a successful sign-in with Host.SignIn.
+type Mounter interface {
+	Method
 	Mount(mux *http.ServeMux, host Host)
 }
 
 // Button is a method started from a link on the sign-in page, such as a
 // redirect to an identity provider.
 type Button interface {
-	Method
+	Mounter
 	Label() string
 	StartURL(next string) string
+}
+
+// Identifier is a method that identifies every request on its own, such as
+// an access proxy in front of the console. It needs no session: when the
+// proxy stops vouching for someone, their access ends with the next request.
+type Identifier interface {
+	Method
+	Identify(r *http.Request) (Identity, bool)
 }
 
 // Host is what the core offers a sign-in method.
@@ -106,7 +119,9 @@ func (h *Handler) Mount(mux *http.ServeMux) {
 	mux.HandleFunc("GET /auth/login", h.Login)
 	mux.HandleFunc("POST /auth/logout", h.Logout)
 	for _, m := range h.o.Methods {
-		m.Mount(mux, h)
+		if m, ok := m.(Mounter); ok {
+			m.Mount(mux, h)
+		}
 	}
 }
 
@@ -123,8 +138,16 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 	var d pageData
 	for _, m := range h.o.Methods {
-		if b, ok := m.(Button); ok {
-			d.Buttons = append(d.Buttons, pageButton{Label: b.Label(), URL: b.StartURL(next)})
+		switch m := m.(type) {
+		case Button:
+			d.Buttons = append(d.Buttons, pageButton{Label: m.Label(), URL: m.StartURL(next)})
+		case Identifier:
+			// The proxy vouched for someone the allowlists do not know.
+			if id, ok := m.Identify(r); ok {
+				h.Fail(w, http.StatusForbidden, id.Email+" is not allowed to use this console.")
+				return
+			}
+			d.Proxy = true
 		}
 	}
 	switch {
@@ -142,6 +165,8 @@ type pageButton struct{ Label, URL string }
 type pageData struct {
 	Error   string
 	Buttons []pageButton
+	// Proxy notes that an access proxy can sign you in too.
+	Proxy bool
 }
 
 // The console's CSP forbids inline styles, so the page links /auth.css.
@@ -155,6 +180,9 @@ var pageTmpl = template.Must(template.New("page").Parse(`<!doctype html>
 <p class="muted">KTMS admin console</p>
 {{- range .Buttons}}
 <a class="btn" href="{{.URL}}">{{.Label}}</a>
+{{- end}}
+{{- if .Proxy}}
+<p class="note">{{if .Buttons}}Or open{{else}}Open{{end}} this console through your organisation's access proxy, which signs you in.</p>
 {{- end}}
 {{- end}}
 </main></body></html>
