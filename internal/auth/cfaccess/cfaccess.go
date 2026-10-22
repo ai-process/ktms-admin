@@ -54,8 +54,7 @@ func Issuer(team string) string {
 	return "https://" + team
 }
 
-func (m *Method) ID() string                      { return methodID }
-func (m *Method) Mount(*http.ServeMux, auth.Host) {}
+func (m *Method) ID() string { return methodID }
 
 func (m *Method) Identify(r *http.Request) (auth.Identity, bool) {
 	raw := r.Header.Get(tokenHdr)

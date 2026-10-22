@@ -81,15 +81,27 @@ skip the OAuth client. The proxy checks identity on every request, so revoking s
 console access at once. The console's allowlists still decide who gets in and with which role.
 
 **A proxy that sends the e-mail in a header** (oauth2-proxy, Authelia, Authentik, Pomerium, Tailscale
-Serve, Caddy `forward_auth`, nginx `auth_request`):
+Serve, or Caddy `forward_auth` / nginx `auth_request` in front of one of them):
 
-1. Make the proxy pass the user's e-mail in a request header, `X-Forwarded-Email` by default
-   (oauth2-proxy: `--set-xauthrequest` or `--pass-user-headers`; Authelia and Authentik: `Remote-Email`).
+1. Make the proxy put the user's e-mail in a request header. Set `AUTH_HEADER_EMAIL` to its name if it is not
+   `X-Forwarded-Email`:
+
+   | Proxy | `AUTH_HEADER_EMAIL` |
+   | --- | --- |
+   | oauth2-proxy as the reverse proxy | `X-Forwarded-Email` (the default; `--pass-user-headers` is on by default) |
+   | oauth2-proxy behind nginx `auth_request` | `X-Auth-Request-Email` (with `--set-xauthrequest`, copied by nginx) |
+   | Authelia | `Remote-Email` |
+   | Authentik proxy outpost | `X-authentik-email` |
+   | Pomerium | `X-Pomerium-Claim-Email` (with `jwt_claims_headers: email`) |
+   | Tailscale Serve | `Tailscale-User-Login` |
+
+   `AUTH_HEADER_NAME` optionally names a display-name header (`Remote-Name`, `Tailscale-User-Name`, …).
 2. Set `TRUSTED_PROXY_CIDRS` to the addresses the proxy connects from, such as `10.0.0.0/8` or `172.18.0.2`.
-   The console ignores the header from any other address, because any client can send one. Keep the
-   console unreachable except through the proxy.
-3. If the header has another name, set `AUTH_HEADER_EMAIL` (for example `Remote-Email`).
-   `AUTH_HEADER_NAME` optionally names a display-name header.
+   The console ignores the header from any other address.
+3. **The proxy must set that header on every request and overwrite any value the client sent**, and the
+   console must be unreachable except through it. The proxies above do this for their own headers. A plain
+   TLS terminator does not, so never put one in `TRUSTED_PROXY_CIDRS` unless it removes the header from
+   incoming requests.
 
 **Cloudflare Access:** set `CF_ACCESS_TEAM_DOMAIN` (`myteam` or `myteam.cloudflareaccess.com`) and
 `CF_ACCESS_AUD` (the application's *Application Audience (AUD) Tag*). The console verifies the signed
@@ -252,8 +264,8 @@ shows its spend this month against the budget and its keys.
 - Session cookies are signed (HMAC-SHA256), `HttpOnly`, `SameSite=Lax` and `Secure` over HTTPS. They carry
   only name, e-mail, sign-in method and expiry; the role is recomputed from the allowlists on every request,
   and turning a sign-in method off ends its sessions.
-- Proxy sign-in trusts an identity header only from `TRUSTED_PROXY_CIDRS`; Cloudflare Access tokens are
-  verified cryptographically on every request.
+- Proxy sign-in trusts an identity header only from `TRUSTED_PROXY_CIDRS`, and only as far as that proxy
+  overwrites the header; Cloudflare Access tokens are verified cryptographically on every request.
 - Anything that changes state needs the admin role, a custom `X-Requested-With` header (which a cross-site
   page cannot send without a CORS preflight this server never grants) and a same-origin `Origin` when one is
   sent.

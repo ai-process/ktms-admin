@@ -138,8 +138,7 @@ func TestFlowCookie(t *testing.T) {
 // fakeProxy vouches for whoever X-Test-User names.
 type fakeProxy struct{}
 
-func (fakeProxy) ID() string                 { return "proxy" }
-func (fakeProxy) Mount(*http.ServeMux, Host) {}
+func (fakeProxy) ID() string { return "proxy" }
 func (fakeProxy) Identify(r *http.Request) (Identity, bool) {
 	e := r.Header.Get("X-Test-User")
 	return Identity{Email: e}, e != ""
@@ -165,5 +164,12 @@ func TestIdentifierMethod(t *testing.T) {
 	}
 	if _, ok := h.UserFor(r); ok {
 		t.Fatal("proxied stranger accepted")
+	}
+
+	both, mux := coreMux(t, fakeProxy{}, fakeButton{"a"})
+	session := cookieNamed(serve(mux, "/auth/a/as?email=boss@x.com"), sessionCookie)
+	r.AddCookie(session)
+	if u, ok := both.UserFor(r); !ok || u.Proxied || u.Email != "boss@x.com" {
+		t.Fatalf("own session behind a stranger's proxy identity = %+v %v", u, ok)
 	}
 }

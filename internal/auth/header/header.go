@@ -66,8 +66,8 @@ func ParsePrefixes(list string) ([]netip.Prefix, error) {
 	return out, nil
 }
 
-func (m *Method) ID() string                      { return methodID }
-func (m *Method) Mount(*http.ServeMux, auth.Host) {}
+func (m *Method) ID() string { return methodID }
+
 func (m *Method) Identify(r *http.Request) (auth.Identity, bool) {
 	emails := r.Header.Values(m.emailHeader)
 	if len(emails) == 0 {

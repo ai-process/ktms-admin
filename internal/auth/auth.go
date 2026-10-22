@@ -170,8 +170,11 @@ func (h *Handler) UserFor(r *http.Request) (*User, bool) {
 	}
 	for _, m := range h.o.Methods {
 		if m, ok := m.(Identifier); ok {
+			// A stranger at the proxy still falls through to their own session.
 			if id, ok := m.Identify(r); ok {
-				return h.user(id, m.ID(), true)
+				if u, ok := h.user(id, m.ID(), true); ok {
+					return u, true
+				}
 			}
 		}
 	}

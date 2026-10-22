@@ -17,17 +17,22 @@ type Identity struct {
 	Picture string
 }
 
-// Method is one way to sign in. A method owns its routes, normally under
-// /auth/<ID>/, and finishes a successful sign-in with Host.SignIn.
+// Method is one way to sign in. It is also a Button, an Identifier, or both.
 type Method interface {
 	ID() string
+}
+
+// Mounter is a method with routes of its own, normally under /auth/<ID>/. It
+// finishes a successful sign-in with Host.SignIn.
+type Mounter interface {
+	Method
 	Mount(mux *http.ServeMux, host Host)
 }
 
 // Button is a method started from a link on the sign-in page, such as a
 // redirect to an identity provider.
 type Button interface {
-	Method
+	Mounter
 	Label() string
 	StartURL(next string) string
 }
@@ -114,7 +119,9 @@ func (h *Handler) Mount(mux *http.ServeMux) {
 	mux.HandleFunc("GET /auth/login", h.Login)
 	mux.HandleFunc("POST /auth/logout", h.Logout)
 	for _, m := range h.o.Methods {
-		m.Mount(mux, h)
+		if m, ok := m.(Mounter); ok {
+			m.Mount(mux, h)
+		}
 	}
 }
 
