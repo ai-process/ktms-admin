@@ -242,7 +242,7 @@ func newServer(t *testing.T, tokenmeterURL string) (*Server, *fakeAdmin, *auth.H
 	s.data = fd
 	s.priceFetch = s.fetchPrices
 	if tokenmeterURL != "" {
-		s.usage = usage.NewClient(tokenmeterURL)
+		s.usage = usage.NewClient(tokenmeterURL, "")
 	}
 	return s, fa, h
 }
