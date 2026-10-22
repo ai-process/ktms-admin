@@ -6,6 +6,13 @@ Notable changes to ktms-admin. The format follows
 
 ## [Unreleased]
 
+### Changed
+- Sign-in methods are pluggable adapters behind one core that owns sessions, roles and the
+  sign-in page. Google sign-in works as before, with the same redirect URI.
+
+### Fixed
+- Sign-in error pages are styled again: the CSP blocked their inline styles.
+
 ## [0.4.0] - 2026-10-22
 
 Needs KTMS 0.14.0 or later for the tenant and team pages.

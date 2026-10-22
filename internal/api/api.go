@@ -94,9 +94,7 @@ func attachStreamKey(key string) grpc.StreamClientInterceptor {
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /auth/login", s.auth.Login)
-	mux.HandleFunc("GET /auth/callback", s.auth.Callback)
-	mux.HandleFunc("POST /auth/logout", s.auth.Logout)
+	s.auth.Mount(mux)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, 200, map[string]string{"status": "ok"}) })
 
 	api := func(pattern string, pol policy, h func(w http.ResponseWriter, r *http.Request, u *auth.User)) {

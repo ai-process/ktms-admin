@@ -98,8 +98,8 @@ func TestSessionRolesAndExpiry(t *testing.T) {
 func TestSafeNext(t *testing.T) {
 	cases := map[string]string{"/usage": "/usage", "//evil.com": "/", "https://evil.com": "/", "/\\evil.com": "/", "": "/"}
 	for in, want := range cases {
-		if got := safeNext(in); got != want {
-			t.Errorf("safeNext(%q) = %q, want %q", in, got, want)
+		if got := SafeNext(in); got != want {
+			t.Errorf("SafeNext(%q) = %q, want %q", in, got, want)
 		}
 	}
 }
