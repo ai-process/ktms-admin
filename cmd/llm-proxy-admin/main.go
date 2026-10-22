@@ -20,11 +20,18 @@ import (
 func main() {
 	log.Logger = log.Output(os.Stderr)
 	cfg, err := config.Load()
+	if cfg != nil {
+		if lvl, perr := zerolog.ParseLevel(cfg.LogLevel); perr == nil {
+			zerolog.SetGlobalLevel(lvl)
+		}
+		// Before any fatal error, so an operator on the old names sees how
+		// their settings map to the message.
+		for _, n := range cfg.Notices {
+			log.Warn().Msg(n)
+		}
+	}
 	if err != nil {
 		log.Fatal().Err(err).Msg("invalid configuration")
-	}
-	if lvl, err := zerolog.ParseLevel(cfg.LogLevel); err == nil {
-		zerolog.SetGlobalLevel(lvl)
 	}
 
 	admins, err := auth.ParseAllowlist(cfg.AllowedEmails)
@@ -73,7 +80,7 @@ func main() {
 	errCh := make(chan error, 1)
 	go func() {
 		log.Info().Str("addr", cfg.ListenAddr).Bool("proxy", cfg.ProxyEnabled()).Bool("usage", cfg.UsageEnabled()).
-			Int("admins", admins.Len()).Int("viewers", viewers.Len()).Msg("llm-proxy-admin started")
+			Int("admins", admins.Len()).Int("viewers", viewers.Len()).Msg("ktms-admin started")
 		errCh <- httpSrv.ListenAndServe()
 	}()
 
