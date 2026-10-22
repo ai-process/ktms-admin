@@ -134,7 +134,6 @@ func (s *Server) Handler() http.Handler {
 		api("PUT /api/proxy/teams/{id}", adminOnly, s.proxyUpdateTeam)
 		api("DELETE /api/proxy/teams/{id}", adminOnly, s.proxyDeleteTeam)
 		api("GET /api/proxy/teams/{id}/cabinet", team, s.proxyTeamCabinet)
-		api("GET /api/proxy/teams/{id}/spend", team, s.proxyTeamSpend)
 		api("GET /api/proxy/team-spend", globalRead, s.proxyTeamsSpend)
 		api("POST /api/proxy/rotate", adminOnly, s.proxyRotate)
 		// The console's own gateway key runs these, outside any team's models and budget.

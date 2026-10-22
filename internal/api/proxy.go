@@ -909,25 +909,6 @@ func (s *Server) proxyTeamCabinet(w http.ResponseWriter, r *http.Request, u *aut
 	writeJSON(w, http.StatusOK, out)
 }
 
-// proxyTeamSpend is the cabinet's spend part alone, for pages that list many
-// teams and must not fetch every key once per team.
-func (s *Server) proxyTeamSpend(w http.ResponseWriter, r *http.Request, u *auth.User) {
-	id := r.PathValue("id")
-	if !canAccessTeam(w, u, id) {
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
-	defer cancel()
-	spend, err := s.admin.GetTeamSpend(ctx, &pb.GetTeamSpendRequest{Id: id})
-	if err != nil && !countersDown(err) {
-		backendErr(w, err)
-		return
-	}
-	out := map[string]any{}
-	addSpend(out, id, spend, err)
-	writeJSON(w, http.StatusOK, out)
-}
-
 // countersDown is a failure to read the counters themselves; anything else
 // (bad id, the console's key refused) is a real error the caller must see.
 func countersDown(err error) bool {
@@ -956,7 +937,11 @@ func (s *Server) proxyTeamsSpend(w http.ResponseWriter, r *http.Request, _ *auth
 	}
 	out := make([]map[string]any, len(capped))
 	sem := make(chan struct{}, maxSpendReads)
-	var wg sync.WaitGroup
+	var (
+		wg    sync.WaitGroup
+		mu    sync.Mutex
+		fatal error
+	)
 	for i, t := range capped {
 		wg.Add(1)
 		go func() {
@@ -964,12 +949,23 @@ func (s *Server) proxyTeamsSpend(w http.ResponseWriter, r *http.Request, _ *auth
 			sem <- struct{}{}
 			defer func() { <-sem }()
 			spend, err := s.admin.GetTeamSpend(ctx, &pb.GetTeamSpendRequest{Id: t.Id})
+			// A team deleted meanwhile is one bad row; anything else but a
+			// counter outage (the console's key refused) fails the whole reply.
+			if err != nil && !countersDown(err) && status.Code(err) != codes.NotFound {
+				mu.Lock()
+				fatal = err
+				mu.Unlock()
+			}
 			row := map[string]any{"team_id": t.Id, "name": t.Name, "monthly_budget_usd": t.MonthlyBudgetUsd}
 			addSpend(row, t.Id, spend, err)
 			out[i] = row
 		}()
 	}
 	wg.Wait()
+	if fatal != nil {
+		backendErr(w, fatal)
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"teams": out})
 }
 

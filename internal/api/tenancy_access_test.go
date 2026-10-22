@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"strings"
 	"testing"
 	"time"
 
@@ -133,13 +132,6 @@ func TestCabinetShowsEnforcedSpend(t *testing.T) {
 	}
 	if w := call(h, "GET", "/api/proxy/teams/team-2/cabinet", "", sessionCookie(t, "dev@corp.com"), nil); w.Code != http.StatusForbidden {
 		t.Fatalf("another team's cabinet = %d, want 403", w.Code)
-	}
-	w = call(h, "GET", "/api/proxy/teams/team-1/spend", "", sessionCookie(t, "dev@corp.com"), nil)
-	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"limit_usd":100`) || strings.Contains(w.Body.String(), "keys") {
-		t.Fatalf("team spend = %d %s", w.Code, w.Body)
-	}
-	if w := call(h, "GET", "/api/proxy/teams/team-2/spend", "", sessionCookie(t, "dev@corp.com"), nil); w.Code != http.StatusForbidden {
-		t.Fatalf("another team's spend = %d, want 403", w.Code)
 	}
 }
 
