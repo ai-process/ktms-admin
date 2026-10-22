@@ -64,7 +64,7 @@ func newHandler(t *testing.T) *Handler {
 	t.Helper()
 	admins, _ := ParseAllowlist("admin@x.com")
 	viewers, _ := ParseAllowlist("*@view.com")
-	return New(Options{PublicURL: "http://localhost", Admins: admins, Viewers: viewers,
+	return New(Options{Methods: []Method{fakeButton{"oidc"}}, PublicURL: "http://localhost", Admins: admins, Viewers: viewers,
 		Signer: NewSigner("0123456789abcdef0123456789abcdef"), SessionTTL: time.Hour})
 }
 
@@ -120,7 +120,7 @@ func TestTeamMemberships(t *testing.T) {
 		t.Fatalf("unexpected solo info: %+v", info)
 	}
 
-	h := New(Options{
+	h := New(Options{Methods: []Method{fakeButton{"oidc"}},
 		Signer:          NewSigner("0123456789abcdef0123456789abcdef"),
 		SessionTTL:      time.Hour,
 		TeamMemberships: m,

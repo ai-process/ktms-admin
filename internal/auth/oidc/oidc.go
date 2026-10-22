@@ -4,7 +4,6 @@ package oidc
 import (
 	"context"
 	"crypto/rand"
-	"encoding/base64"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -115,7 +114,7 @@ func (m *Method) start(w http.ResponseWriter, r *http.Request) {
 		m.unreachable(w)
 		return
 	}
-	f := flowData{State: randString(24), Nonce: randString(24), Verifier: oauth2.GenerateVerifier(),
+	f := flowData{State: rand.Text(), Nonce: rand.Text(), Verifier: oauth2.GenerateVerifier(),
 		Next: auth.SafeNext(r.URL.Query().Get("next"))}
 	if err := m.host.SaveFlow(w, methodID, f); err != nil {
 		m.host.Fail(w, http.StatusInternalServerError, "Internal error.")
@@ -170,12 +169,4 @@ func (m *Method) callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	m.host.SignIn(w, r, methodID, auth.Identity{Email: claims.Email, Name: claims.Name, Picture: claims.Picture}, f.Next)
-}
-
-func randString(n int) string {
-	b := make([]byte, n)
-	if _, err := rand.Read(b); err != nil {
-		panic(err)
-	}
-	return base64.RawURLEncoding.EncodeToString(b)
 }

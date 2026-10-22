@@ -170,7 +170,7 @@ func (h *Handler) UserFor(r *http.Request) (*User, bool) {
 		return nil, false
 	}
 	var s sessionData
-	if err := h.o.Signer.Open(c.Value, &s); err != nil || time.Now().Unix() >= s.Exp {
+	if err := h.o.Signer.Open(c.Value, &s); err != nil || time.Now().Unix() >= s.Exp || !h.hasMethod(s.Method) {
 		return nil, false
 	}
 	role, teamID, orgID := h.memberFor(s.Email)
@@ -186,6 +186,20 @@ func (h *Handler) UserFor(r *http.Request) (*User, bool) {
 		OrgID:   orgID,
 		Method:  s.Method,
 	}, true
+}
+
+// hasMethod lets turning a method off end its sessions. Sessions from before
+// methods were recorded came from OIDC, the only method then.
+func (h *Handler) hasMethod(id string) bool {
+	if id == "" {
+		id = "oidc"
+	}
+	for _, m := range h.o.Methods {
+		if m.ID() == id {
+			return true
+		}
+	}
+	return false
 }
 
 // SafeNext only lets same-site absolute paths through, never an open redirect.

@@ -96,6 +96,10 @@ func TestSignInAppliesAllowlist(t *testing.T) {
 	if w := serve(mux, "/auth/login?next=/keys", session); w.Code != 302 || w.Header().Get("Location") != "/keys" {
 		t.Fatalf("signed-in login = %d %q", w.Code, w.Header().Get("Location"))
 	}
+	without, _ := coreMux(t, fakeButton{"a"})
+	if _, ok := without.UserFor(r); ok {
+		t.Fatal("a session outlived its sign-in method")
+	}
 }
 
 func TestFlowCookie(t *testing.T) {
