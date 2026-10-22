@@ -32,6 +32,14 @@ type Button interface {
 	StartURL(next string) string
 }
 
+// Identifier is a method that identifies every request on its own, such as
+// an access proxy in front of the console. It needs no session: when the
+// proxy stops vouching for someone, their access ends with the next request.
+type Identifier interface {
+	Method
+	Identify(r *http.Request) (Identity, bool)
+}
+
 // Host is what the core offers a sign-in method.
 type Host interface {
 	// SignIn applies the allowlists, starts a session and redirects to next.
@@ -123,8 +131,16 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 	var d pageData
 	for _, m := range h.o.Methods {
-		if b, ok := m.(Button); ok {
-			d.Buttons = append(d.Buttons, pageButton{Label: b.Label(), URL: b.StartURL(next)})
+		switch m := m.(type) {
+		case Button:
+			d.Buttons = append(d.Buttons, pageButton{Label: m.Label(), URL: m.StartURL(next)})
+		case Identifier:
+			// The proxy vouched for someone the allowlists do not know.
+			if id, ok := m.Identify(r); ok {
+				h.Fail(w, http.StatusForbidden, id.Email+" is not allowed to use this console.")
+				return
+			}
+			d.Proxy = true
 		}
 	}
 	switch {
@@ -142,6 +158,8 @@ type pageButton struct{ Label, URL string }
 type pageData struct {
 	Error   string
 	Buttons []pageButton
+	// Proxy notes that an access proxy can sign you in too.
+	Proxy bool
 }
 
 // The console's CSP forbids inline styles, so the page links /auth.css.
@@ -155,6 +173,9 @@ var pageTmpl = template.Must(template.New("page").Parse(`<!doctype html>
 <p class="muted">KTMS admin console</p>
 {{- range .Buttons}}
 <a class="btn" href="{{.URL}}">{{.Label}}</a>
+{{- end}}
+{{- if .Proxy}}
+<p class="note">{{if .Buttons}}Or open{{else}}Open{{end}} this console through your organisation's access proxy, which signs you in.</p>
 {{- end}}
 {{- end}}
 </main></body></html>

@@ -23,6 +23,29 @@ func TestValidate(t *testing.T) {
 			t.Errorf("%s: expected an error", name)
 		}
 	}
+	for name, mutate := range map[string]func(c *Config){
+		"google id only":           func(c *Config) { c.GoogleClientSecret = ""; c.TrustedProxyCIDRs = "10.0.0.0/8" },
+		"cloudflare team only":     func(c *Config) { c.CFAccessTeamDomain = "team" },
+		"cloudflare audience only": func(c *Config) { c.CFAccessAUD = "aud" },
+	} {
+		c := ok
+		mutate(&c)
+		if err := c.Validate(); err == nil {
+			t.Errorf("%s: expected an error", name)
+		}
+	}
+	for name, mutate := range map[string]func(c *Config){
+		"header only": func(c *Config) { c.GoogleClientID, c.GoogleClientSecret, c.TrustedProxyCIDRs = "", "", "10.0.0.0/8" },
+		"cloudflare only": func(c *Config) {
+			c.GoogleClientID, c.GoogleClientSecret, c.CFAccessTeamDomain, c.CFAccessAUD = "", "", "team", "aud"
+		},
+	} {
+		c := ok
+		mutate(&c)
+		if err := c.Validate(); err != nil {
+			t.Errorf("%s rejected: %v", name, err)
+		}
+	}
 	teamsOnly := ok
 	teamsOnly.AllowedEmails, teamsOnly.TeamMemberships = "", "lead@x.com:team-1:teamlead"
 	if err := teamsOnly.Validate(); err != nil {

@@ -30,6 +30,7 @@ body {
 h1 { margin: 0; font-size: 20px; font-weight: 650; }
 p { margin: 0; }
 .muted { color: var(--muted); margin-bottom: 8px; }
+.note { color: var(--muted); font-size: 14px; }
 .error { padding: 10px 12px; border-radius: 8px; background: var(--bad-soft); color: var(--bad-text); }
 a { color: var(--accent); }
 .btn, button {

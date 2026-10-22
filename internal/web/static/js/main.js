@@ -107,7 +107,7 @@ function Shell() {
           <div class="id"><b title=${u.email}>${u.name || u.email}</b><${RoleBadge} role=${u.role} /></div>
           <${ThemeToggle} />
         </div>
-        <button type="button" class="sm" onClick=${signOut}>Sign out</button>
+        ${!u.proxied && html`<button type="button" class="sm" onClick=${signOut}>Sign out</button>`}
       </div>
     </nav>
     <main class="main" id="main">

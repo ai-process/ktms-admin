@@ -6,6 +6,11 @@ Notable changes to ktms-admin. The format follows
 
 ## [Unreleased]
 
+### Added
+- Sign-in through an access proxy: an e-mail header from `TRUSTED_PROXY_CIDRS` (oauth2-proxy, Authelia,
+  Authentik, Pomerium) or a verified Cloudflare Access token (`CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD`).
+  Google sign-in is now optional when one of these is set.
+
 ### Changed
 - Sign-in methods are pluggable adapters behind one core that owns sessions, roles and the
   sign-in page. Google sign-in works as before, with the same redirect URI.

@@ -12,7 +12,9 @@ or with either one alone.
   with failure rates, latency, estimated cost and a *greedy / worthy* verdict.
 - **Gateway:** manage models, routing rules, client API keys and vendor credentials, and try a prompt in the
   playground. No more `grpcurl`.
-- **Sign-in with Google**, limited to an allowlist with wildcards such as `*@example.com`. Optional read-only users.
+- **Sign-in** with Google, or through the access proxy you already run (oauth2-proxy, Authelia, Authentik,
+  Pomerium, Cloudflare Access), limited to an allowlist with wildcards such as `*@example.com`. Optional
+  read-only users.
 - **One binary:** a static Go binary with the UI embedded: Preact and htm as vendored ES modules, no
   front-end build step, light and dark themes, usable from a phone.
 
@@ -20,6 +22,7 @@ or with either one alone.
 
 - [Quick start](#quick-start)
 - [Setting up Google sign-in](#setting-up-google-sign-in)
+- [Sign-in behind an access proxy](#sign-in-behind-an-access-proxy)
 - [Who may sign in](#who-may-sign-in)
 - [Compatibility](#compatibility)
 - [Running with one backend or both](#running-with-one-backend-or-both)
@@ -31,8 +34,9 @@ or with either one alone.
 
 ## Quick start
 
-You need a Google OAuth client ([how](#setting-up-google-sign-in)) and, for the gateway pages, a KTMS
-admin key (`MintAPIKey` with scope `admin`).
+You need a sign-in method, either a Google OAuth client ([how](#setting-up-google-sign-in)) or an access
+proxy you already run ([how](#sign-in-behind-an-access-proxy)), and, for the gateway pages, a KTMS admin key
+(`MintAPIKey` with scope `admin`).
 
 ```bash
 docker run -d --name ktms-admin -p 8080:8080 \
@@ -70,9 +74,34 @@ docker run --rm -p 8081:8080 -e PUBLIC_URL=http://localhost:8081 -e INSECURE_NO_
 The console uses the authorization-code flow with PKCE, state and nonce, and requires a **verified** e-mail.
 Only the `openid email profile` scopes are requested.
 
+## Sign-in behind an access proxy
+
+If the console already sits behind an access proxy that signs people in, let the proxy name the user and
+skip the OAuth client. The proxy checks identity on every request, so revoking someone there ends their
+console access at once. The console's allowlists still decide who gets in and with which role.
+
+**A proxy that sends the e-mail in a header** (oauth2-proxy, Authelia, Authentik, Pomerium, Tailscale
+Serve, Caddy `forward_auth`, nginx `auth_request`):
+
+1. Make the proxy pass the user's e-mail in a request header, `X-Forwarded-Email` by default
+   (oauth2-proxy: `--set-xauthrequest` or `--pass-user-headers`; Authelia and Authentik: `Remote-Email`).
+2. Set `TRUSTED_PROXY_CIDRS` to the addresses the proxy connects from, such as `10.0.0.0/8` or `172.18.0.2`.
+   The console ignores the header from any other address, because any client can send one. Keep the
+   console unreachable except through the proxy.
+3. If the header has another name, set `AUTH_HEADER_EMAIL` (for example `Remote-Email`).
+   `AUTH_HEADER_NAME` optionally names a display-name header.
+
+**Cloudflare Access:** set `CF_ACCESS_TEAM_DOMAIN` (`myteam` or `myteam.cloudflareaccess.com`) and
+`CF_ACCESS_AUD` (the application's *Application Audience (AUD) Tag*). The console verifies the signed
+`Cf-Access-Jwt-Assertion` token on every request (signature, issuer, audience, expiry), so it needs no trusted
+network path. Service tokens carry no e-mail and are refused.
+
+Proxy sign-in works alongside Google. Without the proxy, the sign-in page offers the other methods. Signing out
+happens at the proxy, so the console hides its own *Sign out* button for these users.
+
 ## Who may sign in
 
-`ALLOWED_EMAILS` is a comma- or space-separated list of patterns matched against the verified Google
+`ALLOWED_EMAILS` is a comma- or space-separated list of patterns matched against the verified e-mail
 address, case-insensitively. `*` matches any run of characters within the part before or after the `@`,
 never across it.
 
@@ -82,7 +111,7 @@ never across it.
 | `*@example.com` | everyone at example.com (not `x@sub.example.com`) |
 | `*@*.example.com` | everyone on any subdomain of example.com |
 | `ops-*@example.com` | `ops-eu@example.com`, `ops-us@example.com`, … |
-| `*@*` | every verified Google account (the explicit "open to all", logged at start) |
+| `*@*` | everyone who can sign in (the explicit "open to all", logged at start) |
 
 Patterns need exactly one `@`; a bare `*` or `example.com` is rejected at startup so a typo can never open
 the door. An empty list admits nobody.
@@ -134,7 +163,11 @@ All settings are environment variables; see [`env.example`](env.example).
 | Variable | Default | Description |
 | --- | --- | --- |
 | `PUBLIC_URL` | – | **Required.** External base URL, e.g. `https://admin.example.com`. |
-| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | – | **Required** (unless `INSECURE_NO_AUTH`). |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | – | Turns on Google sign-in. At least one sign-in method is required unless `INSECURE_NO_AUTH` is set. |
+| `TRUSTED_PROXY_CIDRS` | empty | Turns on [proxy sign-in](#sign-in-behind-an-access-proxy): the addresses or CIDRs of the access proxy. |
+| `AUTH_HEADER_EMAIL` | `X-Forwarded-Email` | The header the proxy names the user's e-mail in. |
+| `AUTH_HEADER_NAME` | empty | Optional header with the user's display name. |
+| `CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD` | empty | Turn on [Cloudflare Access](#sign-in-behind-an-access-proxy) sign-in. |
 | `ALLOWED_EMAILS` | – | Admin patterns. At least one of the two lists must be non-empty. |
 | `VIEWER_EMAILS` | empty | Read-only patterns. |
 | `TEAM_MEMBERSHIPS` | empty | Team workspaces: `email:team_id[:teamlead\|member[:org_id]]`, see [Who may sign in](#who-may-sign-in). |
@@ -217,7 +250,10 @@ shows its spend this month against the budget and its keys.
 - The console holds the gateway's admin key **on the server**; it never reaches the browser, and vendor keys are
   write-only.
 - Session cookies are signed (HMAC-SHA256), `HttpOnly`, `SameSite=Lax` and `Secure` over HTTPS. They carry
-  only name, e-mail and expiry; the role is recomputed from the allowlists on every request.
+  only name, e-mail, sign-in method and expiry; the role is recomputed from the allowlists on every request,
+  and turning a sign-in method off ends its sessions.
+- Proxy sign-in trusts an identity header only from `TRUSTED_PROXY_CIDRS`; Cloudflare Access tokens are
+  verified cryptographically on every request.
 - Anything that changes state needs the admin role, a custom `X-Requested-With` header (which a cross-site
   page cannot send without a CORS preflight this server never grants) and a same-origin `Origin` when one is
   sent.

@@ -77,6 +77,9 @@ type User struct {
 	TeamID  string `json:"team_id,omitempty"`
 	// Method is the sign-in method's ID.
 	Method string `json:"method,omitempty"`
+	// Proxied users are vouched for by an access proxy on every request, so
+	// signing out of the console alone does nothing for them.
+	Proxied bool `json:"proxied,omitempty"`
 }
 
 func (u *User) IsSuperAdmin() bool {
@@ -165,6 +168,13 @@ func (h *Handler) UserFor(r *http.Request) (*User, bool) {
 			OrgID:  h.o.DevUserOrgID,
 		}, true
 	}
+	for _, m := range h.o.Methods {
+		if m, ok := m.(Identifier); ok {
+			if id, ok := m.Identify(r); ok {
+				return h.user(id, m.ID(), true)
+			}
+		}
+	}
 	c, err := r.Cookie(sessionCookie)
 	if err != nil {
 		return nil, false
@@ -173,18 +183,23 @@ func (h *Handler) UserFor(r *http.Request) (*User, bool) {
 	if err := h.o.Signer.Open(c.Value, &s); err != nil || time.Now().Unix() >= s.Exp || !h.hasMethod(s.Method) {
 		return nil, false
 	}
-	role, teamID, orgID := h.memberFor(s.Email)
+	return h.user(Identity{Email: s.Email, Name: s.Name, Picture: s.Picture}, s.Method, false)
+}
+
+func (h *Handler) user(id Identity, method string, proxied bool) (*User, bool) {
+	role, teamID, orgID := h.memberFor(id.Email)
 	if role == "" {
 		return nil, false
 	}
 	return &User{
-		Email:   s.Email,
-		Name:    s.Name,
-		Picture: s.Picture,
+		Email:   id.Email,
+		Name:    id.Name,
+		Picture: id.Picture,
 		Role:    role,
 		TeamID:  teamID,
 		OrgID:   orgID,
-		Method:  s.Method,
+		Method:  method,
+		Proxied: proxied,
 	}, true
 }
 

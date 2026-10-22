@@ -14,6 +14,8 @@ import (
 
 	"github.com/ai-process/llm-proxy-admin/internal/api"
 	"github.com/ai-process/llm-proxy-admin/internal/auth"
+	"github.com/ai-process/llm-proxy-admin/internal/auth/cfaccess"
+	"github.com/ai-process/llm-proxy-admin/internal/auth/header"
 	"github.com/ai-process/llm-proxy-admin/internal/auth/oidc"
 	"github.com/ai-process/llm-proxy-admin/internal/config"
 )
@@ -60,9 +62,9 @@ func main() {
 
 	memberships := auth.ParseTeamMemberships(cfg.TeamMemberships)
 
-	var methods []auth.Method
-	if cfg.GoogleClientID != "" {
-		methods = append(methods, oidc.New(oidc.Options{Issuer: cfg.OIDCIssuer, ClientID: cfg.GoogleClientID, ClientSecret: cfg.GoogleClientSecret}))
+	methods, err := signInMethods(cfg)
+	if err != nil {
+		log.Fatal().Err(err).Msg("sign-in")
 	}
 	handler := auth.New(auth.Options{
 		PublicURL: cfg.PublicURL, Methods: methods,
@@ -102,4 +104,31 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	_ = httpSrv.Shutdown(ctx)
+}
+
+// signInMethods builds the methods the configuration turns on; order is the
+// order of the buttons on the sign-in page.
+func signInMethods(cfg *config.Config) ([]auth.Method, error) {
+	var methods []auth.Method
+	if cfg.GoogleEnabled() {
+		methods = append(methods, oidc.New(oidc.Options{Issuer: cfg.OIDCIssuer, ClientID: cfg.GoogleClientID, ClientSecret: cfg.GoogleClientSecret}))
+	}
+	if cfg.HeaderEnabled() {
+		m, err := header.New(header.Options{TrustedProxies: cfg.TrustedProxyCIDRs, EmailHeader: cfg.AuthHeaderEmail, NameHeader: cfg.AuthHeaderName})
+		if err != nil {
+			return nil, err
+		}
+		methods = append(methods, m)
+	}
+	if cfg.CFAccessEnabled() {
+		m, err := cfaccess.New(cfaccess.Options{TeamDomain: cfg.CFAccessTeamDomain, Audience: cfg.CFAccessAUD})
+		if err != nil {
+			return nil, err
+		}
+		methods = append(methods, m)
+	}
+	for _, m := range methods {
+		log.Info().Str("method", m.ID()).Msg("sign-in method on")
+	}
+	return methods, nil
 }
