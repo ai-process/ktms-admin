@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 	"github.com/ai-process/llm-proxy-admin/internal/api"
 	"github.com/ai-process/llm-proxy-admin/internal/auth"
 	"github.com/ai-process/llm-proxy-admin/internal/auth/cfaccess"
+	"github.com/ai-process/llm-proxy-admin/internal/auth/github"
 	"github.com/ai-process/llm-proxy-admin/internal/auth/header"
 	"github.com/ai-process/llm-proxy-admin/internal/auth/oidc"
 	"github.com/ai-process/llm-proxy-admin/internal/auth/password"
@@ -126,8 +128,16 @@ func signInMethods(cfg *config.Config) ([]auth.Method, error) {
 		}
 		methods = append(methods, m)
 	}
-	if cfg.GoogleEnabled() {
-		methods = append(methods, oidc.New(oidc.Options{Issuer: cfg.OIDCIssuer, ClientID: cfg.GoogleClientID, ClientSecret: cfg.GoogleClientSecret}))
+	if cfg.OIDC.Enabled() {
+		p := cfg.OIDC
+		methods = append(methods, oidc.New(oidc.Options{Issuer: p.Issuer, ClientID: p.ClientID, ClientSecret: p.ClientSecret, Name: p.Label}))
+	}
+	for _, p := range cfg.OIDCProviders {
+		methods = append(methods, oidc.New(oidc.Options{ID: "oidc-" + p.Name, Issuer: p.Issuer,
+			ClientID: p.ClientID, ClientSecret: p.ClientSecret, Name: cmp.Or(p.Label, p.Name)}))
+	}
+	if cfg.GitHubEnabled() {
+		methods = append(methods, github.New(github.Options{ClientID: cfg.GitHubClientID, ClientSecret: cfg.GitHubClientSecret, BaseURL: cfg.GitHubURL}))
 	}
 	if cfg.HeaderEnabled() {
 		m, err := header.New(header.Options{TrustedProxies: cfg.TrustedProxyCIDRs, EmailHeader: cfg.AuthHeaderEmail, NameHeader: cfg.AuthHeaderName})

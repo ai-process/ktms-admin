@@ -47,4 +47,6 @@ a { color: var(--accent); }
   text-align: center; text-decoration: none; cursor: pointer;
 }
 .btn:hover, button:hover { background: var(--accent-hover); }
+.btn.secondary { background: var(--surface); color: var(--text); border: 1px solid var(--line-strong); }
+.btn.secondary:hover { background: var(--bg); }
 .btn:focus-visible, button:focus-visible, input:focus-visible { outline: none; box-shadow: var(--focus); }

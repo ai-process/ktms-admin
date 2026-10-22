@@ -103,7 +103,7 @@ function Shell() {
       <div class="collapsible stack">
         <${Health} />
         <div class="who">
-          ${u.picture ? html`<img src=${u.picture} alt="" referrerpolicy="no-referrer" />` : html`<span class="avatar">${(u.name || u.email || '?').slice(0, 1).toUpperCase()}</span>`}
+          ${u.picture ? html`<img src=${u.picture} alt="" referrerpolicy="no-referrer" onError=${(e) => { e.currentTarget.hidden = true; }} />` : html`<span class="avatar">${(u.name || u.email || '?').slice(0, 1).toUpperCase()}</span>`}
           <div class="id"><b title=${u.email}>${u.name || u.email}</b><${RoleBadge} role=${u.role} /></div>
           <${ThemeToggle} />
         </div>

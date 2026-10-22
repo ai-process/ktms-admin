@@ -183,6 +183,15 @@ func (h *Handler) LoginPage(w http.ResponseWriter, r *http.Request, code int, ne
 			d.Proxy = true
 		}
 	}
+	// "or" sets a form apart from the buttons, which then look secondary.
+	hasForm := false
+	for i := range d.Items {
+		hasForm = hasForm || d.Items[i].Form != ""
+		d.Items[i].Sep = i > 0 && (d.Items[i].Form != "" || d.Items[i-1].Form != "")
+	}
+	for i := range d.Items {
+		d.Items[i].Secondary = hasForm
+	}
 	h.page(w, code, d)
 }
 
@@ -190,8 +199,9 @@ type pageButton struct{ Label, URL string }
 
 // pageItem is one method on the sign-in page: a button or a form.
 type pageItem struct {
-	Button *pageButton
-	Form   template.HTML
+	Button         *pageButton
+	Form           template.HTML
+	Sep, Secondary bool
 }
 
 type pageData struct {
@@ -215,9 +225,9 @@ var pageTmpl = template.Must(template.New("page").Parse(`<!doctype html>
 <p class="error" role="alert">{{.}}</p>
 {{- end}}
 {{- range $i, $it := .Items}}
-{{- if $i}}<p class="or"><span>or</span></p>{{end}}
+{{- if $it.Sep}}<p class="or"><span>or</span></p>{{end}}
 {{- if $it.Button}}
-<a class="btn" href="{{$it.Button.URL}}">{{$it.Button.Label}}</a>
+<a class="btn{{if $it.Secondary}} secondary{{end}}" href="{{$it.Button.URL}}">{{$it.Button.Label}}</a>
 {{- else}}
 {{$it.Form}}
 {{- end}}

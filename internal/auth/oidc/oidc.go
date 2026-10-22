@@ -1,4 +1,5 @@
-// Package oidc signs users in with an OpenID Connect provider, Google by default.
+// Package oidc signs users in with an OpenID Connect provider (Google,
+// Keycloak, Zitadel, Entra ID, GitLab, …), Google by default.
 package oidc
 
 import (
@@ -17,18 +18,21 @@ import (
 )
 
 const (
-	methodID     = "oidc"
+	// DefaultID is the unnamed provider. It keeps /auth/callback, the redirect
+	// URI registered before there could be several.
+	DefaultID    = "oidc"
 	googleIssuer = "https://accounts.google.com"
-	startPath    = "/auth/oidc/start"
-	// CallbackPath is the redirect URI path registered at the provider.
-	CallbackPath = "/auth/callback"
 )
 
 type Options struct {
+	// ID names the method and its routes; empty means DefaultID.
+	ID string
 	// Issuer is the provider's issuer URL; empty means Google.
 	Issuer       string
 	ClientID     string
 	ClientSecret string
+	// Name is shown as "Sign in with <Name>"; empty means Google or SSO.
+	Name string
 }
 
 // Method runs the authorization-code flow with PKCE, state and nonce, and
@@ -42,11 +46,30 @@ type Method struct {
 }
 
 func New(o Options) *Method {
+	if o.ID == "" {
+		o.ID = DefaultID
+	}
 	if o.Issuer == "" {
 		o.Issuer = googleIssuer
 	}
+	if o.Name == "" {
+		o.Name = "SSO"
+		if o.Issuer == googleIssuer {
+			o.Name = "Google"
+		}
+	}
 	return &Method{o: o}
 }
+
+// CallbackPath is the redirect URI path to register at the provider.
+func (m *Method) CallbackPath() string {
+	if m.o.ID == DefaultID {
+		return "/auth/callback"
+	}
+	return "/auth/" + m.o.ID + "/callback"
+}
+
+func (m *Method) startPath() string { return "/auth/" + m.o.ID + "/start" }
 
 type flowData struct {
 	State    string `json:"s"`
@@ -55,34 +78,21 @@ type flowData struct {
 	Next     string `json:"u"`
 }
 
-func (m *Method) ID() string { return methodID }
-
-func (m *Method) Label() string {
-	if m.isGoogle() {
-		return "Sign in with Google"
-	}
-	return "Sign in with SSO"
-}
+func (m *Method) ID() string    { return m.o.ID }
+func (m *Method) Label() string { return "Sign in with " + m.o.Name }
 
 func (m *Method) StartURL(next string) string {
-	return startPath + "?next=" + url.QueryEscape(next)
+	return m.startPath() + "?next=" + url.QueryEscape(next)
 }
 
 func (m *Method) Mount(mux *http.ServeMux, host auth.Host) {
 	m.host = host
-	mux.HandleFunc("GET "+startPath, m.start)
-	mux.HandleFunc("GET "+CallbackPath, m.callback)
+	mux.HandleFunc("GET "+m.startPath(), m.start)
+	mux.HandleFunc("GET "+m.CallbackPath(), m.callback)
 }
-
-func (m *Method) isGoogle() bool { return m.o.Issuer == googleIssuer }
 
 // providerName is for error messages.
-func (m *Method) providerName() string {
-	if m.isGoogle() {
-		return "Google"
-	}
-	return "the identity provider"
-}
+func (m *Method) providerName() string { return m.o.Name }
 
 func (m *Method) oauthConfig(ctx context.Context) (*oauth2.Config, *gooidc.Provider, error) {
 	m.mu.Lock()
@@ -97,7 +107,7 @@ func (m *Method) oauthConfig(ctx context.Context) (*oauth2.Config, *gooidc.Provi
 	return &oauth2.Config{
 		ClientID:     m.o.ClientID,
 		ClientSecret: m.o.ClientSecret,
-		RedirectURL:  m.host.PublicURL() + CallbackPath,
+		RedirectURL:  m.host.PublicURL() + m.CallbackPath(),
 		Endpoint:     m.provider.Endpoint(),
 		Scopes:       []string{gooidc.ScopeOpenID, "email", "profile"},
 	}, m.provider, nil
@@ -116,7 +126,7 @@ func (m *Method) start(w http.ResponseWriter, r *http.Request) {
 	}
 	f := flowData{State: rand.Text(), Nonce: rand.Text(), Verifier: oauth2.GenerateVerifier(),
 		Next: auth.SafeNext(r.URL.Query().Get("next"))}
-	if err := m.host.SaveFlow(w, methodID, f); err != nil {
+	if err := m.host.SaveFlow(w, m.o.ID, f); err != nil {
 		m.host.Fail(w, http.StatusInternalServerError, "Internal error.")
 		return
 	}
@@ -127,7 +137,7 @@ func (m *Method) start(w http.ResponseWriter, r *http.Request) {
 
 func (m *Method) callback(w http.ResponseWriter, r *http.Request) {
 	var f flowData
-	if !m.host.TakeFlow(w, r, methodID, &f) {
+	if !m.host.TakeFlow(w, r, m.o.ID, &f) {
 		m.host.Fail(w, http.StatusBadRequest, "The sign-in attempt expired. Start again.")
 		return
 	}
@@ -168,5 +178,5 @@ func (m *Method) callback(w http.ResponseWriter, r *http.Request) {
 		m.host.Fail(w, http.StatusForbidden, "Your e-mail address is not verified by "+m.providerName()+".")
 		return
 	}
-	m.host.SignIn(w, r, methodID, auth.Identity{Email: claims.Email, Name: claims.Name, Picture: claims.Picture}, f.Next)
+	m.host.SignIn(w, r, m.o.ID, auth.Identity{Email: claims.Email, Name: claims.Name, Picture: claims.Picture}, f.Next)
 }

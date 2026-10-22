@@ -9,7 +9,7 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
     CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -ldflags="-s -w" -o /out/llm-proxy-admin ./cmd/llm-proxy-admin
 
 FROM alpine:3.21
-# CA certificates are needed to reach Google for sign-in.
+# CA certificates are needed to reach identity providers for sign-in.
 RUN apk add --no-cache ca-certificates && adduser -D -u 10001 appuser
 COPY --from=builder /out/llm-proxy-admin /llm-proxy-admin
 USER appuser
