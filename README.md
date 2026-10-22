@@ -105,9 +105,8 @@ cannot post one.
 | --- | --- |
 | Keycloak | `https://keycloak.example.com/realms/<realm>` |
 | Zitadel | `https://<instance>.zitadel.cloud` |
-| Microsoft Entra ID | `https://login.microsoftonline.com/<tenant-id>/v2.0` (add the optional `email` claim and make sure it is verified) |
 | GitLab | `https://gitlab.com` or your instance |
-| Authentik | `https://authentik.example.com/application/o/<slug>/` |
+| Authentik | `https://authentik.example.com/application/o/<slug>/` (the `email` scope mapping must return `email_verified: true`) |
 | Okta | `https://<org>.okta.com` |
 
 **Several providers at once:** list names in `OIDC_PROVIDERS` (lower-case letters, digits and dashes) and
@@ -118,7 +117,9 @@ the redirect URI `https://admin.example.com/auth/oidc-corp-sso/callback`. They c
 provider above.
 
 The console uses the authorization-code flow with PKCE, state and nonce, requests only the
-`openid email profile` scopes, and requires the provider to mark the e-mail **verified**. The older
+`openid email profile` scopes, and requires the provider to mark the e-mail **verified**
+(`email_verified`). Microsoft Entra ID does not send that claim, so put it behind an
+[access proxy](#sign-in-behind-an-access-proxy) such as oauth2-proxy instead. The older
 `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` names still work with a startup warning until 2.0.
 
 ## GitHub sign-in

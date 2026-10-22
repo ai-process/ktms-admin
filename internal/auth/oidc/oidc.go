@@ -40,6 +40,8 @@ type Options struct {
 type Method struct {
 	o    Options
 	host auth.Host
+	// errName is the provider in error messages, where "SSO" reads badly.
+	errName string
 
 	mu       sync.Mutex
 	provider *gooidc.Provider
@@ -52,13 +54,15 @@ func New(o Options) *Method {
 	if o.Issuer == "" {
 		o.Issuer = googleIssuer
 	}
-	if o.Name == "" {
-		o.Name = "SSO"
-		if o.Issuer == googleIssuer {
-			o.Name = "Google"
-		}
+	m := &Method{o: o, errName: o.Name}
+	switch {
+	case o.Name != "":
+	case o.Issuer == googleIssuer:
+		m.o.Name, m.errName = "Google", "Google"
+	default:
+		m.o.Name, m.errName = "SSO", "the identity provider"
 	}
-	return &Method{o: o}
+	return m
 }
 
 // CallbackPath is the redirect URI path to register at the provider.
@@ -92,7 +96,7 @@ func (m *Method) Mount(mux *http.ServeMux, host auth.Host) {
 }
 
 // providerName is for error messages.
-func (m *Method) providerName() string { return m.o.Name }
+func (m *Method) providerName() string { return m.errName }
 
 func (m *Method) oauthConfig(ctx context.Context) (*oauth2.Config, *gooidc.Provider, error) {
 	m.mu.Lock()

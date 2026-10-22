@@ -47,8 +47,11 @@ services:
       PUBLIC_URL: ${PUBLIC_URL:?set PUBLIC_URL in .env}
       # At least one sign-in method; see the README.
       ADMIN_USERS: ${ADMIN_USERS:-}
-      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-${GOOGLE_CLIENT_ID:-}}
-      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-${GOOGLE_CLIENT_SECRET:-}}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
+      # Deprecated names, passed on so the console can warn about them.
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       OIDC_ISSUER: ${OIDC_ISSUER:-}
       OIDC_NAME: ${OIDC_NAME:-}
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}

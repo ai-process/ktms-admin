@@ -84,6 +84,8 @@ function Shell() {
   useEffect(() => { setOpen(false); }, [route.name]);
   useEffect(() => { document.title = (name ? PAGES[name].title + ' · ' : '') + 'KTMS admin'; }, [name]);
   const u = session.me.user;
+  // A picture the CSP blocks falls back to the initial.
+  const [picOk, setPicOk] = useState(true);
   const Page = name && PAGES[name].comp;
   const signOut = async () => { await fetch('/auth/logout', { method: 'POST', headers: { 'X-Requested-With': 'llm-proxy-admin' } }); location.href = '/'; };
 
@@ -103,7 +105,7 @@ function Shell() {
       <div class="collapsible stack">
         <${Health} />
         <div class="who">
-          ${u.picture ? html`<img src=${u.picture} alt="" referrerpolicy="no-referrer" onError=${(e) => { e.currentTarget.hidden = true; }} />` : html`<span class="avatar">${(u.name || u.email || '?').slice(0, 1).toUpperCase()}</span>`}
+          ${u.picture && picOk ? html`<img src=${u.picture} alt="" referrerpolicy="no-referrer" onError=${() => setPicOk(false)} />` : html`<span class="avatar">${(u.name || u.email || '?').slice(0, 1).toUpperCase()}</span>`}
           <div class="id"><b title=${u.email}>${u.name || u.email}</b><${RoleBadge} role=${u.role} /></div>
           <${ThemeToggle} />
         </div>
