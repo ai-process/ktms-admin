@@ -6,6 +6,10 @@ Notable changes to ktms-admin. The format follows
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-22
+
+Needs KTMS 0.14.0 or later for the tenant and team pages.
+
 ### Added
 - Redesigned console (Preact and htm, no build step): visual rules builder, key wizard with
   spend caps, usage with team budgets, light and dark themes.
@@ -22,5 +26,5 @@ Notable changes to ktms-admin. The format follows
 - `LLM_PROXY_ADDR`, `LLM_PROXY_ADMIN_KEY`, `LLM_PROXY_TLS`: they keep working with a startup
   warning and are removed in 2.0.
 
-Earlier releases (0.1.0, 0.3.0) are described on the
+Earlier releases (0.1.0 to 0.3.0) are described on the
 [GitHub releases page](https://github.com/ai-process/ktms-admin/releases).

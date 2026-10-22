@@ -110,7 +110,10 @@ The console's own `/api` serves its web UI only and is not a public API.
 | ktms-admin | KTMS gateway |
 | --- | --- |
 | 1.x | 1.x |
-| 0.x | 0.13.x (no compatibility promise) |
+| 0.4.x | 0.14.x |
+| 0.3.x and earlier | 0.13.x |
+
+Before 1.0 there is no compatibility promise: use the pairs above.
 
 ## Running with one backend or both
 
