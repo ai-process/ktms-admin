@@ -20,7 +20,7 @@ jobs:
       - name: Test
         run: go test -race ./...
       - name: Check JavaScript syntax
-        run: node --check internal/web/static/app.js
+        run: for f in internal/web/static/js/*.js internal/web/static/js/pages/*.js internal/web/static/vendor/*.mjs; do node --check "$f"; done
 
   docker:
     runs-on: ubuntu-latest
