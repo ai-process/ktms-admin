@@ -1,10 +1,10 @@
-# llm-proxy-admin
+# KTMS admin (llm-proxy-admin)
 
 [![Test](https://github.com/ai-process/llm-proxy-admin/actions/workflows/test.yml/badge.svg)](https://github.com/ai-process/llm-proxy-admin/actions/workflows/test.yml)
 [![Docker image](https://img.shields.io/docker/v/coyl/llm-proxy-admin?label=docker%20hub&sort=semver)](https://hub.docker.com/r/coyl/llm-proxy-admin)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-A small web console for [**llm-proxy**](https://github.com/ai-process/llm-proxy) (the LLM gateway) and
+A web console for [**KTMS**](https://github.com/ai-process/ktms) (the LLM gateway, formerly llm-proxy) and
 [**light-tokenmeter**](https://github.com/ai-process/light-tokenmeter) (the usage meter). Use it with both,
 or with either one alone.
 
@@ -13,7 +13,8 @@ or with either one alone.
 - **Gateway:** manage models, routing rules, client API keys and vendor credentials, and try a prompt in the
   playground. No more `grpcurl`.
 - **Sign-in with Google**, limited to an allowlist with wildcards such as `*@example.com`. Optional read-only users.
-- **Tiny:** one static Go binary, the UI embedded (no front-end build, no framework), small image.
+- **One binary:** a static Go binary with the UI embedded: Preact and htm as vendored ES modules, no
+  front-end build step, light and dark themes, usable from a phone.
 
 ## Contents
 
@@ -166,13 +167,30 @@ Rows are labelled:
 These are heuristics for spotting where to look, not accounting. They need two or more groups and at least
 five requests in the group.
 
-**Models** and **Rules** (need llm-proxy). Add, edit and delete the registry entries and the routing rules
-that choose between them. Saves go through llm-proxy's own validation, so an invalid change (unknown model,
-missing catch-all rule, duplicate priority) is rejected with its message and nothing changes.
+Team budgets sit next to the table, read from the gateway's own spend counters.
 
-**Keys.** Mint client API keys (the secret is shown once), revoke them, assign vendor credentials to clients
-(write-only: stored encrypted by llm-proxy and never shown again) and re-encrypt all credentials after
-adding a new encryption key version.
+**Models** (need KTMS). Add, edit and delete registry entries: vendor, efforts, capabilities, list prices
+and per-key limits.
+
+**Rules.** A visual builder: pick a rule card on the left (drag cards to change priority), then set the
+effort and attribute conditions, the model chain (drag to reorder, cheapest first; later models are
+fallbacks), an optional canary split with weights, and shadow traffic. The *Check it* panel says in words
+where a request goes, and the editor flags what the gateway would refuse (no catch-all for an effort, a
+model that does not serve the effort, a weight of 0) before you save. Saves still go through the gateway's
+own validation.
+
+**Limits.** Per-user rate limits and daily token budgets, and spend caps (USD per UTC day or month) for keys
+and users.
+
+**Keys.** A wizard mints client API keys: name and team, access, optional daily and monthly spend caps; the
+secret is shown once with a copy button. Revoke keys, assign vendor credentials to clients (write-only:
+stored encrypted by the gateway and never shown again) and re-encrypt all credentials after adding a new
+encryption key version.
+
+**Tenants** and **Team.** Organizations, teams, their monthly budgets and model allowlists; each team's page
+shows its spend this month against the budget and its keys.
+
+**Nodes.** Local GPU nodes with state, queue, VRAM and speed, refreshed every 15 seconds, and their keys.
 
 **Playground.** Send a prompt or multi-turn conversation through the same routing your clients use, with SSE streaming, tool definitions, interactive tool result responses, effort selection, and attributes. The call is attributed to `console.playground` and your e-mail.
 
@@ -200,7 +218,10 @@ make dev     # run on :8080 without Google sign-in (set LLM_PROXY_* and/or TOKEN
 make proto   # regenerate internal/gen from proto/ (needs buf)
 ```
 
-`internal/web/static` is plain HTML, CSS and ES modules served as-is. `proto/` is a copy of KTMS's
+`internal/web/static` is plain HTML, CSS and ES modules served as-is: `js/main.js` (shell and routing),
+`js/lib.js` (shared components), `js/pages/*` (one module per page), and `vendor/` (Preact 10 and htm 3,
+unmodified except that hooks import `./preact.mjs`). Restart the server after editing them: they are embedded
+at build time. `proto/` is a copy of KTMS's
 protocol, so the console talks to it over gRPC without importing its code.
 
 Layout: `cmd/llm-proxy-admin` (entrypoint), `internal/auth` (Google sign-in, sessions, allowlists),

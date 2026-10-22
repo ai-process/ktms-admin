@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/rs/zerolog/log"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 
@@ -286,6 +287,73 @@ func (s *Server) proxyDeleteUserRateLimit(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
+func (s *Server) proxyListSpendLimits(w http.ResponseWriter, r *http.Request, _ *auth.User) {
+	q := r.URL.Query()
+	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
+	defer cancel()
+	resp, err := s.admin.ListSpendLimits(ctx, &pb.ListSpendLimitsRequest{SubjectType: q.Get("subject_type"), SubjectId: q.Get("subject_id")})
+	if err != nil {
+		backendErr(w, err)
+		return
+	}
+	writeProto(w, resp)
+}
+
+// checkSpendSubject keeps the console to key and user caps: a team's cap
+// belongs to the team row (Create/UpdateTeam), or the two would drift apart.
+func checkSpendSubject(subjectType, subjectID, period string) string {
+	switch {
+	case subjectType != "key" && subjectType != "user":
+		return "subject_type must be key or user; team budgets are set on the team"
+	case subjectID == "":
+		return "subject_id is required (* for the default)"
+	case period != "day" && period != "month":
+		return "period must be day or month"
+	}
+	return ""
+}
+
+func (s *Server) proxySetSpendLimit(w http.ResponseWriter, r *http.Request, _ *auth.User) {
+	var spec pb.SpendLimitSpec
+	if err := readProto(r, &spec); err != nil {
+		backendErr(w, badBody(err))
+		return
+	}
+	spec.SubjectType, spec.SubjectId, spec.Period = strings.TrimSpace(spec.SubjectType), strings.TrimSpace(spec.SubjectId), strings.TrimSpace(spec.Period)
+	if msg := checkSpendSubject(spec.SubjectType, spec.SubjectId, spec.Period); msg != "" {
+		writeErr(w, http.StatusBadRequest, "bad_request", msg)
+		return
+	}
+	if spec.LimitNanousd <= 0 {
+		writeErr(w, http.StatusBadRequest, "bad_request", "the cap must be above 0")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
+	defer cancel()
+	if _, err := s.admin.SetSpendLimit(ctx, &pb.SetSpendLimitRequest{SpendLimit: &spec}); err != nil {
+		backendErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) proxyDeleteSpendLimit(w http.ResponseWriter, r *http.Request, _ *auth.User) {
+	q := r.URL.Query()
+	// subject_id is matched exactly: a delete must name the row that exists.
+	st, sid, period := q.Get("subject_type"), q.Get("subject_id"), q.Get("period")
+	if msg := checkSpendSubject(st, sid, period); msg != "" {
+		writeErr(w, http.StatusBadRequest, "bad_request", msg)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
+	defer cancel()
+	if _, err := s.admin.DeleteSpendLimit(ctx, &pb.DeleteSpendLimitRequest{SubjectType: st, SubjectId: sid, Period: period}); err != nil {
+		backendErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
 func (s *Server) proxySetVendorKey(w http.ResponseWriter, r *http.Request, u *auth.User) {
 	var req pb.SetVendorKeyRequest
 	if err := readProto(r, &req); err != nil {
@@ -405,7 +473,7 @@ func (s *Server) buildPlaygroundReq(req playgroundReq, u *auth.User) (*pb.Genera
 // admin key, which the proxy accepts for every scope.
 func (s *Server) proxyPlayground(w http.ResponseWriter, r *http.Request, u *auth.User) {
 	if s.data == nil {
-		writeErr(w, http.StatusNotFound, "not_found", "llm-proxy data client not available")
+		writeErr(w, http.StatusNotFound, "not_found", "the KTMS gateway data client is not available")
 		return
 	}
 	var req playgroundReq
@@ -432,7 +500,7 @@ func (s *Server) proxyPlayground(w http.ResponseWriter, r *http.Request, u *auth
 // keeping the connection alive and flushing increments as they arrive.
 func (s *Server) proxyPlaygroundStream(w http.ResponseWriter, r *http.Request, u *auth.User) {
 	if s.data == nil {
-		writeErr(w, http.StatusNotFound, "not_found", "llm-proxy data client not available")
+		writeErr(w, http.StatusNotFound, "not_found", "the KTMS gateway data client is not available")
 		return
 	}
 	var req playgroundReq
@@ -522,7 +590,7 @@ type judgeReq struct {
 // proxyJudge evaluates typed criteria against an arbitrary JSON state via the Judge RPC.
 func (s *Server) proxyJudge(w http.ResponseWriter, r *http.Request, u *auth.User) {
 	if s.data == nil {
-		writeErr(w, http.StatusNotFound, "not_found", "llm-proxy data client not available")
+		writeErr(w, http.StatusNotFound, "not_found", "the KTMS gateway data client is not available")
 		return
 	}
 	var req judgeReq
@@ -749,10 +817,18 @@ func (s *Server) proxyCreateTeam(w http.ResponseWriter, r *http.Request, u *auth
 	writeProto(w, resp)
 }
 
+// canAccessTeam lets global readers see any team and team users only their own.
+func canAccessTeam(w http.ResponseWriter, u *auth.User, id string) bool {
+	if u.CanReadGlobal() || u.TeamID == id {
+		return true
+	}
+	writeErr(w, http.StatusForbidden, "forbidden", "access to other teams is restricted")
+	return false
+}
+
 func (s *Server) proxyGetTeam(w http.ResponseWriter, r *http.Request, u *auth.User) {
 	id := r.PathValue("id")
-	if !u.CanReadGlobal() && u.TeamID != id {
-		writeErr(w, http.StatusForbidden, "forbidden", "access to other teams is restricted")
+	if !canAccessTeam(w, u, id) {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
@@ -794,8 +870,7 @@ func (s *Server) proxyDeleteTeam(w http.ResponseWriter, r *http.Request, u *auth
 
 func (s *Server) proxyTeamCabinet(w http.ResponseWriter, r *http.Request, u *auth.User) {
 	id := r.PathValue("id")
-	if !u.CanReadGlobal() && u.TeamID != id {
-		writeErr(w, http.StatusForbidden, "forbidden", "access to other teams is restricted")
+	if !canAccessTeam(w, u, id) {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
@@ -830,11 +905,77 @@ func (s *Server) proxyTeamCabinet(w http.ResponseWriter, r *http.Request, u *aut
 		return
 	}
 	out := map[string]any{"team": team, "keys": keys["keys"]}
-	// The gateway's own counter, the one its team cap refuses calls on. When it
-	// cannot be read the page says so instead of showing the whole budget as free.
+	addSpend(out, id, spend, spendErr)
+	writeJSON(w, http.StatusOK, out)
+}
+
+// countersDown is a failure to read the counters themselves; anything else
+// (bad id, the console's key refused) is a real error the caller must see.
+func countersDown(err error) bool {
+	c := status.Code(err)
+	return c == codes.Unavailable || c == codes.DeadlineExceeded
+}
+
+// maxSpendReads bounds the GetTeamSpend calls one Usage page load can cause.
+const maxSpendReads = 8
+
+// proxyTeamsSpend reads every capped team's counter in one browser request,
+// at most maxSpendReads at a time against the gateway.
+func (s *Server) proxyTeamsSpend(w http.ResponseWriter, r *http.Request, _ *auth.User) {
+	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
+	defer cancel()
+	teams, err := s.admin.ListTeams(ctx, &pb.ListTeamsRequest{})
+	if err != nil {
+		backendErr(w, err)
+		return
+	}
+	var capped []*pb.Team
+	for _, t := range teams.Teams {
+		if t.MonthlyBudgetUsd > 0 {
+			capped = append(capped, t)
+		}
+	}
+	out := make([]map[string]any, len(capped))
+	sem := make(chan struct{}, maxSpendReads)
+	var (
+		wg    sync.WaitGroup
+		mu    sync.Mutex
+		fatal error
+	)
+	for i, t := range capped {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			spend, err := s.admin.GetTeamSpend(ctx, &pb.GetTeamSpendRequest{Id: t.Id})
+			// A team deleted meanwhile is one bad row; anything else but a
+			// counter outage (the console's key refused) fails the whole reply.
+			if err != nil && !countersDown(err) && status.Code(err) != codes.NotFound {
+				mu.Lock()
+				fatal = err
+				mu.Unlock()
+			}
+			row := map[string]any{"team_id": t.Id, "name": t.Name, "monthly_budget_usd": t.MonthlyBudgetUsd}
+			addSpend(row, t.Id, spend, err)
+			out[i] = row
+		}()
+	}
+	wg.Wait()
+	if fatal != nil {
+		backendErr(w, fatal)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"teams": out})
+}
+
+// addSpend reports the gateway's own counter, the one its team cap refuses
+// calls on. When it cannot be read the reply says so instead of showing the
+// whole budget as free.
+func addSpend(out map[string]any, id string, spend *pb.GetTeamSpendResponse, err error) {
 	switch {
-	case spendErr != nil:
-		log.Warn().Err(spendErr).Str("team", id).Msg("cabinet: team spend unavailable")
+	case err != nil:
+		log.Warn().Err(err).Str("team", id).Msg("team spend unavailable")
 		out["spend_error"] = "spend counters unavailable"
 	case !spend.GetMetered():
 		out["metered"] = false
@@ -844,10 +985,10 @@ func (s *Server) proxyTeamCabinet(w http.ResponseWriter, r *http.Request, u *aut
 		out["current_spend_usd"] = spent
 		out["resets_at"] = spend.GetResetsAt().AsTime()
 		if limit := spend.GetLimitNanousd(); limit > 0 {
+			out["limit_usd"] = float64(limit) / 1e9
 			out["remaining_usd"] = max(0, float64(limit)/1e9-spent)
 		}
 	}
-	writeJSON(w, http.StatusOK, out)
 }
 
 // ---- prices (for cost estimates in the usage view) ----
