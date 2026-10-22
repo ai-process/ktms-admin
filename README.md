@@ -2,7 +2,7 @@
 
 [![Test](https://github.com/ai-process/ktms-admin/actions/workflows/test.yml/badge.svg)](https://github.com/ai-process/ktms-admin/actions/workflows/test.yml)
 [![Docker image](https://img.shields.io/docker/v/coyl/ktms-admin?label=docker%20hub&sort=semver)](https://hub.docker.com/r/coyl/ktms-admin)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache_2.0-blue.svg)](LICENSE)
 
 A web console for [**KTMS**](https://github.com/ai-process/ktms) (the LLM gateway, formerly llm-proxy) and
 [**light-tokenmeter**](https://github.com/ai-process/light-tokenmeter) (the usage meter). Use it with both,
@@ -332,4 +332,4 @@ with `docker-publish.yml` of `ai-process/ktms-admin`). The repository needs the 
 git tag v1.0.0 && git push origin v1.0.0
 ```
 
-Contributions are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md). Licensed under the [MIT License](LICENSE).
+Contributions are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md). Licensed under the [Apache License 2.0](LICENSE).
