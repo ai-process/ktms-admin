@@ -2,6 +2,7 @@ package usage
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -55,23 +56,31 @@ func TestSingleGroupHasNoVerdict(t *testing.T) {
 	}
 }
 
-// fakeTokenmeter answers like light-tokenmeter with auth on: only "r" may read.
-func fakeTokenmeter(t *testing.T) string {
+// fakeTokenmeter answers like light-tokenmeter: with auth on only "r" may
+// read; a request without from/to fails validation after auth.
+func fakeTokenmeter(t *testing.T, authOn bool) string {
+	refuse := func(w http.ResponseWriter, status int, code string) {
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte(`{"error":"no","code":"` + code + `"}`))
+	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/readyz" {
+		switch {
+		case r.URL.Path == "/readyz":
 			return
-		}
-		switch r.Header.Get("Authorization") {
-		case "Bearer r":
-		case "Bearer w":
-			w.WriteHeader(http.StatusForbidden)
+		case r.URL.Path == "/proxy-says-no":
+			w.WriteHeader(http.StatusForbidden) // a WAF in front: no light-tokenmeter body
+			return
+		case !authOn:
+		case r.Header.Get("Authorization") == "Bearer r":
+		case r.Header.Get("Authorization") == "Bearer w":
+			refuse(w, http.StatusForbidden, "forbidden")
 			return
 		default:
-			w.WriteHeader(http.StatusUnauthorized)
+			refuse(w, http.StatusUnauthorized, "unauthenticated")
 			return
 		}
 		if r.URL.Query().Get("from") == "" {
-			w.WriteHeader(http.StatusBadRequest)
+			refuse(w, http.StatusBadRequest, "validation_error")
 			return
 		}
 		_, _ = w.Write([]byte(`{"rows":[{"model":"m","tokens_total":7}]}`))
@@ -81,7 +90,7 @@ func fakeTokenmeter(t *testing.T) string {
 }
 
 func TestTokenIsSentAndRefusalsAreNamed(t *testing.T) {
-	base := fakeTokenmeter(t)
+	base := fakeTokenmeter(t, true)
 	ctx := context.Background()
 	now := time.Now()
 
@@ -100,11 +109,35 @@ func TestTokenIsSentAndRefusalsAreNamed(t *testing.T) {
 		"w":   "lacks the read scope",
 	} {
 		c := NewClient(base, token)
-		if err := c.Ready(ctx); err == nil || !strings.Contains(err.Error(), want) {
-			t.Errorf("Ready with token %q: %v, want %q", token, err, want)
+		var authErr *AuthError
+		if err := c.Ready(ctx); !errors.As(err, &authErr) || !strings.Contains(err.Error(), want) {
+			t.Errorf("Ready with token %q: %v, want an AuthError with %q", token, err, want)
 		}
 		if _, err := c.Summary(ctx, now.AddDate(0, 0, -1), now, "none"); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("Summary with token %q: %v, want %q", token, err, want)
 		}
+	}
+}
+
+func TestAuthOffNeedsNoToken(t *testing.T) {
+	c := NewClient(fakeTokenmeter(t, false), "")
+	if err := c.Ready(context.Background()); err != nil {
+		t.Fatalf("Ready without auth: %v", err)
+	}
+}
+
+func TestOtherRefusalsDoNotBlameTheToken(t *testing.T) {
+	c := NewClient(fakeTokenmeter(t, true), "r")
+	resp, err := c.get(context.Background(), "/proxy-says-no")
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = c.check(resp.StatusCode, read(resp, 1<<10))
+	var authErr *AuthError
+	if err == nil || errors.As(err, &authErr) || strings.Contains(err.Error(), "TOKENMETER_TOKEN") {
+		t.Fatalf("a 403 without light-tokenmeter's code blamed the token: %v", err)
+	}
+	if err := c.check(http.StatusInternalServerError, []byte(`{"error":"Failed to get summary","code":"internal_error"}`)); err == nil || !strings.Contains(err.Error(), "Failed to get summary") {
+		t.Fatalf("light-tokenmeter's message was dropped: %v", err)
 	}
 }

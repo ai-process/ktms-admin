@@ -74,6 +74,9 @@ func New(cfg *config.Config, a *auth.Handler) (*Server, func(), error) {
 	}
 	if cfg.UsageEnabled() {
 		s.usage = usage.NewClient(cfg.TokenmeterURL, cfg.TokenmeterToken)
+		if cfg.TokenmeterToken != "" && strings.HasPrefix(cfg.TokenmeterURL, "http://") {
+			log.Info().Msg("TOKENMETER_TOKEN is sent without TLS; keep light-tokenmeter on a private network or use an https TOKENMETER_URL")
+		}
 	}
 	return s, closer, nil
 }
@@ -333,6 +336,8 @@ type backendStatus struct {
 	Enabled bool   `json:"enabled"`
 	OK      bool   `json:"ok"`
 	Error   string `json:"error,omitempty"`
+	// Auth marks a refused key or token, so the console does not call a running backend down.
+	Auth bool `json:"auth,omitempty"`
 }
 
 func (s *Server) health(w http.ResponseWriter, r *http.Request, _ *auth.User) {
@@ -343,13 +348,16 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request, _ *auth.User) {
 		st := backendStatus{Enabled: true, OK: true}
 		if _, err := s.admin.ListAPIKeys(ctx, &pb.ListAPIKeysRequest{}); err != nil {
 			st.OK, st.Error = false, status.Convert(err).Message()
+			c := status.Code(err)
+			st.Auth = c == codes.Unauthenticated || c == codes.PermissionDenied
 		}
 		out["proxy"] = st
 	}
 	if s.usage != nil {
 		st := backendStatus{Enabled: true, OK: true}
 		if err := s.usage.Ready(ctx); err != nil {
-			st.OK, st.Error = false, err.Error()
+			var authErr *usage.AuthError
+			st.OK, st.Error, st.Auth = false, err.Error(), errors.As(err, &authErr)
 		}
 		out["usage"] = st
 	}

@@ -5,7 +5,6 @@ package usage
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -59,28 +58,56 @@ func (c *Client) get(ctx context.Context, pathAndQuery string) (*http.Response, 
 	return c.http.Do(req)
 }
 
-// authError explains a refusal of the token; nil for any other status.
-func (c *Client) authError(status int) error {
-	switch {
-	case status == http.StatusUnauthorized && c.token == "":
-		return errors.New("a token is required: set TOKENMETER_TOKEN")
-	case status == http.StatusUnauthorized:
-		return errors.New("TOKENMETER_TOKEN was rejected")
-	case status == http.StatusForbidden:
-		return errors.New("TOKENMETER_TOKEN lacks the read scope")
+// AuthError is light-tokenmeter refusing the token, as opposed to being down.
+type AuthError struct{ msg string }
+
+func (e *AuthError) Error() string { return e.msg }
+
+// apiError is light-tokenmeter's JSON error body.
+type apiError struct {
+	Code  string `json:"code"`
+	Error string `json:"error"`
+}
+
+// check turns a non-2xx answer into an error. A 401 or 403 names the token
+// only when light-tokenmeter's own auth sent it, not a proxy in front of it.
+func (c *Client) check(status int, body []byte) error {
+	if status >= 200 && status < 300 {
+		return nil
 	}
-	return nil
+	var e apiError
+	_ = json.Unmarshal(body, &e)
+	switch {
+	case status == http.StatusUnauthorized && e.Code == "unauthenticated" && c.token == "":
+		return &AuthError{"a token is required: set TOKENMETER_TOKEN"}
+	case status == http.StatusUnauthorized && e.Code == "unauthenticated":
+		return &AuthError{"TOKENMETER_TOKEN was rejected"}
+	case status == http.StatusForbidden && e.Code == "forbidden":
+		return &AuthError{"TOKENMETER_TOKEN lacks the read scope"}
+	case e.Error != "":
+		return fmt.Errorf("light-tokenmeter returned HTTP %d: %s", status, e.Error)
+	}
+	return fmt.Errorf("light-tokenmeter returned HTTP %d", status)
+}
+
+// read returns at most limit bytes of the body and drains the rest, so the
+// connection is reused.
+func read(resp *http.Response, limit int64) []byte {
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, limit))
+	_, _ = io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+	return body
 }
 
 // Ready checks light-tokenmeter's readiness probe, then the token: a summary
-// call without parameters passes auth and fails validation (400) without
-// touching the database, while a refused token gets 401 or 403.
+// call without parameters passes auth and is refused by validation (400)
+// before any query, while a refused token gets 401 or 403.
 func (c *Client) Ready(ctx context.Context) error {
 	resp, err := c.get(ctx, "/readyz")
 	if err != nil {
 		return err
 	}
-	resp.Body.Close()
+	read(resp, 4<<10)
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("light-tokenmeter not ready: HTTP %d", resp.StatusCode)
 	}
@@ -88,8 +115,11 @@ func (c *Client) Ready(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	resp.Body.Close()
-	return c.authError(resp.StatusCode)
+	body := read(resp, 64<<10)
+	if resp.StatusCode == http.StatusBadRequest {
+		return nil
+	}
+	return c.check(resp.StatusCode, body)
 }
 
 // Summary fetches rows between from (inclusive) and to (exclusive), split by
@@ -111,13 +141,9 @@ func (c *Client) Summary(ctx context.Context, from, to time.Time, dim string) ([
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
-	if err := c.authError(resp.StatusCode); err != nil {
+	body := read(resp, 64<<20)
+	if err := c.check(resp.StatusCode, body); err != nil {
 		return nil, err
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("light-tokenmeter returned HTTP %d", resp.StatusCode)
 	}
 	var out struct {
 		Rows []Row `json:"rows"`
