@@ -18,6 +18,9 @@ Notable changes to ktms-admin. The format follows
   Google sign-in is now optional when one of these is set.
 
 ### Changed
+- The console and sign-in page use the ai-process.dev palette and logo. The dark theme runs orange to
+  yellow on warm near-black, and the light theme has orange accents. Warnings are yellow and errors red,
+  so they no longer look like the accent.
 - Sign-in methods are pluggable adapters behind one core that owns sessions, roles and the
   sign-in page. Google sign-in works as before, with the same redirect URI.
 
