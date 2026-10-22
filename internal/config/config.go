@@ -76,8 +76,11 @@ func Load() (*Config, error) {
 		TokenmeterURL:      strings.TrimRight(env("TOKENMETER_URL", ""), "/"),
 	}
 	for _, p := range legacyEnv {
-		if env(p[0], "") != "" && env(p[1], "") == "" {
+		switch old, cur := env(p[0], ""), env(p[1], ""); {
+		case old != "" && cur == "":
 			c.Notices = append(c.Notices, p[0]+" is deprecated: rename it to "+p[1])
+		case old != "" && old != cur:
+			c.Notices = append(c.Notices, p[0]+" is ignored because "+p[1]+" is set: remove it")
 		}
 	}
 	return c, c.Validate()
@@ -88,10 +91,10 @@ func (c *Config) UsageEnabled() bool { return c.TokenmeterURL != "" }
 
 func (c *Config) Validate() error {
 	if !c.ProxyEnabled() && !c.UsageEnabled() {
-		return errors.New("configure at least one backend: KTMS_ADDR (+ KTMS_ADMIN_KEY) and/or TOKENMETER_URL")
+		return errors.New("configure at least one backend: KTMS_ADDR (+ KTMS_ADMIN_KEY) and/or TOKENMETER_URL (LLM_PROXY_* names still work)")
 	}
 	if c.ProxyEnabled() && c.ProxyAdminKey == "" {
-		return errors.New("KTMS_ADDR is set but KTMS_ADMIN_KEY is empty")
+		return errors.New("KTMS_ADDR (or LLM_PROXY_ADDR) is set but KTMS_ADMIN_KEY (or LLM_PROXY_ADMIN_KEY) is empty")
 	}
 	if c.UsageEnabled() {
 		u, err := url.Parse(c.TokenmeterURL)

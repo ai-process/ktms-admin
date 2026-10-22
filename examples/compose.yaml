@@ -6,6 +6,8 @@
 #   grpcurl -plaintext -H "authorization: Bearer $BOOTSTRAP_ADMIN_KEY" -d '{"name":"console","scopes":["admin"]}' \
 #     localhost:9090 ktms.v1.AdminService/MintAPIKey
 # Put the returned key in .env as KTMS_ADMIN_KEY.
+# Upgrading from the llm-proxy service name: run `up` once with --remove-orphans,
+# or the old container keeps port 9090.
 
 services:
   db:
@@ -26,7 +28,7 @@ services:
     depends_on: { db: { condition: service_healthy } }
     environment:
       DATABASE_URL: postgres://postgres:${DB_PASSWORD:-postgres}@db:5432/llmproxy?sslmode=disable
-      LLMPROXY_ENCRYPTION_KEYS: "${LLMPROXY_ENCRYPTION_KEYS:?generate with echo '1:...' (see comments above)}"
+      KTMS_ENCRYPTION_KEYS: "${KTMS_ENCRYPTION_KEYS:?set KTMS_ENCRYPTION_KEYS in .env, see env.example}"
       BOOTSTRAP_ADMIN_KEY: ${BOOTSTRAP_ADMIN_KEY:-}
       USAGE_COLLECTOR_HOST: light-tokenmeter:9090
     ports: ["9090:9090"]
