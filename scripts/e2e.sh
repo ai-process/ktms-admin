@@ -138,9 +138,9 @@ api PUT /api/proxy/keys/e2e-client/policy '{"allowedModels":["mock-gpt"],"rpmLim
 api GET /api/proxy/keys | jq -e '.keys[] | select(.name == "e2e-client") | .policy.rpm_limit == 60 and .policy.allowed_models == ["mock-gpt"]' >/dev/null ||
 	fail "key policy not listed: $(api GET /api/proxy/keys)"
 i=0
-until api GET "/api/proxy/spend?subject_type=key&subject_id=e2e-client" 2>/dev/null | jq -e '.windows[] | select(.period == "day") | .limit_nanousd == "5000000000"' >/dev/null; do
+until api GET /api/proxy/key-spend 2>/dev/null | jq -e '.keys["e2e-client"].windows[] | select(.period == "day") | .limit_nanousd == "5000000000"' >/dev/null; do
 	i=$((i + 1))
-	[ "$i" -gt 15 ] && fail "spend of the key: $(api GET "/api/proxy/spend?subject_type=key&subject_id=e2e-client")"
+	[ "$i" -gt 15 ] && fail "spend of the key: $(api GET /api/proxy/key-spend)"
 	sleep 1
 done
 ORG=$(api POST /api/proxy/organizations '{"name":"e2e-org"}' | jq -r .organization.id) || true

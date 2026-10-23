@@ -318,8 +318,8 @@ and users.
 
 **Keys.** A wizard mints client API keys: name and team, access, optional daily and monthly spend caps and
 request and token rates; the secret is shown once with a copy button. Each key's policy (allowed models,
-requests and tokens per minute) is edited in place, and its spend shows against its caps as KTMS counts it;
-team leads do both for their team's keys. Revoke keys, assign vendor credentials to clients (write-only:
+requests and tokens per minute) is edited in place, and its spend shows against its caps as KTMS counts it,
+wildcard caps included; team leads see and edit their team's keys. Revoke keys, assign vendor credentials to clients (write-only:
 stored encrypted by the gateway and never shown again) and re-encrypt all credentials after adding a new
 encryption key version.
 

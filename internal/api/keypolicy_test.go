@@ -2,8 +2,10 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 
 	"google.golang.org/grpc"
@@ -11,13 +13,17 @@ import (
 	pb "github.com/ai-process/ktms-admin/internal/gen/ktms/v1"
 )
 
+var spendMu sync.Mutex
+
 func (f *fakeAdmin) SetAPIKeyPolicy(_ context.Context, r *pb.SetAPIKeyPolicyRequest, _ ...grpc.CallOption) (*pb.SetAPIKeyPolicyResponse, error) {
 	f.lastPolicy = r
 	return &pb.SetAPIKeyPolicyResponse{}, nil
 }
 
 func (f *fakeAdmin) GetSpend(_ context.Context, r *pb.GetSpendRequest, _ ...grpc.CallOption) (*pb.GetSpendResponse, error) {
+	spendMu.Lock() // key-spend calls it concurrently
 	f.lastSpend = r
+	spendMu.Unlock()
 	return &pb.GetSpendResponse{Windows: []*pb.SpendWindow{{Period: "day", SpentNanousd: 1e9, LimitNanousd: 5e9, RemainingNanousd: 4e9, Metered: true}}}, nil
 }
 
@@ -60,5 +66,31 @@ func TestSpendAccess(t *testing.T) {
 	w := call(h, "GET", "/api/proxy/spend?subject_type=user&subject_id=u1", "", viewer, nil)
 	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"remaining_nanousd":"4000000000"`) || fa.lastSpend.GetSubjectId() != "u1" {
 		t.Fatalf("viewer = %d %s", w.Code, w.Body)
+	}
+}
+
+func TestKeySpendIsScopedAndBounded(t *testing.T) {
+	h, fa := tenantServer(t)
+	fa.keys = append(fa.keys, &pb.APIKeyInfo{Name: "old-search", TeamId: "team-1", Disabled: true})
+	var got struct {
+		Keys map[string]struct {
+			Windows []struct {
+				Period string `json:"period"`
+			} `json:"windows"`
+		} `json:"keys"`
+	}
+	w := call(h, "GET", "/api/proxy/key-spend", "", sessionCookie(t, "lead@corp.com"), nil)
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil || w.Code != http.StatusOK {
+		t.Fatalf("lead = %d %s", w.Code, w.Body)
+	}
+	if _, ok := got.Keys["search-service"]; !ok || len(got.Keys) != 1 {
+		t.Fatalf("lead sees %v, want only the team's active key", got.Keys)
+	}
+	if got.Keys["search-service"].Windows[0].Period != "day" {
+		t.Fatalf("windows = %v", got.Keys["search-service"].Windows)
+	}
+	w = call(h, "GET", "/api/proxy/key-spend", "", sessionCookie(t, "boss@x.com"), nil)
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil || len(got.Keys) != 3 {
+		t.Fatalf("admin sees %v (%v), want the three active keys", got.Keys, err)
 	}
 }

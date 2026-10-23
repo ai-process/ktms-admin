@@ -130,7 +130,8 @@ func (s *Server) ownsKey(ctx context.Context, u *auth.User, name string) (bool, 
 }
 
 // proxySetKeyPolicy replaces a key's allowed models and rates. A team lead may
-// set them on the team's keys: they narrow what the team allows, never widen it.
+// set them on the team's keys, as they may mint keys without any: a key's policy
+// only narrows its team's models and budget.
 func (s *Server) proxySetKeyPolicy(w http.ResponseWriter, r *http.Request, u *auth.User) {
 	var policy pb.APIKeyPolicy
 	if err := readProto(r, &policy); err != nil {
@@ -141,10 +142,6 @@ func (s *Server) proxySetKeyPolicy(w http.ResponseWriter, r *http.Request, u *au
 	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
 	defer cancel()
 	if !u.IsSuperAdmin() {
-		if !u.IsTeamLead() {
-			writeErr(w, http.StatusForbidden, "forbidden", "only team leads and admins set key policies")
-			return
-		}
 		ok, err := s.ownsKey(ctx, u, name)
 		if err != nil {
 			backendErr(w, err)
@@ -988,6 +985,54 @@ func (s *Server) proxyTeamCabinet(w http.ResponseWriter, r *http.Request, u *aut
 func countersDown(err error) bool {
 	c := status.Code(err)
 	return c == codes.Unavailable || c == codes.DeadlineExceeded
+}
+
+// proxyKeysSpend reads the spend of every active key the user may see in one
+// browser request, at most maxSpendReads at a time against the gateway. Caps
+// come from GetSpend itself, so a wildcard cap counts like a key's own.
+func (s *Server) proxyKeysSpend(w http.ResponseWriter, r *http.Request, u *auth.User) {
+	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
+	defer cancel()
+	resp, err := s.admin.ListAPIKeys(ctx, &pb.ListAPIKeysRequest{})
+	if err != nil {
+		backendErr(w, err)
+		return
+	}
+	keys := resp.Keys
+	if !u.CanReadGlobal() {
+		keys = keysOfTeam(keys, u.TeamID)
+	}
+	out := map[string]any{}
+	sem := make(chan struct{}, maxSpendReads)
+	var (
+		wg sync.WaitGroup
+		mu sync.Mutex
+	)
+	for _, k := range keys {
+		if k.Disabled {
+			continue
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			spend, err := s.admin.GetSpend(ctx, &pb.GetSpendRequest{SubjectType: "key", SubjectId: k.Name})
+			var row any = map[string]any{"error": "unavailable"}
+			if err == nil {
+				if v, encErr := protoValue(spend); encErr == nil {
+					row = v
+				}
+			} else {
+				log.Warn().Err(err).Str("key", k.Name).Msg("key spend unavailable")
+			}
+			mu.Lock()
+			out[k.Name] = row
+			mu.Unlock()
+		}()
+	}
+	wg.Wait()
+	writeJSON(w, http.StatusOK, map[string]any{"keys": out})
 }
 
 // maxSpendReads bounds the GetTeamSpend calls one Usage page load can cause.

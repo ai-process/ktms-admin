@@ -112,6 +112,7 @@ func (s *Server) Handler() http.Handler {
 		api("DELETE /api/proxy/keys/{name}", team, s.proxyRevokeKey)
 		api("PUT /api/proxy/keys/{name}/policy", team, s.proxySetKeyPolicy)
 		api("GET /api/proxy/spend", team, s.proxySpend)
+		api("GET /api/proxy/key-spend", team, s.proxyKeysSpend)
 		api("GET /api/proxy/nodes", globalRead, s.proxyListNodes)
 		api("POST /api/proxy/nodes/{id}/drain", adminOnly, s.proxyDrainNode)
 		api("GET /api/proxy/node-keys", globalRead, s.proxyListNodeKeys)

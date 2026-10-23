@@ -1,4 +1,4 @@
-import { html, useState, useMemo, api, useAsync, openDialog, confirmAction, toast, FormDialog, PageHead, Card, Table, Field, Badge, LoadError, when, usd, num, cx } from '../lib.js';
+import { html, useState, useMemo, api, useAsync, openDialog, confirmAction, toast, FormDialog, PageHead, Card, Table, Field, Badge, LoadError, when, usd, num, cx, compact } from '../lib.js';
 import { isAdmin, isTeamLead, canReadGlobal, session, loadCfg } from '../state.js';
 import { VENDORS } from './models.js';
 
@@ -10,27 +10,18 @@ const nanoUSD = (v) => num(v) / 1e9;
 
 export function KeysPage({ params }) {
   const st = useAsync(async () => {
-    const [keys, teams, limits, cfg] = await Promise.all([
+    const [keys, teams, spend, cfg] = await Promise.all([
       api('GET', '/api/proxy/keys'),
       api('GET', '/api/proxy/teams').catch(() => ({ teams: [] })),
-      canReadGlobal() ? api('GET', '/api/proxy/spend-limits?subject_type=key').catch((error) => ({ error })) : { spend_limits: [] },
+      api('GET', '/api/proxy/key-spend').catch((error) => ({ error })),
       canReadGlobal() ? loadCfg(true).catch((error) => ({ error })) : null,
     ]);
-    // Where a key is capped, what it has spent so far; a failure shows as unknown.
-    const capped = [...new Set((limits.spend_limits || []).map((l) => l.subject_id).filter((id) => id !== '*'))];
-    const spend = Object.fromEntries(await Promise.all(capped.map((id) =>
-      api('GET', `/api/proxy/spend?subject_type=key&subject_id=${encodeURIComponent(id)}`).then((r) => [id, r.windows || []], () => [id, null]))));
     // Side panels fail on their own: the key list still shows, and an
     // unreadable panel says so instead of looking empty.
-    return { keys: keys.keys || [], teams: teams.teams || [], limits: limits.spend_limits || [], limitsError: limits.error, spend,
+    return { keys: keys.keys || [], teams: teams.teams || [], spend: spend.keys || {}, spendError: spend.error,
       vendorKeys: cfg?.vendor_keys || [], models: (cfg?.models || []).map((m) => m.id), cfgError: cfg?.error };
   }, []);
   const teamName = useMemo(() => Object.fromEntries((st.data?.teams || []).map((t) => [t.id, t.name])), [st.data]);
-  const caps = useMemo(() => {
-    const m = {};
-    for (const l of st.data?.limits || []) (m[l.subject_id] ||= []).push(l);
-    return m;
-  }, [st.data]);
   const canMint = isAdmin() || isTeamLead();
 
   const revoke = (k) => confirmAction({
@@ -44,7 +35,7 @@ export function KeysPage({ params }) {
     <td><div class="stacked"><span class="mono">${k.name}</span><span class="small">${k.team_id ? 'team ' + (teamName[k.team_id] || k.team_id.slice(0, 8) + '…') : 'no team'}</span></div></td>
     <td><div class="cluster">${(k.scopes || []).map((s) => html`<span class="chip" key=${s}>${Object.fromEntries(SCOPES.map(([id, t]) => [id, t]))[s] || s}</span>`)}</div></td>
     <td><${PolicyChips} policy=${k.policy} /></td>
-    ${canReadGlobal() && html`<td>${(caps[k.name] || []).length ? html`<div class="cluster">${caps[k.name].map((l) => html`<span class="chip" key=${l.period}>${spentText(st.data?.spend?.[k.name], l)}</span>`)}</div>` : html`<span class="muted">${st.data?.limitsError ? 'unknown' : '—'}</span>`}</td>`}
+    <td><${SpendChips} spend=${k.disabled ? {} : st.data?.spend?.[k.name]} failed=${!!st.data?.spendError} /></td>
     <td>${when(k.created_at)}</td>
     <td>${k.disabled ? html`<${Badge}>Revoked<//>` : html`<${Badge} tone="ok">Active<//>`}</td>
     <td class="actions-cell">${canMint && !k.disabled && html`<button type="button" class="sm" onClick=${() => editPolicy(k)}>Policy</button><button type="button" class="sm danger" onClick=${() => revoke(k)}>Revoke</button>`}</td>
@@ -57,13 +48,13 @@ export function KeysPage({ params }) {
       <div style=${{ flex: '3 1 560px' }}>
         <${Card} flush label="API keys">
           <${Table} loading=${st.loading} rows=${rows}
-            head=${['Name', 'Access', 'Policy', ...(canReadGlobal() ? ['Spend today / this month'] : []), 'Created', 'Status', { label: 'Actions', sr: true }]}
+            head=${['Name', 'Access', 'Policy', 'Spend against caps', 'Created', 'Status', { label: 'Actions', sr: true }]}
             empty=${{ title: 'No API keys yet', children: canMint ? 'Create one with the form.' : 'Ask a team lead for one.' }} />
         <//>
       </div>
       ${canMint && html`<div style=${{ flex: '2 1 360px' }}><${Wizard} teams=${st.data?.teams || []} team=${params.get('team_id') || ''} onDone=${st.reload} /></div>`}
     </div>
-    ${st.data?.limitsError && html`<div class="notice warn">Spend caps could not be read: ${st.data.limitsError.message}</div>`}
+    ${st.data?.spendError && html`<div class="notice warn">Key spend could not be read: ${st.data.spendError.message}</div>`}
     ${canReadGlobal() && html`<${VendorKeys} vendorKeys=${st.data?.vendorKeys || []} error=${st.data?.cfgError} keys=${keys} loading=${st.loading} reload=${st.reload} />`}
   `;
 }
@@ -146,29 +137,33 @@ function Wizard({ teams, team, onDone }) {
   </section>`;
 }
 
-// spentText shows a cap with what the key has spent against it, as KTMS counts it.
-function spentText(windows, limit) {
-  const w = (windows || []).find((x) => x.period === limit.period);
-  const cap = `${usd(nanoUSD(limit.limit_nanousd))} / ${limit.period}`;
-  return w?.metered ? `${usd(nanoUSD(w.spent_nanousd))} of ${cap}` : cap;
+// SpendChips shows each capped period as KTMS counts it: spent of the cap, or
+// only the cap when nothing is counted (no Redis), or unknown when unreadable.
+function SpendChips({ spend, failed }) {
+  if (failed || spend?.error) return html`<span class="muted">unknown</span>`;
+  const capped = (spend?.windows || []).filter((w) => num(w.limit_nanousd) > 0);
+  if (!capped.length) return html`<span class="muted">—</span>`;
+  return html`<div class="cluster">${capped.map((w) => {
+    const cap = `${usd(nanoUSD(w.limit_nanousd))} / ${w.period}`;
+    return html`<span class="chip" key=${w.period}>${w.metered ? `${usd(nanoUSD(w.spent_nanousd))} of ${cap}` : cap}</span>`;
+  })}</div>`;
 }
 
 function PolicyChips({ policy }) {
   const p = policy || {};
   const chips = [];
   if ((p.allowed_models || []).length) chips.push(html`<span class="chip" key="m" title=${p.allowed_models.join(', ')}>${p.allowed_models.length === 1 ? p.allowed_models[0] : p.allowed_models.length + ' models'}</span>`);
-  if (num(p.rpm_limit) > 0) chips.push(html`<span class="chip" key="r">${compactNum(p.rpm_limit)} rpm</span>`);
-  if (num(p.tpm_limit) > 0) chips.push(html`<span class="chip" key="t">${compactNum(p.tpm_limit)} tpm</span>`);
+  if (num(p.rpm_limit) > 0) chips.push(html`<span class="chip" key="r">${compact(num(p.rpm_limit))} rpm</span>`);
+  if (num(p.tpm_limit) > 0) chips.push(html`<span class="chip" key="t">${compact(num(p.tpm_limit))} tpm</span>`);
   return chips.length ? html`<div class="cluster">${chips}</div>` : html`<span class="muted">—</span>`;
 }
 
-const compactNum = (v) => new Intl.NumberFormat('en', { notation: 'compact' }).format(num(v));
-
-// modelChoices lists the models a key's allowlist can name: the gateway's for
-// admins, the team's allowed models for a team lead, plus whatever it names now.
+// modelChoices lists the models a key's allowlist can usefully name: its team's
+// allowed models when the team has a list (KTMS intersects the two), else the
+// gateway's, plus whatever it names now. Empty means type the ids.
 function modelChoices(data, k) {
   const team = (data?.teams || []).find((t) => t.id === k.team_id);
-  const base = data?.models?.length ? data.models : (team?.allowed_models || []);
+  const base = team?.allowed_models?.length ? team.allowed_models : (data?.models || []);
   return [...new Set([...base, ...(k.policy?.allowed_models || [])])].sort();
 }
 
@@ -178,15 +173,16 @@ function PolicyForm({ k, models, close }) {
   const submit = async (fd) => {
     const rpm = num(fd.get('rpm')), tpm = num(fd.get('tpm'));
     if (![rpm, tpm].every((v) => Number.isInteger(v) && v >= 0)) throw new Error('Rates are whole numbers, 0 for no limit.');
-    await api('PUT', `/api/proxy/keys/${encodeURIComponent(k.name)}/policy`, { allowed_models: picked, rpm_limit: rpm, tpm_limit: String(tpm) });
+    const allowed = models.length ? picked : String(fd.get('models') || '').split(',').map((m) => m.trim()).filter(Boolean);
+    await api('PUT', `/api/proxy/keys/${encodeURIComponent(k.name)}/policy`, { allowed_models: allowed, rpm_limit: rpm, tpm_limit: String(tpm) });
     toast('Policy saved');
   };
   return html`<${FormDialog} title=${'Policy of ' + k.name} sub="Applies from the key's next call, on top of its team's models and each model's limits." close=${close} onSubmit=${submit}>
     <fieldset><legend>Allowed models</legend>
       ${models.length
         ? html`<div class="cluster">${models.map((m) => html`<button type="button" key=${m} class="toggle-chip" aria-pressed=${picked.includes(m) ? 'true' : 'false'} onClick=${() => toggle(m)}>${m}</button>`)}</div>`
-        : html`<p class="small muted">No models to choose from.</p>`}
-      <p class="small muted">${picked.length ? 'Only these, and only where the team allows them too.' : 'None picked: any model the team allows.'}</p>
+        : html`<${Field} label="Model ids" hint="Comma-separated; empty allows any model the team allows."><input name="models" defaultValue=${picked.join(', ')} autocomplete="off" /><//>`}
+      ${models.length > 0 && html`<p class="small muted">${picked.length ? 'Only these, and only where the team allows them too.' : 'None picked: any model the team allows.'}</p>`}
     </fieldset>
     <div class="form-grid">
       <${Field} label="Requests per minute" hint="Over all models; 0 = no limit."><input name="rpm" type="number" min="0" step="1" defaultValue=${num(k.policy?.rpm_limit)} /><//>
