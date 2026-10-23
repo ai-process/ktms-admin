@@ -31,6 +31,7 @@ services:
       KTMS_ENCRYPTION_KEYS: "${KTMS_ENCRYPTION_KEYS:?set KTMS_ENCRYPTION_KEYS in .env, see env.example}"
       BOOTSTRAP_ADMIN_KEY: ${BOOTSTRAP_ADMIN_KEY:-}
       USAGE_COLLECTOR_HOST: light-tokenmeter:9090
+      USAGE_COLLECTOR_TOKEN: ${USAGE_COLLECTOR_TOKEN:-}
     ports: ["9090:9090"]
 
   light-tokenmeter:
@@ -38,6 +39,8 @@ services:
     depends_on: { db: { condition: service_healthy } }
     environment:
       DATABASE_URL: postgres://postgres:${DB_PASSWORD:-postgres}@db:5432/tokenmeter?sslmode=disable
+      # Hashed tokens; empty runs without auth. See env.example.
+      TOKENMETER_TOKENS: ${TOKENMETER_TOKENS:-}
 
   console:
     image: coyl/ktms-admin:latest
@@ -66,6 +69,7 @@ services:
       KTMS_ADDR: ktms:9090
       KTMS_ADMIN_KEY: ${KTMS_ADMIN_KEY:-}
       TOKENMETER_URL: http://light-tokenmeter:8080
+      TOKENMETER_TOKEN: ${TOKENMETER_TOKEN:-}
     ports: ["8080:8080"]
 
 volumes:

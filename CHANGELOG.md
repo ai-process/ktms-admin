@@ -6,12 +6,15 @@ Notable changes to ktms-admin. The format follows
 
 ## [Unreleased]
 
-## [1.0.0] - 2026-10-22
+## [1.0.0] - 2026-10-23
 
 The first stable release, paired with Keystone. The Model Switchboard. (KTMS) 1.0: ktms-admin
 1.x works with every KTMS 1.x release (see [Compatibility](README.md#compatibility)).
 
 ### Added
+- `TOKENMETER_TOKEN`: a light-tokenmeter 1.0 bearer token with the `read` scope, for its
+  authentication. The usage status in the sidebar says "refused" and names the setting when the token
+  is missing, rejected or lacks the scope; `examples/compose.yaml` wires tokens through the whole stack.
 - Password sign-in: `ADMIN_USERS` or `ADMIN_USERS_FILE` hold `email:hash` entries made by the new
   `ktms-admin hash-password` command (argon2id; bcrypt from `htpasswd -nB` works too). Failed attempts
   back off per account and per client address.

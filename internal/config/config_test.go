@@ -133,3 +133,16 @@ func TestSignInMethodSettings(t *testing.T) {
 		t.Fatalf("GitHub alone: %+v, %v", c, err)
 	}
 }
+
+func TestTokenmeterTokenIsTrimmed(t *testing.T) {
+	t.Setenv("PUBLIC_URL", "https://a.example.com")
+	t.Setenv("OIDC_CLIENT_ID", "i")
+	t.Setenv("OIDC_CLIENT_SECRET", "s")
+	t.Setenv("ALLOWED_EMAILS", "*@x.com")
+	t.Setenv("TOKENMETER_URL", "http://tm:8080")
+	t.Setenv("TOKENMETER_TOKEN", "  tok\n") // a secret written with echo
+	c, err := Load()
+	if err != nil || c.TokenmeterToken != "tok" {
+		t.Fatalf("TOKENMETER_TOKEN %q, %v; want it trimmed", c.TokenmeterToken, err)
+	}
+}

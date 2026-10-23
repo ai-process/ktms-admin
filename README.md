@@ -52,6 +52,7 @@ docker run -d --name ktms-admin -p 8080:8080 \
   -e SESSION_SECRET="$(openssl rand -base64 36)" \
   -e KTMS_ADDR=ktms:9090 -e KTMS_ADMIN_KEY=ktms_… \
   -e TOKENMETER_URL=http://light-tokenmeter:8080 \
+  -e TOKENMETER_TOKEN=… \
   coyl/ktms-admin:latest
 ```
 
@@ -206,13 +207,14 @@ through the gateway's stable `ktms.v1` admin API. Within 1.x the console's setti
 below) keep their names and meaning; renamed ones keep working with a startup warning until 2.0.
 The console's own `/api` serves its web UI only and is not a public API.
 
-| ktms-admin | KTMS gateway |
-| --- | --- |
-| 1.x | 1.x |
-| 0.4.x | 0.14.x |
-| 0.3.x and earlier | 0.13.x |
+| ktms-admin | KTMS gateway | light-tokenmeter |
+| --- | --- | --- |
+| 1.x | 1.x | 1.x; with its authentication on, set `TOKENMETER_TOKEN` to a `read` token |
+| 0.4.x | 0.14.x | 0.1.x |
+| 0.3.x and earlier | 0.13.x | 0.1.x |
 
-Before 1.0 there is no compatibility promise: use the pairs above.
+Before 1.0 there is no compatibility promise: use the pairs above. The Usage page reads
+light-tokenmeter's HTTP summary API, which stays compatible within its 1.x.
 
 ## Running with one backend or both
 
@@ -220,11 +222,12 @@ The console shows only the pages whose backend you configured.
 
 | You set | You get |
 | --- | --- |
-| `TOKENMETER_URL` | **Usage** page. Nothing else. |
+| `TOKENMETER_URL` (+ `TOKENMETER_TOKEN` when light-tokenmeter has auth on) | **Usage** page. Nothing else. |
 | `KTMS_ADDR` + `KTMS_ADMIN_KEY` | **Models, Rules, Keys, Nodes, Playground, Judge**. |
 | both | Everything, plus **estimated cost** on the usage page (tokens × the prices on your models; estimates use standard in/out prices and do not account for peak or batch rates). |
 
-The sidebar shows a green or red dot per backend, so a wrong address or a revoked key is visible at once.
+The sidebar shows a green or red dot per backend, so a wrong address or a revoked key is visible at once:
+"down" means the backend did not answer, "refused" that it rejected the key or token (hover for which setting).
 
 ## Configuration reference
 
@@ -255,6 +258,7 @@ All settings are environment variables; see [`env.example`](env.example).
 | `KTMS_ADMIN_KEY` | – | Key with the `admin` scope. Required with `KTMS_ADDR`. (`LLM_PROXY_ADMIN_KEY` still works, deprecated.) |
 | `KTMS_TLS` | `false` | Use TLS to reach the gateway. (`LLM_PROXY_TLS` still works, deprecated.) |
 | `TOKENMETER_URL` | empty | Base URL of light-tokenmeter's HTTP port. |
+| `TOKENMETER_TOKEN` | empty | Bearer token for light-tokenmeter with the `read` scope, when its authentication is on. A missing or refused token marks the usage dot "refused" and names the setting. |
 | `LISTEN_ADDR` | `:8080` | Listen address. |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error`. |
 | `INSECURE_NO_AUTH` | `false` | Skip sign-in. Localhost `PUBLIC_URL` only. |
