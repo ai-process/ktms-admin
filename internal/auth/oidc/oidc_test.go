@@ -14,7 +14,7 @@ import (
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
 
-	"github.com/ai-process/llm-proxy-admin/internal/auth"
+	"github.com/ai-process/ktms-admin/internal/auth"
 )
 
 // fakeIdP is a minimal OIDC provider: discovery, keys and a token endpoint

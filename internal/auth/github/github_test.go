@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ai-process/llm-proxy-admin/internal/auth"
+	"github.com/ai-process/ktms-admin/internal/auth"
 )
 
 // fakeGitHub is a GitHub Enterprise-shaped server: OAuth under /login and

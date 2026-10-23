@@ -1,5 +1,5 @@
 /bin/
-/llm-proxy-admin
+/ktms-admin
 .env
 .DS_Store
 .idea/

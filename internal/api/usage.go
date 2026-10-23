@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/ai-process/llm-proxy-admin/internal/auth"
-	"github.com/ai-process/llm-proxy-admin/internal/usage"
+	"github.com/ai-process/ktms-admin/internal/auth"
+	"github.com/ai-process/ktms-admin/internal/usage"
 )
 
 const maxRangeDays = 400

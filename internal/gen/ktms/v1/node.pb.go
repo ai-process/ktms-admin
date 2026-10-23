@@ -879,8 +879,8 @@ const file_ktms_v1_node_proto_rawDesc = "" +
 	"\fRegisterNode\x12\x1c.ktms.v1.RegisterNodeRequest\x1a\x1d.ktms.v1.RegisterNodeResponse\x12K\n" +
 	"\fValidateNode\x12\x1c.ktms.v1.ValidateNodeRequest\x1a\x1d.ktms.v1.ValidateNodeResponse\x12B\n" +
 	"\tHeartbeat\x12\x19.ktms.v1.HeartbeatRequest\x1a\x1a.ktms.v1.HeartbeatResponse\x12Q\n" +
-	"\x0eUnregisterNode\x12\x1e.ktms.v1.UnregisterNodeRequest\x1a\x1f.ktms.v1.UnregisterNodeResponseB\x98\x01\n" +
-	"\vcom.ktms.v1B\tNodeProtoP\x01ZAgithub.com/ai-process/llm-proxy-admin/internal/gen/ktms/v1;ktmsv1\xa2\x02\x03KXX\xaa\x02\aKtms.V1\xca\x02\aKtms\\V1\xe2\x02\x13Ktms\\V1\\GPBMetadata\xea\x02\bKtms::V1b\x06proto3"
+	"\x0eUnregisterNode\x12\x1e.ktms.v1.UnregisterNodeRequest\x1a\x1f.ktms.v1.UnregisterNodeResponseB\x93\x01\n" +
+	"\vcom.ktms.v1B\tNodeProtoP\x01Z<github.com/ai-process/ktms-admin/internal/gen/ktms/v1;ktmsv1\xa2\x02\x03KXX\xaa\x02\aKtms.V1\xca\x02\aKtms\\V1\xe2\x02\x13Ktms\\V1\\GPBMetadata\xea\x02\bKtms::V1b\x06proto3"
 
 var (
 	file_ktms_v1_node_proto_rawDescOnce sync.Once

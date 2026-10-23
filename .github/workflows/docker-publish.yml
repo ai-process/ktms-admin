@@ -1,7 +1,6 @@
 name: Publish Docker image
 
-# Every v* tag becomes an image on Docker Hub: coyl/ktms-admin:<version>, also
-# under the old name coyl/llm-proxy-admin so existing deployments keep pulling.
+# Every v* tag becomes an image on Docker Hub: coyl/ktms-admin:<version>.
 # Needs the repository secrets DOCKER_USERNAME and DOCKER_PASSWORD (an access token).
 on:
   push:
@@ -44,9 +43,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         with:
-          images: |
-            coyl/ktms-admin
-            coyl/llm-proxy-admin
+          images: coyl/ktms-admin
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}},enable=${{ steps.newest.outputs.line }}
@@ -71,14 +68,11 @@ jobs:
         with:
           cosign-release: v3.1.3
 
-      # Signatures are stored per repository, so each name is signed; each is
-      # retried on its own so a Rekor or Fulcio blip leaves no tag unsigned.
+      # Retried so a Rekor or Fulcio blip does not leave the tag unsigned.
       - name: Sign the image
         run: |
-          for image in coyl/ktms-admin coyl/llm-proxy-admin; do
-            for i in 1 2 3; do
-              cosign sign --yes --recursive "$image@${{ steps.build.outputs.digest }}" && break
-              [ "$i" = 3 ] && exit 1
-              sleep $((i * 15))
-            done
+          for i in 1 2 3; do
+            cosign sign --yes --recursive "coyl/ktms-admin@${{ steps.build.outputs.digest }}" && exit 0
+            sleep $((i * 15))
           done
+          exit 1

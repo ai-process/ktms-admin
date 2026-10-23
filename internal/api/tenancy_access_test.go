@@ -12,10 +12,10 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/ai-process/llm-proxy-admin/internal/auth"
-	"github.com/ai-process/llm-proxy-admin/internal/auth/oidc"
-	"github.com/ai-process/llm-proxy-admin/internal/config"
-	pb "github.com/ai-process/llm-proxy-admin/internal/gen/ktms/v1"
+	"github.com/ai-process/ktms-admin/internal/auth"
+	"github.com/ai-process/ktms-admin/internal/auth/oidc"
+	"github.com/ai-process/ktms-admin/internal/config"
+	pb "github.com/ai-process/ktms-admin/internal/gen/ktms/v1"
 )
 
 func (f *fakeAdmin) GetTeamSpend(_ context.Context, r *pb.GetTeamSpendRequest, _ ...grpc.CallOption) (*pb.GetTeamSpendResponse, error) {

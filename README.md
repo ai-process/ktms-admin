@@ -1,10 +1,10 @@
-# KTMS admin (llm-proxy-admin)
+# Keystone. The Model Switchboard. (KTMS): admin console
 
 [![Test](https://github.com/ai-process/ktms-admin/actions/workflows/test.yml/badge.svg)](https://github.com/ai-process/ktms-admin/actions/workflows/test.yml)
 [![Docker image](https://img.shields.io/docker/v/coyl/ktms-admin?label=docker%20hub&sort=semver)](https://hub.docker.com/r/coyl/ktms-admin)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache_2.0-blue.svg)](LICENSE)
 
-A web console for [**KTMS**](https://github.com/ai-process/ktms) (the LLM gateway, formerly llm-proxy) and
+A web console for [**Keystone**](https://github.com/ai-process/ktms), the LLM gateway (KTMS, formerly llm-proxy), and
 [**light-tokenmeter**](https://github.com/ai-process/light-tokenmeter) (the usage meter). Use it with both,
 or with either one alone.
 
@@ -207,13 +207,19 @@ through the gateway's stable `ktms.v1` admin API. Within 1.x the console's setti
 below) keep their names and meaning; renamed ones keep working with a startup warning until 2.0.
 The console's own `/api` serves its web UI only and is not a public API.
 
-| ktms-admin | KTMS gateway |
-| --- | --- |
-| 1.x | 1.x |
-| 0.4.x | 0.14.x |
-| 0.3.x and earlier | 0.13.x |
+| ktms-admin | KTMS gateway | light-tokenmeter |
+| --- | --- | --- |
+| 1.x | 1.x | 1.x; with its authentication on, set `TOKENMETER_TOKEN` to a `read` token |
+| 0.4.x | 0.14.x | 0.1.x |
+| 0.3.x and earlier | 0.13.x | 0.1.x |
 
-Before 1.0 there is no compatibility promise: use the pairs above.
+Before 1.0 there is no compatibility promise: use the pairs above. The Usage page reads
+light-tokenmeter's HTTP summary API, which stays compatible within its 1.x.
+
+`scripts/e2e.sh` checks this on every pull request, against the KTMS and light-tokenmeter refs in
+`scripts/e2e.refs`, and daily against their `main`: it turns light-tokenmeter's authentication on and
+drives the console's API through models, rules, vendor keys, client keys and their policies, spend
+limits and spend, tenants, a playground call through a mock vendor and its usage report.
 
 ## Running with one backend or both
 
@@ -222,7 +228,7 @@ The console shows only the pages whose backend you configured.
 | You set | You get |
 | --- | --- |
 | `TOKENMETER_URL` (+ `TOKENMETER_TOKEN` when light-tokenmeter has auth on) | **Usage** page. Nothing else. |
-| `KTMS_ADDR` + `KTMS_ADMIN_KEY` | **Models, Rules, Keys, Nodes, Playground, Judge**. |
+| `KTMS_ADDR` + `KTMS_ADMIN_KEY` | **Models, Rules, Limits, Keys, Tenants, Team, Nodes, Playground, Judge**. |
 | both | Everything, plus **estimated cost** on the usage page (tokens × the prices on your models; estimates use standard in/out prices and do not account for peak or batch rates). |
 
 The sidebar shows a green or red dot per backend, so a wrong address or a revoked key is visible at once:
@@ -247,7 +253,7 @@ All settings are environment variables; see [`env.example`](env.example).
 | `AUTH_HEADER_EMAIL` | `X-Forwarded-Email` | The header the proxy names the user's e-mail in. |
 | `AUTH_HEADER_NAME` | empty | Optional header with the user's display name. |
 | `CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD` | empty | Turn on [Cloudflare Access](#sign-in-behind-an-access-proxy) sign-in. |
-| `ALLOWED_EMAILS` | – | Admin patterns. At least one of the two lists must be non-empty. |
+| `ALLOWED_EMAILS` | – | Admin patterns. At least one of `ALLOWED_EMAILS`, `VIEWER_EMAILS` or `TEAM_MEMBERSHIPS` must be non-empty. |
 | `VIEWER_EMAILS` | empty | Read-only patterns. |
 | `TEAM_MEMBERSHIPS` | empty | Team workspaces: `email:team_id[:teamlead\|member[:org_id]]`, see [Who may sign in](#who-may-sign-in). |
 | `DEV_USER_ROLE`, `DEV_USER_TEAM_ID`, `DEV_USER_ORG_ID` | admin | With `INSECURE_NO_AUTH`: the role and team of the local dev user. |
@@ -310,8 +316,10 @@ own validation.
 **Limits.** Per-user rate limits and daily token budgets, and spend caps (USD per UTC day or month) for keys
 and users.
 
-**Keys.** A wizard mints client API keys: name and team, access, optional daily and monthly spend caps; the
-secret is shown once with a copy button. Revoke keys, assign vendor credentials to clients (write-only:
+**Keys.** A wizard mints client API keys: name and team, access, optional daily and monthly spend caps and
+request and token rates; the secret is shown once with a copy button. Each key's policy (allowed models,
+requests and tokens per minute) is edited in place, and its spend shows against its caps as KTMS counts it,
+wildcard caps included; team leads see and edit their team's keys. Revoke keys, assign vendor credentials to clients (write-only:
 stored encrypted by the gateway and never shown again) and re-encrypt all credentials after adding a new
 encryption key version.
 
@@ -355,16 +363,19 @@ make proto   # regenerate internal/gen from proto/ (needs buf)
 `js/lib.js` (shared components), `js/pages/*` (one module per page), and `vendor/` (Preact 10 and htm 3,
 unmodified except that hooks import `./preact.mjs`). Restart the server after editing them: they are embedded
 at build time. `proto/` is a copy of KTMS's
-protocol, so the console talks to it over gRPC without importing its code.
+protocol, so the console talks to it over gRPC without importing its code. CI fails when the copy differs
+from KTMS at the ref in `scripts/e2e.refs`, or `internal/gen` from the copy: copy the files over and run
+`make proto`.
 
-Layout: `cmd/llm-proxy-admin` (entrypoint), `internal/auth` (sessions, allowlists, sign-in page; one package per sign-in method below it),
+Layout: `cmd/ktms-admin` (entrypoint), `internal/auth` (sessions, allowlists, sign-in page; one package per sign-in method below it),
 `internal/api` (JSON API and guards), `internal/usage` (light-tokenmeter client and the greedy/worthy
 analysis), `internal/config`, `internal/web` (embedded UI).
 
 ### Releasing
 
-Pushing a `vX.Y.Z` tag publishes a multi-arch image to Docker Hub as `coyl/ktms-admin:<version>`, also
-under the old name `coyl/llm-proxy-admin`. `latest` moves only with the newest stable release. The
+Pushing a `vX.Y.Z` tag publishes a multi-arch image to Docker Hub as `coyl/ktms-admin:<version>`.
+`latest` moves only with the newest stable release. The old name `coyl/llm-proxy-admin` gets no new
+releases after 0.4.0. The
 image is signed with keyless cosign and carries an SBOM and provenance (verify like the gateway's
 images, see [KTMS SECURITY.md](https://github.com/ai-process/ktms/blob/main/SECURITY.md#verifying-a-release),
 with `docker-publish.yml` of `ai-process/ktms-admin`). The repository needs the secrets

@@ -22,15 +22,15 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/ai-process/llm-proxy-admin/internal/auth"
-	"github.com/ai-process/llm-proxy-admin/internal/config"
-	pb "github.com/ai-process/llm-proxy-admin/internal/gen/ktms/v1"
-	"github.com/ai-process/llm-proxy-admin/internal/usage"
-	"github.com/ai-process/llm-proxy-admin/internal/web"
+	"github.com/ai-process/ktms-admin/internal/auth"
+	"github.com/ai-process/ktms-admin/internal/config"
+	pb "github.com/ai-process/ktms-admin/internal/gen/ktms/v1"
+	"github.com/ai-process/ktms-admin/internal/usage"
+	"github.com/ai-process/ktms-admin/internal/web"
 )
 
 const csrfHeader = "X-Requested-With"
-const csrfValue = "llm-proxy-admin"
+const csrfValue = "ktms-admin"
 
 type Server struct {
 	cfg   *config.Config
@@ -110,6 +110,9 @@ func (s *Server) Handler() http.Handler {
 		api("GET /api/proxy/keys", team, s.proxyListKeys)
 		api("POST /api/proxy/keys", team, s.proxyMintKey)
 		api("DELETE /api/proxy/keys/{name}", team, s.proxyRevokeKey)
+		api("PUT /api/proxy/keys/{name}/policy", team, s.proxySetKeyPolicy)
+		api("GET /api/proxy/spend", team, s.proxySpend)
+		api("GET /api/proxy/key-spend", team, s.proxyKeysSpend)
 		api("GET /api/proxy/nodes", globalRead, s.proxyListNodes)
 		api("POST /api/proxy/nodes/{id}/drain", adminOnly, s.proxyDrainNode)
 		api("GET /api/proxy/node-keys", globalRead, s.proxyListNodeKeys)

@@ -13,11 +13,11 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/ai-process/llm-proxy-admin/internal/auth"
-	"github.com/ai-process/llm-proxy-admin/internal/auth/oidc"
-	"github.com/ai-process/llm-proxy-admin/internal/config"
-	pb "github.com/ai-process/llm-proxy-admin/internal/gen/ktms/v1"
-	"github.com/ai-process/llm-proxy-admin/internal/usage"
+	"github.com/ai-process/ktms-admin/internal/auth"
+	"github.com/ai-process/ktms-admin/internal/auth/oidc"
+	"github.com/ai-process/ktms-admin/internal/config"
+	pb "github.com/ai-process/ktms-admin/internal/gen/ktms/v1"
+	"github.com/ai-process/ktms-admin/internal/usage"
 )
 
 type fakeAdmin struct {
@@ -33,6 +33,8 @@ type fakeAdmin struct {
 	lastMint         *pb.MintAPIKeyRequest
 	lastRevoke       string
 	spendLimits      []*pb.SpendLimitSpec
+	lastPolicy       *pb.SetAPIKeyPolicyRequest
+	lastSpend        *pb.GetSpendRequest
 }
 
 type fakeData struct {
@@ -270,7 +272,7 @@ func call(h http.Handler, method, path, body string, c *http.Cookie, hdr map[str
 	return w
 }
 
-var csrf = map[string]string{"X-Requested-With": "llm-proxy-admin", "Content-Type": "application/json"}
+var csrf = map[string]string{"X-Requested-With": "ktms-admin", "Content-Type": "application/json"}
 
 func TestAPIRequiresSession(t *testing.T) {
 	s, _, _ := newServer(t, "")
@@ -298,7 +300,7 @@ func TestMutationsNeedRoleAndCSRF(t *testing.T) {
 	if w := call(h, "PUT", "/api/proxy/models/m2", body, boss, nil); w.Code != 403 {
 		t.Errorf("no csrf header = %d", w.Code)
 	}
-	cross := map[string]string{"X-Requested-With": "llm-proxy-admin", "Origin": "https://evil.example"}
+	cross := map[string]string{"X-Requested-With": "ktms-admin", "Origin": "https://evil.example"}
 	if w := call(h, "PUT", "/api/proxy/models/m2", body, boss, cross); w.Code != 403 {
 		t.Errorf("cross origin = %d", w.Code)
 	}

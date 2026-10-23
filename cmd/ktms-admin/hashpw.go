@@ -8,7 +8,7 @@ import (
 
 	"golang.org/x/term"
 
-	"github.com/ai-process/llm-proxy-admin/internal/auth/password"
+	"github.com/ai-process/ktms-admin/internal/auth/password"
 )
 
 const hashUsage = `usage: ktms-admin hash-password [email]

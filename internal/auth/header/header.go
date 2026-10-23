@@ -12,7 +12,7 @@ import (
 
 	"github.com/rs/zerolog/log"
 
-	"github.com/ai-process/llm-proxy-admin/internal/auth"
+	"github.com/ai-process/ktms-admin/internal/auth"
 )
 
 const methodID = "header"

@@ -1,0 +1,4 @@
+# Refs scripts/e2e.sh tests against unless KTMS_REF / TOKENMETER_REF are set:
+# the released pair this console is tested with. The daily run uses main.
+E2E_KTMS_REF=v1.0.0
+E2E_TOKENMETER_REF=v1.0.0

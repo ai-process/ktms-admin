@@ -12,7 +12,7 @@ export class ApiError extends Error {
   constructor(msg, status, code) { super(msg); this.status = status; this.code = code; }
 }
 
-const CSRF = { 'X-Requested-With': 'llm-proxy-admin' };
+const CSRF = { 'X-Requested-With': 'ktms-admin' };
 
 export async function api(method, path, body, signal) {
   const opts = { method, headers: { ...CSRF }, credentials: 'same-origin', signal };

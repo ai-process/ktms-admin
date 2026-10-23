@@ -1,10 +1,11 @@
 version: v2
 plugins:
-  - remote: buf.build/protocolbuffers/go
+  # Pinned: a new plugin release must not turn the generated-code check red.
+  - remote: buf.build/protocolbuffers/go:v1.36.12
     out: internal/gen
     opt:
       - paths=source_relative
-  - remote: buf.build/grpc/go
+  - remote: buf.build/grpc/go:v1.6.2
     out: internal/gen
     opt:
       - paths=source_relative
@@ -12,4 +13,4 @@ managed:
   enabled: true
   override:
     - file_option: go_package_prefix
-      value: github.com/ai-process/llm-proxy-admin/internal/gen
+      value: github.com/ai-process/ktms-admin/internal/gen

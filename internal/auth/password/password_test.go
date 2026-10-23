@@ -13,7 +13,7 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/ai-process/llm-proxy-admin/internal/auth"
+	"github.com/ai-process/ktms-admin/internal/auth"
 )
 
 func TestHashAndVerify(t *testing.T) {

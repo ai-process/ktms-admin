@@ -87,7 +87,7 @@ function Shell() {
   // A picture the CSP blocks falls back to the initial.
   const [picOk, setPicOk] = useState(true);
   const Page = name && PAGES[name].comp;
-  const signOut = async () => { await fetch('/auth/logout', { method: 'POST', headers: { 'X-Requested-With': 'llm-proxy-admin' } }); location.href = '/'; };
+  const signOut = async () => { await fetch('/auth/logout', { method: 'POST', headers: { 'X-Requested-With': 'ktms-admin' } }); location.href = '/'; };
 
   return html`<div class="shell">
     <nav class=${cx('side', open && 'open')} aria-label="Main">

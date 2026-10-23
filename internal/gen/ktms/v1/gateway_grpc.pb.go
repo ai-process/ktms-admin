@@ -38,19 +38,21 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// Error contract: retry only on UNAVAILABLE ("vendors_unavailable", or
+// Error contract: retry UNAVAILABLE with backoff ("vendors_unavailable";
+// "auth_unavailable" or "storage_unavailable" while Postgres is down;
 // "throttled:spend_unavailable" when spend limits fail closed). When vendors
 // paused every model in the chain with Retry-After, "vendors_unavailable"
 // carries RetryInfo with the soonest one frees up: wait that long first.
 // RESOURCE_EXHAUSTED = throttled ("throttled:rpm" | "throttled:budget_key" |
-// "throttled:budget_user") — back off, do not hot-retry; or a spend limit
+// "throttled:budget_user"), or the key's own rate ("throttled:key_rpm" |
+// "throttled:key_tpm", with RetryInfo) — back off, do not hot-retry; or a spend limit
 // ("throttled:spend_<key|user>_<daily|monthly>", "throttled:spend_team_monthly")
 // with ErrorInfo "insufficient_quota" and RetryInfo until the UTC period resets.
-// PERMISSION_DENIED: the key's team may not use the model ("model \"<id>\" not
-// allowed for team", "no models in chain allowed for team", "model access
-// denied by team policy"); do not retry.
+// PERMISSION_DENIED: the key or its team may not use the model ("model \"<id>\"
+// not allowed for <key|team>", "no models in chain allowed for <key|team>",
+// "model access denied by key or team policy" for batches); do not retry.
 // FAILED_PRECONDITION: "output_truncated" (raise max_output_tokens, do not
-// retry as-is), "no_capable_model", "no_vendor_key", "not_configured",
+// retry as-is), "request_too_large" (above a minute of the key's tpm_limit), "no_capable_model", "no_vendor_key", "not_configured",
 // "batch not configured".
 // INVALID_ARGUMENT: "guardrail_violation" (PII or prompt injection detected),
 // "bad_request: <message>" (validation errors, empty batch, duplicate custom_id).
@@ -77,9 +79,11 @@ type GatewayServiceClient interface {
 	GetEmbeddings(ctx context.Context, in *GetEmbeddingsRequest, opts ...grpc.CallOption) (*GetEmbeddingsResponse, error)
 	// JudgeStream provides bidirectional streaming decisions for real-time
 	// agent evaluation and robotics control loops.
+	// Experimental: may change in a 1.x minor release (README, API stability).
 	JudgeStream(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[JudgeRequest, JudgeResponse], error)
 	// EvaluateRollouts scores candidate trajectories against state and criteria
 	// for speculative decoding and Best-of-N selection.
+	// Experimental: may change in a 1.x minor release (README, API stability).
 	EvaluateRollouts(ctx context.Context, in *EvaluateRolloutsRequest, opts ...grpc.CallOption) (*EvaluateRolloutsResponse, error)
 	ListModels(ctx context.Context, in *ListModelsRequest, opts ...grpc.CallOption) (*ListModelsResponse, error)
 	// Batch generation RPCs.
@@ -243,19 +247,21 @@ func (c *gatewayServiceClient) CancelBatch(ctx context.Context, in *CancelBatchR
 // All implementations must embed UnimplementedGatewayServiceServer
 // for forward compatibility.
 //
-// Error contract: retry only on UNAVAILABLE ("vendors_unavailable", or
+// Error contract: retry UNAVAILABLE with backoff ("vendors_unavailable";
+// "auth_unavailable" or "storage_unavailable" while Postgres is down;
 // "throttled:spend_unavailable" when spend limits fail closed). When vendors
 // paused every model in the chain with Retry-After, "vendors_unavailable"
 // carries RetryInfo with the soonest one frees up: wait that long first.
 // RESOURCE_EXHAUSTED = throttled ("throttled:rpm" | "throttled:budget_key" |
-// "throttled:budget_user") — back off, do not hot-retry; or a spend limit
+// "throttled:budget_user"), or the key's own rate ("throttled:key_rpm" |
+// "throttled:key_tpm", with RetryInfo) — back off, do not hot-retry; or a spend limit
 // ("throttled:spend_<key|user>_<daily|monthly>", "throttled:spend_team_monthly")
 // with ErrorInfo "insufficient_quota" and RetryInfo until the UTC period resets.
-// PERMISSION_DENIED: the key's team may not use the model ("model \"<id>\" not
-// allowed for team", "no models in chain allowed for team", "model access
-// denied by team policy"); do not retry.
+// PERMISSION_DENIED: the key or its team may not use the model ("model \"<id>\"
+// not allowed for <key|team>", "no models in chain allowed for <key|team>",
+// "model access denied by key or team policy" for batches); do not retry.
 // FAILED_PRECONDITION: "output_truncated" (raise max_output_tokens, do not
-// retry as-is), "no_capable_model", "no_vendor_key", "not_configured",
+// retry as-is), "request_too_large" (above a minute of the key's tpm_limit), "no_capable_model", "no_vendor_key", "not_configured",
 // "batch not configured".
 // INVALID_ARGUMENT: "guardrail_violation" (PII or prompt injection detected),
 // "bad_request: <message>" (validation errors, empty batch, duplicate custom_id).
@@ -282,9 +288,11 @@ type GatewayServiceServer interface {
 	GetEmbeddings(context.Context, *GetEmbeddingsRequest) (*GetEmbeddingsResponse, error)
 	// JudgeStream provides bidirectional streaming decisions for real-time
 	// agent evaluation and robotics control loops.
+	// Experimental: may change in a 1.x minor release (README, API stability).
 	JudgeStream(grpc.BidiStreamingServer[JudgeRequest, JudgeResponse]) error
 	// EvaluateRollouts scores candidate trajectories against state and criteria
 	// for speculative decoding and Best-of-N selection.
+	// Experimental: may change in a 1.x minor release (README, API stability).
 	EvaluateRollouts(context.Context, *EvaluateRolloutsRequest) (*EvaluateRolloutsResponse, error)
 	ListModels(context.Context, *ListModelsRequest) (*ListModelsResponse, error)
 	// Batch generation RPCs.

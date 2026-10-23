@@ -14,14 +14,14 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
-	"github.com/ai-process/llm-proxy-admin/internal/api"
-	"github.com/ai-process/llm-proxy-admin/internal/auth"
-	"github.com/ai-process/llm-proxy-admin/internal/auth/cfaccess"
-	"github.com/ai-process/llm-proxy-admin/internal/auth/github"
-	"github.com/ai-process/llm-proxy-admin/internal/auth/header"
-	"github.com/ai-process/llm-proxy-admin/internal/auth/oidc"
-	"github.com/ai-process/llm-proxy-admin/internal/auth/password"
-	"github.com/ai-process/llm-proxy-admin/internal/config"
+	"github.com/ai-process/ktms-admin/internal/api"
+	"github.com/ai-process/ktms-admin/internal/auth"
+	"github.com/ai-process/ktms-admin/internal/auth/cfaccess"
+	"github.com/ai-process/ktms-admin/internal/auth/github"
+	"github.com/ai-process/ktms-admin/internal/auth/header"
+	"github.com/ai-process/ktms-admin/internal/auth/oidc"
+	"github.com/ai-process/ktms-admin/internal/auth/password"
+	"github.com/ai-process/ktms-admin/internal/config"
 )
 
 func main() {
