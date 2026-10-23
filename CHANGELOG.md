@@ -24,6 +24,10 @@ The first stable release, paired with Keystone. The Model Switchboard. (KTMS) 1.
 - Sign-in through an access proxy: an e-mail header from `TRUSTED_PROXY_CIDRS` (oauth2-proxy, Authelia,
   Authentik, Pomerium, Tailscale) or a verified Cloudflare Access token (`CF_ACCESS_TEAM_DOMAIN`,
   `CF_ACCESS_AUD`).
+- Key policies on the Keys page: allowed models and requests and tokens per minute, set when minting
+  or later (team leads for their team's keys), and each key's spend against its caps.
+- Prompt-cache prices (cached input, cache write) and the `prompt_cache` capability in the model
+  editor.
 
 ### Changed
 - Google sign-in is optional: configure any of the methods above, alone or together. Sign-in methods

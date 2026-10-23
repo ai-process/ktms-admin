@@ -33,6 +33,8 @@ type fakeAdmin struct {
 	lastMint         *pb.MintAPIKeyRequest
 	lastRevoke       string
 	spendLimits      []*pb.SpendLimitSpec
+	lastPolicy       *pb.SetAPIKeyPolicyRequest
+	lastSpend        *pb.GetSpendRequest
 }
 
 type fakeData struct {

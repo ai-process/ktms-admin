@@ -16,9 +16,14 @@ export function KeysPage({ params }) {
       canReadGlobal() ? api('GET', '/api/proxy/spend-limits?subject_type=key').catch((error) => ({ error })) : { spend_limits: [] },
       canReadGlobal() ? loadCfg(true).catch((error) => ({ error })) : null,
     ]);
+    // Where a key is capped, what it has spent so far; a failure shows as unknown.
+    const capped = [...new Set((limits.spend_limits || []).map((l) => l.subject_id).filter((id) => id !== '*'))];
+    const spend = Object.fromEntries(await Promise.all(capped.map((id) =>
+      api('GET', `/api/proxy/spend?subject_type=key&subject_id=${encodeURIComponent(id)}`).then((r) => [id, r.windows || []], () => [id, null]))));
     // Side panels fail on their own: the key list still shows, and an
     // unreadable panel says so instead of looking empty.
-    return { keys: keys.keys || [], teams: teams.teams || [], limits: limits.spend_limits || [], limitsError: limits.error, vendorKeys: cfg?.vendor_keys || [], cfgError: cfg?.error };
+    return { keys: keys.keys || [], teams: teams.teams || [], limits: limits.spend_limits || [], limitsError: limits.error, spend,
+      vendorKeys: cfg?.vendor_keys || [], models: (cfg?.models || []).map((m) => m.id), cfgError: cfg?.error };
   }, []);
   const teamName = useMemo(() => Object.fromEntries((st.data?.teams || []).map((t) => [t.id, t.name])), [st.data]);
   const caps = useMemo(() => {
@@ -33,14 +38,16 @@ export function KeysPage({ params }) {
     action: () => api('DELETE', '/api/proxy/keys/' + encodeURIComponent(k.name)),
   }).then((ok) => ok && st.reload());
 
+  const editPolicy = (k) => openDialog(PolicyForm, { k, models: modelChoices(st.data, k) }).then((ok) => ok && st.reload());
   const keys = st.data?.keys || [];
   const rows = keys.map((k) => html`<tr key=${k.name} class=${k.disabled ? 'off' : ''}>
     <td><div class="stacked"><span class="mono">${k.name}</span><span class="small">${k.team_id ? 'team ' + (teamName[k.team_id] || k.team_id.slice(0, 8) + '…') : 'no team'}</span></div></td>
     <td><div class="cluster">${(k.scopes || []).map((s) => html`<span class="chip" key=${s}>${Object.fromEntries(SCOPES.map(([id, t]) => [id, t]))[s] || s}</span>`)}</div></td>
-    ${canReadGlobal() && html`<td>${(caps[k.name] || []).length ? html`<div class="cluster">${caps[k.name].map((l) => html`<span class="chip" key=${l.period}>${usd(nanoUSD(l.limit_nanousd))} / ${l.period}</span>`)}</div>` : html`<span class="muted">${st.data?.limitsError ? 'unknown' : '—'}</span>`}</td>`}
+    <td><${PolicyChips} policy=${k.policy} /></td>
+    ${canReadGlobal() && html`<td>${(caps[k.name] || []).length ? html`<div class="cluster">${caps[k.name].map((l) => html`<span class="chip" key=${l.period}>${spentText(st.data?.spend?.[k.name], l)}</span>`)}</div>` : html`<span class="muted">${st.data?.limitsError ? 'unknown' : '—'}</span>`}</td>`}
     <td>${when(k.created_at)}</td>
     <td>${k.disabled ? html`<${Badge}>Revoked<//>` : html`<${Badge} tone="ok">Active<//>`}</td>
-    <td class="actions-cell">${canMint && !k.disabled && html`<button type="button" class="sm danger" onClick=${() => revoke(k)}>Revoke</button>`}</td>
+    <td class="actions-cell">${canMint && !k.disabled && html`<button type="button" class="sm" onClick=${() => editPolicy(k)}>Policy</button><button type="button" class="sm danger" onClick=${() => revoke(k)}>Revoke</button>`}</td>
   </tr>`);
 
   return html`
@@ -50,7 +57,7 @@ export function KeysPage({ params }) {
       <div style=${{ flex: '3 1 560px' }}>
         <${Card} flush label="API keys">
           <${Table} loading=${st.loading} rows=${rows}
-            head=${['Name', 'Access', ...(canReadGlobal() ? ['Spend caps'] : []), 'Created', 'Status', { label: 'Actions', sr: true }]}
+            head=${['Name', 'Access', 'Policy', ...(canReadGlobal() ? ['Spend today / this month'] : []), 'Created', 'Status', { label: 'Actions', sr: true }]}
             empty=${{ title: 'No API keys yet', children: canMint ? 'Create one with the form.' : 'Ask a team lead for one.' }} />
         <//>
       </div>
@@ -64,7 +71,7 @@ export function KeysPage({ params }) {
 function Wizard({ teams, team, onDone }) {
   const lead = !isAdmin();
   const labels = lead ? ['Name', 'Done'] : ['Name', 'Access', 'Limits', 'Done'];
-  const fresh = () => ({ step: 0, name: '', team: lead ? session.me.user.team_id : team, scopes: ['generate'], daily: '', monthly: '', key: '', warn: '', copied: false, err: '', busy: false });
+  const fresh = () => ({ step: 0, name: '', team: lead ? session.me.user.team_id : team, scopes: ['generate'], daily: '', monthly: '', rpm: '', tpm: '', key: '', warn: '', copied: false, err: '', busy: false });
   const [s, setS] = useState(fresh);
   const set = (p) => setS((x) => ({ ...x, ...p }));
   const last = labels.length - 1;
@@ -74,6 +81,7 @@ function Wizard({ teams, team, onDone }) {
     if (s.step === 0 && !s.name.trim()) return 'Give the key a name.';
     if (labels[s.step] === 'Access' && !s.scopes.length) return 'Pick at least one kind of access.';
     if (labels[s.step] === 'Limits' && [s.daily, s.monthly].some((v) => v !== '' && !(num(v) > 0))) return 'A cap must be above $0, or left empty.';
+    if (labels[s.step] === 'Limits' && [s.rpm, s.tpm].some((v) => v !== '' && !(Number.isInteger(num(v)) && num(v) > 0))) return 'A rate must be a whole number above 0, or left empty.';
     return '';
   };
 
@@ -81,6 +89,7 @@ function Wizard({ teams, team, onDone }) {
     const team = teams.find((t) => t.id === s.team);
     const body = { name: s.name.trim(), scopes: lead ? ['generate'] : s.scopes };
     if (team) { body.team_id = team.id; body.org_id = team.org_id; }
+    if (s.rpm !== '' || s.tpm !== '') body.policy = { rpm_limit: num(s.rpm) || 0, tpm_limit: String(num(s.tpm) || 0) };
     const res = await api('POST', '/api/proxy/keys', body);
     // The key exists now; a cap that fails to save must not hide it.
     const failed = [];
@@ -121,7 +130,9 @@ function Wizard({ teams, team, onDone }) {
       </div></fieldset>`}
       ${at === 'Limits' && html`
         <${Field} label="Daily spend cap (optional)" hint="Calls are refused once the key has spent this much since 00:00 UTC."><div class="prefix"><span>$</span><input type="number" min="0" step="any" value=${s.daily} placeholder="No cap" onInput=${(e) => set({ daily: e.currentTarget.value })} /></div><//>
-        <${Field} label="Monthly spend cap (optional)" hint="Counted per UTC calendar month."><div class="prefix"><span>$</span><input type="number" min="0" step="any" value=${s.monthly} placeholder="No cap" onInput=${(e) => set({ monthly: e.currentTarget.value })} /></div><//>`}
+        <${Field} label="Monthly spend cap (optional)" hint="Counted per UTC calendar month."><div class="prefix"><span>$</span><input type="number" min="0" step="any" value=${s.monthly} placeholder="No cap" onInput=${(e) => set({ monthly: e.currentTarget.value })} /></div><//>
+        <${Field} label="Requests per minute (optional)" hint="Over all models. Allowed models are set with Policy after the key exists."><input type="number" min="1" step="1" value=${s.rpm} placeholder="No limit" onInput=${(e) => set({ rpm: e.currentTarget.value })} /><//>
+        <${Field} label="Tokens per minute (optional)" hint="Input and output over all models."><input type="number" min="1" step="1" value=${s.tpm} placeholder="No limit" onInput=${(e) => set({ tpm: e.currentTarget.value })} /><//>`}
       ${at === 'Done' && html`
         <div class="notice ok"><b>Key created.</b> This is the only time it is shown. Store it in your secret manager now; KTMS keeps only a hash.</div>
         <div class="secret"><code>${s.key}</code><button type="button" class="sm" onClick=${copy}>${s.copied ? 'Copied' : 'Copy'}</button></div>
@@ -133,6 +144,55 @@ function Wizard({ teams, team, onDone }) {
       ${s.step !== last && html`<button type="button" class="primary" onClick=${next} disabled=${s.busy}>${s.busy ? 'Creating…' : atCreate ? 'Create key' : 'Continue'}</button>`}
     </div>
   </section>`;
+}
+
+// spentText shows a cap with what the key has spent against it, as KTMS counts it.
+function spentText(windows, limit) {
+  const w = (windows || []).find((x) => x.period === limit.period);
+  const cap = `${usd(nanoUSD(limit.limit_nanousd))} / ${limit.period}`;
+  return w?.metered ? `${usd(nanoUSD(w.spent_nanousd))} of ${cap}` : cap;
+}
+
+function PolicyChips({ policy }) {
+  const p = policy || {};
+  const chips = [];
+  if ((p.allowed_models || []).length) chips.push(html`<span class="chip" key="m" title=${p.allowed_models.join(', ')}>${p.allowed_models.length === 1 ? p.allowed_models[0] : p.allowed_models.length + ' models'}</span>`);
+  if (num(p.rpm_limit) > 0) chips.push(html`<span class="chip" key="r">${compactNum(p.rpm_limit)} rpm</span>`);
+  if (num(p.tpm_limit) > 0) chips.push(html`<span class="chip" key="t">${compactNum(p.tpm_limit)} tpm</span>`);
+  return chips.length ? html`<div class="cluster">${chips}</div>` : html`<span class="muted">—</span>`;
+}
+
+const compactNum = (v) => new Intl.NumberFormat('en', { notation: 'compact' }).format(num(v));
+
+// modelChoices lists the models a key's allowlist can name: the gateway's for
+// admins, the team's allowed models for a team lead, plus whatever it names now.
+function modelChoices(data, k) {
+  const team = (data?.teams || []).find((t) => t.id === k.team_id);
+  const base = data?.models?.length ? data.models : (team?.allowed_models || []);
+  return [...new Set([...base, ...(k.policy?.allowed_models || [])])].sort();
+}
+
+function PolicyForm({ k, models, close }) {
+  const [picked, setPicked] = useState(k.policy?.allowed_models || []);
+  const toggle = (m) => setPicked((p) => (p.includes(m) ? p.filter((x) => x !== m) : [...p, m]));
+  const submit = async (fd) => {
+    const rpm = num(fd.get('rpm')), tpm = num(fd.get('tpm'));
+    if (![rpm, tpm].every((v) => Number.isInteger(v) && v >= 0)) throw new Error('Rates are whole numbers, 0 for no limit.');
+    await api('PUT', `/api/proxy/keys/${encodeURIComponent(k.name)}/policy`, { allowed_models: picked, rpm_limit: rpm, tpm_limit: String(tpm) });
+    toast('Policy saved');
+  };
+  return html`<${FormDialog} title=${'Policy of ' + k.name} sub="Applies from the key's next call, on top of its team's models and each model's limits." close=${close} onSubmit=${submit}>
+    <fieldset><legend>Allowed models</legend>
+      ${models.length
+        ? html`<div class="cluster">${models.map((m) => html`<button type="button" key=${m} class="toggle-chip" aria-pressed=${picked.includes(m) ? 'true' : 'false'} onClick=${() => toggle(m)}>${m}</button>`)}</div>`
+        : html`<p class="small muted">No models to choose from.</p>`}
+      <p class="small muted">${picked.length ? 'Only these, and only where the team allows them too.' : 'None picked: any model the team allows.'}</p>
+    </fieldset>
+    <div class="form-grid">
+      <${Field} label="Requests per minute" hint="Over all models; 0 = no limit."><input name="rpm" type="number" min="0" step="1" defaultValue=${num(k.policy?.rpm_limit)} /><//>
+      <${Field} label="Tokens per minute" hint="Input and output over all models; 0 = no limit."><input name="tpm" type="number" min="0" step="1" defaultValue=${num(k.policy?.tpm_limit)} /><//>
+    </div>
+  <//>`;
 }
 
 function VendorKeys({ vendorKeys, error, keys, loading, reload }) {

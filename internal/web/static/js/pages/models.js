@@ -8,13 +8,15 @@ const CAPS = [
   ['tts', 'Speech synthesis'],
   ['image', 'Image generation'],
   ['judge', 'Judge'],
+  ['prompt_cache', 'Anthropic: cache tools, system prompt and conversation'],
 ];
 
 const BLANK = {
   id: '', vendor: 'openai', endpoint: '', efforts: ['EFFORT_LOW', 'EFFORT_MEDIUM', 'EFFORT_HIGH'], capabilities: [],
   rpm: 0, rpm_burst: 0, queue_timeout_ms: 0, budget_grace_margin: 0,
   price_in_per_mtok: 0, price_out_per_mtok: 0, price_in_peak_per_mtok: 0, price_out_peak_per_mtok: 0,
-  price_in_batch_per_mtok: 0, price_out_batch_per_mtok: 0, daily_tokens_per_key: 0, daily_tokens_per_user: 0, enabled: true,
+  price_in_batch_per_mtok: 0, price_out_batch_per_mtok: 0, price_cache_read_per_mtok: 0, price_cache_write_per_mtok: 0,
+  daily_tokens_per_key: 0, daily_tokens_per_user: 0, enabled: true,
 };
 
 const rpmText = (m) => {
@@ -74,7 +76,7 @@ function ModelForm({ model, close }) {
     if (!/^[A-Za-z0-9._:/-]+$/.test(id)) throw new Error('The model id may contain letters, digits and . _ : / - only.');
     const efforts = ['LOW', 'MEDIUM', 'HIGH'].filter((e) => fd.get('effort_' + e)).map((e) => 'EFFORT_' + e);
     const spec = { ...m, id, vendor: fd.get('vendor'), endpoint: String(fd.get('endpoint')).trim(), efforts, capabilities: caps, enabled: !!fd.get('enabled') };
-    for (const k of ['rpm', 'rpm_burst', 'queue_timeout_ms', 'budget_grace_margin', 'price_in_per_mtok', 'price_out_per_mtok', 'price_in_peak_per_mtok', 'price_out_peak_per_mtok', 'price_in_batch_per_mtok', 'price_out_batch_per_mtok', 'daily_tokens_per_key', 'daily_tokens_per_user']) spec[k] = num(fd.get(k));
+    for (const k of ['rpm', 'rpm_burst', 'queue_timeout_ms', 'budget_grace_margin', 'price_in_per_mtok', 'price_out_per_mtok', 'price_in_peak_per_mtok', 'price_out_peak_per_mtok', 'price_in_batch_per_mtok', 'price_out_batch_per_mtok', 'price_cache_read_per_mtok', 'price_cache_write_per_mtok', 'daily_tokens_per_key', 'daily_tokens_per_user']) spec[k] = num(fd.get(k));
     await api('PUT', '/api/proxy/models/' + encodeURIComponent(id), spec);
     toast('Model saved');
   };
@@ -97,6 +99,7 @@ function ModelForm({ model, close }) {
       ${n('price_in_per_mtok', 'Input', '', { min: 0 })}${n('price_out_per_mtok', 'Output', '', { min: 0 })}
       ${n('price_in_peak_per_mtok', 'Peak input', '0 = one price all day', { min: 0 })}${n('price_out_peak_per_mtok', 'Peak output', '', { min: 0 })}
       ${n('price_in_batch_per_mtok', 'Batch input', '0 = half the input price', { min: 0 })}${n('price_out_batch_per_mtok', 'Batch output', '', { min: 0 })}
+      ${n('price_cache_read_per_mtok', 'Cached input (read)', '0 = vendor default (Anthropic 0.1x input)', { min: 0 })}${n('price_cache_write_per_mtok', 'Cache write', '0 = vendor default (Anthropic 1.25x input)', { min: 0 })}
     </div>
     <h3>Limits</h3>
     <div class="form-grid">

@@ -97,14 +97,10 @@ func (s *Server) proxyRevokeKey(w http.ResponseWriter, r *http.Request, u *auth.
 	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
 	defer cancel()
 	if !u.IsSuperAdmin() {
-		keysResp, err := s.admin.ListAPIKeys(ctx, &pb.ListAPIKeysRequest{})
+		isOwnTeam, err := s.ownsKey(ctx, u, name)
 		if err != nil {
 			backendErr(w, err)
 			return
-		}
-		isOwnTeam := false
-		for _, k := range keysOfTeam(keysResp.Keys, u.TeamID) {
-			isOwnTeam = isOwnTeam || k.Name == name
 		}
 		if !isOwnTeam {
 			writeErr(w, http.StatusForbidden, "forbidden", "cannot revoke keys belonging to other teams")
@@ -116,6 +112,84 @@ func (s *Server) proxyRevokeKey(w http.ResponseWriter, r *http.Request, u *auth.
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// ownsKey reports whether a user who is not a super admin may manage the key:
+// only keys of their own team.
+func (s *Server) ownsKey(ctx context.Context, u *auth.User, name string) (bool, error) {
+	keysResp, err := s.admin.ListAPIKeys(ctx, &pb.ListAPIKeysRequest{})
+	if err != nil {
+		return false, err
+	}
+	for _, k := range keysOfTeam(keysResp.Keys, u.TeamID) {
+		if k.Name == name {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// proxySetKeyPolicy replaces a key's allowed models and rates. A team lead may
+// set them on the team's keys: they narrow what the team allows, never widen it.
+func (s *Server) proxySetKeyPolicy(w http.ResponseWriter, r *http.Request, u *auth.User) {
+	var policy pb.APIKeyPolicy
+	if err := readProto(r, &policy); err != nil {
+		backendErr(w, badBody(err))
+		return
+	}
+	name := r.PathValue("name")
+	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
+	defer cancel()
+	if !u.IsSuperAdmin() {
+		if !u.IsTeamLead() {
+			writeErr(w, http.StatusForbidden, "forbidden", "only team leads and admins set key policies")
+			return
+		}
+		ok, err := s.ownsKey(ctx, u, name)
+		if err != nil {
+			backendErr(w, err)
+			return
+		}
+		if !ok {
+			writeErr(w, http.StatusForbidden, "forbidden", "cannot change keys belonging to other teams")
+			return
+		}
+	}
+	if _, err := s.admin.SetAPIKeyPolicy(ctx, &pb.SetAPIKeyPolicyRequest{Name: name, Policy: &policy}); err != nil {
+		backendErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// proxySpend reports a subject's spend as KTMS enforces it. Team members see
+// their own team's keys and their team; everything else needs global read.
+func (s *Server) proxySpend(w http.ResponseWriter, r *http.Request, u *auth.User) {
+	q := r.URL.Query()
+	req := &pb.GetSpendRequest{SubjectType: q.Get("subject_type"), SubjectId: q.Get("subject_id")}
+	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
+	defer cancel()
+	if !u.CanReadGlobal() {
+		allowed := req.SubjectType == "team" && req.SubjectId == u.TeamID && u.TeamID != ""
+		if req.SubjectType == "key" {
+			ok, err := s.ownsKey(ctx, u, req.SubjectId)
+			if err != nil {
+				backendErr(w, err)
+				return
+			}
+			allowed = ok
+		}
+		if !allowed {
+			writeErr(w, http.StatusForbidden, "forbidden", "only your team's spend is visible to you")
+			return
+		}
+	}
+	resp, err := s.admin.GetSpend(ctx, req)
+	if err != nil {
+		backendErr(w, err)
+		return
+	}
+	writeProto(w, resp)
 }
 
 func hasField(m map[string]json.RawMessage, keys ...string) bool {
