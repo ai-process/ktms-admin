@@ -1,0 +1,23 @@
+name: E2E against main
+
+# KTMS and light-tokenmeter main move on their own; this daily run notices
+# before the pinned pair in scripts/e2e.refs is moved forward.
+on:
+  schedule:
+    - cron: "23 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: End-to-end with KTMS and light-tokenmeter main
+        env:
+          KTMS_REF: main
+          TOKENMETER_REF: main
+        run: ./scripts/e2e.sh

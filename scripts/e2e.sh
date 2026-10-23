@@ -5,8 +5,11 @@
 set -eu
 
 cd "$(dirname "$0")/.."
-KTMS_REF=${KTMS_REF:-main}
-TOKENMETER_REF=${TOKENMETER_REF:-main}
+# The tested pair: main until 1.0 is tagged, then the release tags, so a pull
+# request is not failed by an unrelated upstream change. The daily run uses main.
+. ./scripts/e2e.refs
+KTMS_REF=${KTMS_REF:-$E2E_KTMS_REF}
+TOKENMETER_REF=${TOKENMETER_REF:-$E2E_TOKENMETER_REF}
 P=ktms-admin-e2e-$$
 NET=$P-net
 WORK=$(mktemp -d)
@@ -32,18 +35,28 @@ fail() {
 }
 
 # api METHOD PATH [JSON]: calls the console the way its UI does. Requests take
-# protojson field names; responses use the proto names (plain_key).
+# protojson field names; responses use the proto names (plain_key). A refused
+# call prints the console's error body to stderr.
 api() {
-	if [ $# -ge 3 ]; then
-		curl -fsS -X "$1" "$CONSOLE$2" -H 'X-Requested-With: ktms-admin' -H 'Content-Type: application/json' -d "$3"
-	else
-		curl -fsS -X "$1" "$CONSOLE$2" -H 'X-Requested-With: ktms-admin'
-	fi
+	out=$(curl -sS --connect-timeout 5 --max-time 60 -w '\n%{http_code}' -X "$1" "$CONSOLE$2" \
+		-H 'X-Requested-With: ktms-admin' -H 'Content-Type: application/json' ${3:+-d "$3"}) || return 1
+	code=$(printf '%s\n' "$out" | tail -n 1)
+	body=$(printf '%s\n' "$out" | sed '$d')
+	case $code in
+	2??) printf '%s\n' "$body" ;;
+	*) echo "$1 $2 -> HTTP $code: $body" >&2; return 1 ;;
+	esac
+}
+
+# build NAME CONTEXT [ARGS]: keeps the log quiet unless the build fails.
+build() {
+	name=$1; shift
+	docker build -t "$P-$name-img" "$@" >"$WORK/$name.build.log" 2>&1 || { tail -n 40 "$WORK/$name.build.log" >&2; fail "building $name"; }
 }
 
 wait_for() {
 	i=0
-	until curl -fsS "$1" >/dev/null 2>&1; do
+	until curl -fsS --max-time 5 "$1" >/dev/null 2>&1; do
 		i=$((i + 1))
 		[ "$i" -gt 90 ] && fail "$1 did not answer"
 		sleep 1
@@ -51,12 +64,12 @@ wait_for() {
 }
 
 echo "e2e: building ktms@$KTMS_REF, light-tokenmeter@$TOKENMETER_REF and this console"
-git clone -q --depth 1 --branch "$KTMS_REF" https://github.com/ai-process/ktms.git "$WORK/ktms"
-git clone -q --depth 1 --branch "$TOKENMETER_REF" https://github.com/ai-process/light-tokenmeter.git "$WORK/tm"
-docker build -q -t "$P-admin-img" . >/dev/null
-docker build -q --target slim -t "$P-ktms-img" "$WORK/ktms" >/dev/null
-docker build -q -t "$P-mock-img" "$WORK/ktms/bench/mock-upstream" >/dev/null
-docker build -q -t "$P-tm-img" "$WORK/tm" >/dev/null
+git clone -q --depth 1 --branch "$KTMS_REF" https://github.com/ai-process/ktms.git "$WORK/ktms" || fail "cloning ktms@$KTMS_REF"
+git clone -q --depth 1 --branch "$TOKENMETER_REF" https://github.com/ai-process/light-tokenmeter.git "$WORK/tm" || fail "cloning light-tokenmeter@$TOKENMETER_REF"
+build admin .
+build ktms --target slim "$WORK/ktms"
+build mock "$WORK/ktms/bench/mock-upstream"
+build tm "$WORK/tm"
 
 W=$(openssl rand -hex 16)
 R=$(openssl rand -hex 16)
@@ -68,8 +81,13 @@ docker network create "$NET" >/dev/null
 docker run -d --name "$P-pg" --network "$NET" -e POSTGRES_PASSWORD=pg postgres:17-alpine >/dev/null
 docker run -d --name "$P-redis" --network "$NET" redis:7-alpine >/dev/null
 docker run -d --name "$P-mock" --network "$NET" -e MOCK_REQUIRE_KEY=vk-e2e "$P-mock-img" >/dev/null
-until docker exec "$P-pg" pg_isready -h 127.0.0.1 -U postgres >/dev/null 2>&1; do sleep 1; done
-docker exec "$P-pg" psql -qU postgres -c "CREATE DATABASE ktms" -c "CREATE DATABASE tokenmeter" >/dev/null
+i=0
+until docker exec "$P-pg" pg_isready -h 127.0.0.1 -U postgres >/dev/null 2>&1; do
+	i=$((i + 1))
+	[ "$i" -gt 60 ] && fail "Postgres did not become ready"
+	sleep 1
+done
+docker exec "$P-pg" psql -qU postgres -c "CREATE DATABASE ktms" -c "CREATE DATABASE tokenmeter" >/dev/null || fail "creating databases"
 
 docker run -d --name "$P-tm" --network "$NET" \
 	-e DATABASE_URL="postgres://postgres:pg@$P-pg:5432/tokenmeter?sslmode=disable" \
@@ -116,12 +134,17 @@ api GET /api/proxy/keys | jq -e '.keys | map(.name) | index("e2e-client")' >/dev
 api PUT /api/proxy/spend-limits '{"subjectType":"key","subjectId":"e2e-client","period":"day","limitNanousd":"5000000000"}' >/dev/null ||
 	fail "set spend limit"
 api GET /api/proxy/spend-limits | jq -e '.spend_limits | map(.subject_id) | index("e2e-client")' >/dev/null || fail "spend limit not listed: $(api GET /api/proxy/spend-limits)"
-ORG=$(api POST /api/proxy/organizations '{"name":"e2e-org"}' | jq -r .organization.id)
+ORG=$(api POST /api/proxy/organizations '{"name":"e2e-org"}' | jq -r .organization.id) || true
+[ -n "$ORG" ] && [ "$ORG" != null ] || fail "create organization"
 api POST /api/proxy/teams '{"orgId":"'"$ORG"'","name":"e2e-team","monthlyBudgetUsd":10,"allowedModels":["mock-gpt"]}' >/dev/null || fail "create team"
 api GET /api/proxy/teams | jq -e '.teams | map(.name) | index("e2e-team")' >/dev/null || fail "team not listed"
 api DELETE /api/proxy/keys/e2e-client >/dev/null || fail "revoke client key"
+api GET /api/proxy/keys | jq -e '.keys | map(select(.name == "e2e-client" and (.disabled | not))) | length == 0' >/dev/null ||
+	fail "the revoked key is still active: $(api GET /api/proxy/keys)"
 echo "e2e: keys, spend limits, organizations and teams work"
 
+# Before the call: a run that crosses midnight UTC still finds the event.
+SINCE=$(date -u +%F)
 i=0
 until OUT=$(api POST /api/proxy/playground '{"prompt":"hello","effort":"low"}' 2>/dev/null) &&
 	echo "$OUT" | jq -e '.resolved_model == "mock-gpt" and (.choices | length > 0)' >/dev/null; do
@@ -133,9 +156,9 @@ echo "e2e: playground answered through KTMS and the mock vendor"
 
 DAY=$(date -u +%F)
 i=0
-until api GET "/api/usage?from=$DAY&to=$DAY&group=model" | jq -e '(.report.groups // []) | map(select(.key == "mock-gpt" and .requests >= 1)) | length > 0' >/dev/null; do
+until api GET "/api/usage?from=$SINCE&to=$DAY&group=model" | jq -e '(.report.groups // []) | map(select(.key == "mock-gpt" and .requests >= 1)) | length > 0' >/dev/null; do
 	i=$((i + 1))
-	[ "$i" -gt 30 ] && fail "usage did not reach the console: $(api GET "/api/usage?from=$DAY&to=$DAY&group=model")"
+	[ "$i" -gt 30 ] && fail "usage did not reach the console: $(api GET "/api/usage?from=$SINCE&to=$DAY&group=model")"
 	sleep 1
 done
 echo "e2e: the call's usage went KTMS -> light-tokenmeter (write token) -> console (read token)"

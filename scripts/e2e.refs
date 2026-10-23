@@ -1,0 +1,4 @@
+# Refs scripts/e2e.sh tests against unless KTMS_REF / TOKENMETER_REF are set.
+# Switch to the release tags (v1.0.0) once they exist.
+E2E_KTMS_REF=main
+E2E_TOKENMETER_REF=main
