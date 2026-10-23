@@ -97,14 +97,10 @@ func (s *Server) proxyRevokeKey(w http.ResponseWriter, r *http.Request, u *auth.
 	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
 	defer cancel()
 	if !u.IsSuperAdmin() {
-		keysResp, err := s.admin.ListAPIKeys(ctx, &pb.ListAPIKeysRequest{})
+		isOwnTeam, err := s.ownsKey(ctx, u, name)
 		if err != nil {
 			backendErr(w, err)
 			return
-		}
-		isOwnTeam := false
-		for _, k := range keysOfTeam(keysResp.Keys, u.TeamID) {
-			isOwnTeam = isOwnTeam || k.Name == name
 		}
 		if !isOwnTeam {
 			writeErr(w, http.StatusForbidden, "forbidden", "cannot revoke keys belonging to other teams")
@@ -116,6 +112,81 @@ func (s *Server) proxyRevokeKey(w http.ResponseWriter, r *http.Request, u *auth.
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// ownsKey reports whether a user who is not a super admin may manage the key:
+// only keys of their own team.
+func (s *Server) ownsKey(ctx context.Context, u *auth.User, name string) (bool, error) {
+	keysResp, err := s.admin.ListAPIKeys(ctx, &pb.ListAPIKeysRequest{})
+	if err != nil {
+		return false, err
+	}
+	for _, k := range keysOfTeam(keysResp.Keys, u.TeamID) {
+		if k.Name == name {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// proxySetKeyPolicy replaces a key's allowed models and rates. A team lead may
+// set them on the team's keys, as they may mint keys without any: a key's policy
+// only narrows its team's models and budget.
+func (s *Server) proxySetKeyPolicy(w http.ResponseWriter, r *http.Request, u *auth.User) {
+	var policy pb.APIKeyPolicy
+	if err := readProto(r, &policy); err != nil {
+		backendErr(w, badBody(err))
+		return
+	}
+	name := r.PathValue("name")
+	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
+	defer cancel()
+	if !u.IsSuperAdmin() {
+		ok, err := s.ownsKey(ctx, u, name)
+		if err != nil {
+			backendErr(w, err)
+			return
+		}
+		if !ok {
+			writeErr(w, http.StatusForbidden, "forbidden", "cannot change keys belonging to other teams")
+			return
+		}
+	}
+	if _, err := s.admin.SetAPIKeyPolicy(ctx, &pb.SetAPIKeyPolicyRequest{Name: name, Policy: &policy}); err != nil {
+		backendErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// proxySpend reports a subject's spend as KTMS enforces it. Team members see
+// their own team's keys and their team; everything else needs global read.
+func (s *Server) proxySpend(w http.ResponseWriter, r *http.Request, u *auth.User) {
+	q := r.URL.Query()
+	req := &pb.GetSpendRequest{SubjectType: q.Get("subject_type"), SubjectId: q.Get("subject_id")}
+	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
+	defer cancel()
+	if !u.CanReadGlobal() {
+		allowed := req.SubjectType == "team" && req.SubjectId == u.TeamID && u.TeamID != ""
+		if req.SubjectType == "key" {
+			ok, err := s.ownsKey(ctx, u, req.SubjectId)
+			if err != nil {
+				backendErr(w, err)
+				return
+			}
+			allowed = ok
+		}
+		if !allowed {
+			writeErr(w, http.StatusForbidden, "forbidden", "only your team's spend is visible to you")
+			return
+		}
+	}
+	resp, err := s.admin.GetSpend(ctx, req)
+	if err != nil {
+		backendErr(w, err)
+		return
+	}
+	writeProto(w, resp)
 }
 
 func hasField(m map[string]json.RawMessage, keys ...string) bool {
@@ -914,6 +985,54 @@ func (s *Server) proxyTeamCabinet(w http.ResponseWriter, r *http.Request, u *aut
 func countersDown(err error) bool {
 	c := status.Code(err)
 	return c == codes.Unavailable || c == codes.DeadlineExceeded
+}
+
+// proxyKeysSpend reads the spend of every active key the user may see in one
+// browser request, at most maxSpendReads at a time against the gateway. Caps
+// come from GetSpend itself, so a wildcard cap counts like a key's own.
+func (s *Server) proxyKeysSpend(w http.ResponseWriter, r *http.Request, u *auth.User) {
+	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
+	defer cancel()
+	resp, err := s.admin.ListAPIKeys(ctx, &pb.ListAPIKeysRequest{})
+	if err != nil {
+		backendErr(w, err)
+		return
+	}
+	keys := resp.Keys
+	if !u.CanReadGlobal() {
+		keys = keysOfTeam(keys, u.TeamID)
+	}
+	out := map[string]any{}
+	sem := make(chan struct{}, maxSpendReads)
+	var (
+		wg sync.WaitGroup
+		mu sync.Mutex
+	)
+	for _, k := range keys {
+		if k.Disabled {
+			continue
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			spend, err := s.admin.GetSpend(ctx, &pb.GetSpendRequest{SubjectType: "key", SubjectId: k.Name})
+			var row any = map[string]any{"error": "unavailable"}
+			if err == nil {
+				if v, encErr := protoValue(spend); encErr == nil {
+					row = v
+				}
+			} else {
+				log.Warn().Err(err).Str("key", k.Name).Msg("key spend unavailable")
+			}
+			mu.Lock()
+			out[k.Name] = row
+			mu.Unlock()
+		}()
+	}
+	wg.Wait()
+	writeJSON(w, http.StatusOK, map[string]any{"keys": out})
 }
 
 // maxSpendReads bounds the GetTeamSpend calls one Usage page load can cause.

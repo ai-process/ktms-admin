@@ -5,8 +5,8 @@
 set -eu
 
 cd "$(dirname "$0")/.."
-# The tested pair: main until 1.0 is tagged, then the release tags, so a pull
-# request is not failed by an unrelated upstream change. The daily run uses main.
+# The tested pair comes from e2e.refs, so a pull request is not failed by an
+# unrelated upstream change. The daily run uses main.
 . ./scripts/e2e.refs
 KTMS_REF=${KTMS_REF:-$E2E_KTMS_REF}
 TOKENMETER_REF=${TOKENMETER_REF:-$E2E_TOKENMETER_REF}
@@ -134,6 +134,15 @@ api GET /api/proxy/keys | jq -e '.keys | map(.name) | index("e2e-client")' >/dev
 api PUT /api/proxy/spend-limits '{"subjectType":"key","subjectId":"e2e-client","period":"day","limitNanousd":"5000000000"}' >/dev/null ||
 	fail "set spend limit"
 api GET /api/proxy/spend-limits | jq -e '.spend_limits | map(.subject_id) | index("e2e-client")' >/dev/null || fail "spend limit not listed: $(api GET /api/proxy/spend-limits)"
+api PUT /api/proxy/keys/e2e-client/policy '{"allowedModels":["mock-gpt"],"rpmLimit":60,"tpmLimit":"100000"}' >/dev/null || fail "set key policy"
+api GET /api/proxy/keys | jq -e '.keys[] | select(.name == "e2e-client") | .policy.rpm_limit == 60 and .policy.allowed_models == ["mock-gpt"]' >/dev/null ||
+	fail "key policy not listed: $(api GET /api/proxy/keys)"
+i=0
+until api GET /api/proxy/key-spend 2>/dev/null | jq -e '.keys["e2e-client"].windows[] | select(.period == "day") | .limit_nanousd == "5000000000"' >/dev/null; do
+	i=$((i + 1))
+	[ "$i" -gt 15 ] && fail "spend of the key: $(api GET /api/proxy/key-spend)"
+	sleep 1
+done
 ORG=$(api POST /api/proxy/organizations '{"name":"e2e-org"}' | jq -r .organization.id) || true
 [ -n "$ORG" ] && [ "$ORG" != null ] || fail "create organization"
 api POST /api/proxy/teams '{"orgId":"'"$ORG"'","name":"e2e-team","monthlyBudgetUsd":10,"allowedModels":["mock-gpt"]}' >/dev/null || fail "create team"
@@ -141,7 +150,7 @@ api GET /api/proxy/teams | jq -e '.teams | map(.name) | index("e2e-team")' >/dev
 api DELETE /api/proxy/keys/e2e-client >/dev/null || fail "revoke client key"
 api GET /api/proxy/keys | jq -e '.keys | map(select(.name == "e2e-client" and (.disabled | not))) | length == 0' >/dev/null ||
 	fail "the revoked key is still active: $(api GET /api/proxy/keys)"
-echo "e2e: keys, spend limits, organizations and teams work"
+echo "e2e: keys, key policies, spend limits and spend, organizations and teams work"
 
 # Before the call: a run that crosses midnight UTC still finds the event.
 SINCE=$(date -u +%F)
