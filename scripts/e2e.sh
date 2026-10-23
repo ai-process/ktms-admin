@@ -1,6 +1,6 @@
 #!/bin/sh
 # End-to-end check of the console against KTMS and light-tokenmeter built
-# from their main branches (or KTMS_REF / TOKENMETER_REF), with
+# from the refs in e2e.refs (or KTMS_REF / TOKENMETER_REF), with
 # light-tokenmeter's authentication on and a mock vendor.
 set -eu
 

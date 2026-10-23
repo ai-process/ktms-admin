@@ -32,20 +32,8 @@ jobs:
         with:
           setup_only: true
           version: 1.69.0
-      - name: proto/ktms/v1 matches KTMS
-        run: |
-          . ./scripts/e2e.refs
-          for f in admin gateway node; do
-            curl -fsSL "https://raw.githubusercontent.com/ai-process/ktms/$E2E_KTMS_REF/proto/ktms/v1/$f.proto" | diff -u - "proto/ktms/v1/$f.proto" ||
-              { echo "::error::proto/ktms/v1/$f.proto differs from KTMS at $E2E_KTMS_REF: copy it over and run make proto"; exit 1; }
-          done
-      - name: internal/gen matches proto/
-        run: |
-          buf generate
-          if [ -n "$(git status --porcelain -- internal/gen)" ]; then
-            git status --short -- internal/gen
-            echo "::error::internal/gen is stale: run make proto and commit"; exit 1
-          fi
+      - name: proto/ktms/v1 matches KTMS, internal/gen matches the copy
+        run: ./scripts/proto-check.sh
 
   # The console against KTMS and light-tokenmeter built from the refs in
   # scripts/e2e.refs, with light-tokenmeter's authentication on: README "Compatibility".
