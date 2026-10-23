@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  # KTMS and light-tokenmeter main move on their own; a daily e2e run notices.
+  schedule:
+    - cron: "23 5 * * *"
 
 jobs:
   test:
@@ -21,6 +24,15 @@ jobs:
         run: go test -race ./...
       - name: Check JavaScript syntax
         run: for f in internal/web/static/js/*.js internal/web/static/js/pages/*.js internal/web/static/vendor/*.mjs; do node --check "$f"; done
+
+  # The console against KTMS and light-tokenmeter built from main, with
+  # light-tokenmeter's authentication on: README "Compatibility".
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: End-to-end with KTMS and light-tokenmeter
+        run: ./scripts/e2e.sh
 
   docker:
     runs-on: ubuntu-latest
