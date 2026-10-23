@@ -223,7 +223,7 @@ The console shows only the pages whose backend you configured.
 | You set | You get |
 | --- | --- |
 | `TOKENMETER_URL` (+ `TOKENMETER_TOKEN` when light-tokenmeter has auth on) | **Usage** page. Nothing else. |
-| `KTMS_ADDR` + `KTMS_ADMIN_KEY` | **Models, Rules, Keys, Nodes, Playground, Judge**. |
+| `KTMS_ADDR` + `KTMS_ADMIN_KEY` | **Models, Rules, Limits, Keys, Tenants, Team, Nodes, Playground, Judge**. |
 | both | Everything, plus **estimated cost** on the usage page (tokens × the prices on your models; estimates use standard in/out prices and do not account for peak or batch rates). |
 
 The sidebar shows a green or red dot per backend, so a wrong address or a revoked key is visible at once:
@@ -248,7 +248,7 @@ All settings are environment variables; see [`env.example`](env.example).
 | `AUTH_HEADER_EMAIL` | `X-Forwarded-Email` | The header the proxy names the user's e-mail in. |
 | `AUTH_HEADER_NAME` | empty | Optional header with the user's display name. |
 | `CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD` | empty | Turn on [Cloudflare Access](#sign-in-behind-an-access-proxy) sign-in. |
-| `ALLOWED_EMAILS` | – | Admin patterns. At least one of the two lists must be non-empty. |
+| `ALLOWED_EMAILS` | – | Admin patterns. At least one of `ALLOWED_EMAILS`, `VIEWER_EMAILS` or `TEAM_MEMBERSHIPS` must be non-empty. |
 | `VIEWER_EMAILS` | empty | Read-only patterns. |
 | `TEAM_MEMBERSHIPS` | empty | Team workspaces: `email:team_id[:teamlead\|member[:org_id]]`, see [Who may sign in](#who-may-sign-in). |
 | `DEV_USER_ROLE`, `DEV_USER_TEAM_ID`, `DEV_USER_ORG_ID` | admin | With `INSECURE_NO_AUTH`: the role and team of the local dev user. |
