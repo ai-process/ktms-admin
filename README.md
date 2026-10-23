@@ -363,7 +363,9 @@ make proto   # regenerate internal/gen from proto/ (needs buf)
 `js/lib.js` (shared components), `js/pages/*` (one module per page), and `vendor/` (Preact 10 and htm 3,
 unmodified except that hooks import `./preact.mjs`). Restart the server after editing them: they are embedded
 at build time. `proto/` is a copy of KTMS's
-protocol, so the console talks to it over gRPC without importing its code.
+protocol, so the console talks to it over gRPC without importing its code. CI fails when the copy differs
+from KTMS at the ref in `scripts/e2e.refs`, or `internal/gen` from the copy: copy the files over and run
+`make proto`.
 
 Layout: `cmd/ktms-admin` (entrypoint), `internal/auth` (sessions, allowlists, sign-in page; one package per sign-in method below it),
 `internal/api` (JSON API and guards), `internal/usage` (light-tokenmeter client and the greedy/worthy

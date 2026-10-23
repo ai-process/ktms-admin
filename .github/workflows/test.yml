@@ -22,8 +22,21 @@ jobs:
       - name: Check JavaScript syntax
         run: for f in internal/web/static/js/*.js internal/web/static/js/pages/*.js internal/web/static/vendor/*.mjs; do node --check "$f"; done
 
-  # The console against KTMS and light-tokenmeter built from main, with
-  # light-tokenmeter's authentication on: README "Compatibility".
+  # KTMS owns ktms.v1: the copy here must match it at the ref the e2e test
+  # runs against, and internal/gen must be generated from the copy.
+  proto:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: bufbuild/buf-action@v1
+        with:
+          setup_only: true
+          version: 1.69.0
+      - name: proto/ktms/v1 matches KTMS, internal/gen matches the copy
+        run: ./scripts/proto-check.sh
+
+  # The console against KTMS and light-tokenmeter built from the refs in
+  # scripts/e2e.refs, with light-tokenmeter's authentication on: README "Compatibility".
   e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 30
