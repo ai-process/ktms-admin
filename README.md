@@ -216,10 +216,10 @@ The console's own `/api` serves its web UI only and is not a public API.
 Before 1.0 there is no compatibility promise: use the pairs above. The Usage page reads
 light-tokenmeter's HTTP summary API, which stays compatible within its 1.x.
 
-`scripts/e2e.sh` checks this on every pull request and daily: it builds KTMS and light-tokenmeter
-from `main` (or `KTMS_REF` / `TOKENMETER_REF`), turns light-tokenmeter's authentication on, and
-drives the console's API through models, rules, vendor keys, client keys, spend limits, tenants, a
-playground call through a mock vendor and its usage report.
+`scripts/e2e.sh` checks this on every pull request, against the KTMS and light-tokenmeter refs in
+`scripts/e2e.refs`, and daily against their `main`: it turns light-tokenmeter's authentication on and
+drives the console's API through models, rules, vendor keys, client keys and their policies, spend
+limits and spend, tenants, a playground call through a mock vendor and its usage report.
 
 ## Running with one backend or both
 
