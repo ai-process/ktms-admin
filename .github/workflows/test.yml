@@ -22,8 +22,33 @@ jobs:
       - name: Check JavaScript syntax
         run: for f in internal/web/static/js/*.js internal/web/static/js/pages/*.js internal/web/static/vendor/*.mjs; do node --check "$f"; done
 
-  # The console against KTMS and light-tokenmeter built from main, with
-  # light-tokenmeter's authentication on: README "Compatibility".
+  # KTMS owns ktms.v1: the copy here must match it at the ref the e2e test
+  # runs against, and internal/gen must be generated from the copy.
+  proto:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: bufbuild/buf-action@v1
+        with:
+          setup_only: true
+          version: 1.69.0
+      - name: proto/ktms/v1 matches KTMS
+        run: |
+          . ./scripts/e2e.refs
+          for f in admin gateway node; do
+            curl -fsSL "https://raw.githubusercontent.com/ai-process/ktms/$E2E_KTMS_REF/proto/ktms/v1/$f.proto" | diff -u - "proto/ktms/v1/$f.proto" ||
+              { echo "::error::proto/ktms/v1/$f.proto differs from KTMS at $E2E_KTMS_REF: copy it over and run make proto"; exit 1; }
+          done
+      - name: internal/gen matches proto/
+        run: |
+          buf generate
+          if [ -n "$(git status --porcelain -- internal/gen)" ]; then
+            git status --short -- internal/gen
+            echo "::error::internal/gen is stale: run make proto and commit"; exit 1
+          fi
+
+  # The console against KTMS and light-tokenmeter built from the refs in
+  # scripts/e2e.refs, with light-tokenmeter's authentication on: README "Compatibility".
   e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 30
