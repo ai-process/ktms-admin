@@ -27,6 +27,7 @@ services:
     image: coyl/ktms:latest
     depends_on: { db: { condition: service_healthy } }
     environment:
+      # The database keeps its llm-proxy-era name, so existing volumes keep their data.
       DATABASE_URL: postgres://postgres:${DB_PASSWORD:-postgres}@db:5432/llmproxy?sslmode=disable
       KTMS_ENCRYPTION_KEYS: "${KTMS_ENCRYPTION_KEYS:?set KTMS_ENCRYPTION_KEYS in .env, see env.example}"
       BOOTSTRAP_ADMIN_KEY: ${BOOTSTRAP_ADMIN_KEY:-}
