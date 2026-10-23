@@ -22,6 +22,16 @@ jobs:
       - name: Check JavaScript syntax
         run: for f in internal/web/static/js/*.js internal/web/static/js/pages/*.js internal/web/static/vendor/*.mjs; do node --check "$f"; done
 
+  # The console against KTMS and light-tokenmeter built from main, with
+  # light-tokenmeter's authentication on: README "Compatibility".
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: End-to-end with KTMS and light-tokenmeter
+        run: ./scripts/e2e.sh
+
   docker:
     runs-on: ubuntu-latest
     steps:
