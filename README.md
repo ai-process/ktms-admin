@@ -261,6 +261,7 @@ All settings are environment variables; see [`env.example`](env.example).
 | `SESSION_TTL` | `12h` | Session lifetime. |
 | `KTMS_ADDR` | empty | `host:port` of the KTMS gateway's gRPC endpoint. (`LLM_PROXY_ADDR` still works, deprecated.) |
 | `KTMS_ADMIN_KEY` | – | Key with the `admin` scope. Required with `KTMS_ADDR`. (`LLM_PROXY_ADMIN_KEY` still works, deprecated.) |
+| `KTMS_READ_KEY` | empty | Optional key with the `admin:read` scope (Keystone 1.2+). Admin API reads and every call of a viewer go with it, so they cannot change Keystone; changes keep `KTMS_ADMIN_KEY`. The sidebar shows whether each key is accepted for its job. |
 | `KTMS_TLS` | `false` | Use TLS to reach the gateway. (`LLM_PROXY_TLS` still works, deprecated.) |
 | `TOKENMETER_URL` | empty | Base URL of light-tokenmeter's HTTP port. |
 | `TOKENMETER_TOKEN` | empty | Bearer token for light-tokenmeter with the `read` scope, when its authentication is on. A missing or refused token marks the usage dot "refused" and names the setting. |
@@ -335,7 +336,8 @@ shows its spend this month against the budget and its keys.
 ## Security model
 
 - The console holds the gateway's admin key **on the server**; it never reaches the browser, and vendor keys are
-  write-only.
+  write-only. With `KTMS_READ_KEY` (scope `admin:read`) every read and everything a viewer does goes with a key
+  that cannot change Keystone, so a viewer stays read-only even if a route's role check were wrong.
 - Session cookies are signed (HMAC-SHA256), `HttpOnly`, `SameSite=Lax` and `Secure` over HTTPS. They carry
   only name, e-mail, sign-in method and expiry; the role is recomputed from the allowlists on every request,
   and turning a sign-in method off ends its sessions.

@@ -55,8 +55,8 @@ func New(cfg *config.Config, a *auth.Handler) (*Server, func(), error) {
 			creds = nil
 		}
 		opts := []grpc.DialOption{
-			grpc.WithUnaryInterceptor(attachKey(cfg.ProxyAdminKey)),
-			grpc.WithStreamInterceptor(attachStreamKey(cfg.ProxyAdminKey)),
+			grpc.WithUnaryInterceptor(attachKey(s.keyFor)),
+			grpc.WithStreamInterceptor(attachStreamKey(s.keyFor)),
 		}
 		if creds == nil {
 			opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -81,18 +81,43 @@ func New(cfg *config.Config, a *auth.Handler) (*Server, func(), error) {
 	return s, closer, nil
 }
 
-func attachKey(key string) grpc.UnaryClientInterceptor {
+func attachKey(key func(context.Context, string) string) grpc.UnaryClientInterceptor {
 	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, inv grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-		ctx = metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+key)
+		ctx = metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+key(ctx, method))
 		return inv(ctx, method, req, reply, cc, opts...)
 	}
 }
 
-func attachStreamKey(key string) grpc.StreamClientInterceptor {
+func attachStreamKey(key func(context.Context, string) string) grpc.StreamClientInterceptor {
 	return func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
-		ctx = metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+key)
+		ctx = metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+key(ctx, method))
 		return streamer(ctx, desc, cc, method, opts...)
 	}
+}
+
+type viewerCtx struct{}
+type keyCtx struct{}
+
+// keyFor picks the Keystone key for a call. With KTMS_READ_KEY set, Admin API
+// reads and anything a viewer does go with it, so a read or a viewer can
+// change nothing even if a route's guard were wrong.
+func (s *Server) keyFor(ctx context.Context, method string) string {
+	if k, ok := ctx.Value(keyCtx{}).(string); ok {
+		return k
+	}
+	if s.cfg.ProxyReadKey == "" {
+		return s.cfg.ProxyAdminKey
+	}
+	if ctx.Value(viewerCtx{}) != nil || readMethod(method) {
+		return s.cfg.ProxyReadKey
+	}
+	return s.cfg.ProxyAdminKey
+}
+
+// readMethod is an Admin API call that admin:read allows.
+func readMethod(method string) bool {
+	name, ok := strings.CutPrefix(method, "/ktms.v1.AdminService/")
+	return ok && (strings.HasPrefix(name, "Get") || strings.HasPrefix(name, "List") || name == "ExplainRoute")
 }
 
 func (s *Server) Handler() http.Handler {
@@ -233,6 +258,9 @@ func (s *Server) guard(pol policy, h handler) http.HandlerFunc {
 				return
 			}
 		}
+		if u.IsViewer() {
+			r = r.WithContext(context.WithValue(r.Context(), viewerCtx{}, true))
+		}
 		defer func() {
 			if rec := recover(); rec != nil {
 				log.Error().Interface("panic", rec).Str("path", r.URL.Path).Msg("handler panic")
@@ -340,7 +368,51 @@ type backendStatus struct {
 	OK      bool   `json:"ok"`
 	Error   string `json:"error,omitempty"`
 	// Auth marks a refused key or token, so the console does not call a running backend down.
-	Auth bool `json:"auth,omitempty"`
+	Auth bool        `json:"auth,omitempty"`
+	Keys []keyStatus `json:"keys,omitempty"`
+}
+
+// keyStatus says whether Keystone takes one of the console's keys for what
+// the console uses it for.
+type keyStatus struct {
+	Name  string `json:"name"` // KTMS_ADMIN_KEY or KTMS_READ_KEY
+	OK    bool   `json:"ok"`
+	Error string `json:"error,omitempty"`
+}
+
+// checkKeys probes each key without changing anything: MintAPIKey with no
+// name fails validation after the scope check, so its error tells whether the
+// key may write.
+func (s *Server) checkKeys(ctx context.Context) []keyStatus {
+	mayWrite := func(key string) (bool, error) {
+		_, err := s.admin.MintAPIKey(context.WithValue(ctx, keyCtx{}, key), &pb.MintAPIKeyRequest{})
+		switch status.Code(err) {
+		case codes.InvalidArgument, codes.OK:
+			return true, nil
+		case codes.PermissionDenied:
+			return false, nil
+		}
+		return false, err
+	}
+	admin := keyStatus{Name: "KTMS_ADMIN_KEY", OK: true}
+	if w, err := mayWrite(s.cfg.ProxyAdminKey); err != nil {
+		admin.OK, admin.Error = false, status.Convert(err).Message()
+	} else if !w {
+		admin.OK, admin.Error = false, "the key cannot change Keystone: it needs the admin scope"
+	}
+	out := []keyStatus{admin}
+	if s.cfg.ProxyReadKey == "" {
+		return out
+	}
+	read := keyStatus{Name: "KTMS_READ_KEY", OK: true}
+	if _, err := s.admin.ListAPIKeys(context.WithValue(ctx, keyCtx{}, s.cfg.ProxyReadKey), &pb.ListAPIKeysRequest{}); err != nil {
+		read.OK, read.Error = false, status.Convert(err).Message()
+	} else if w, err := mayWrite(s.cfg.ProxyReadKey); err != nil {
+		read.OK, read.Error = false, status.Convert(err).Message()
+	} else if w {
+		read.OK, read.Error = false, "the key can change Keystone: mint one with only the admin:read scope"
+	}
+	return append(out, read)
 }
 
 func (s *Server) health(w http.ResponseWriter, r *http.Request, _ *auth.User) {
@@ -353,6 +425,12 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request, _ *auth.User) {
 			st.OK, st.Error = false, status.Convert(err).Message()
 			c := status.Code(err)
 			st.Auth = c == codes.Unauthenticated || c == codes.PermissionDenied
+		}
+		if st.OK || st.Auth {
+			st.Keys = s.checkKeys(ctx)
+			for _, k := range st.Keys {
+				st.OK, st.Auth = st.OK && k.OK, st.Auth || !k.OK
+			}
 		}
 		out["proxy"] = st
 	}

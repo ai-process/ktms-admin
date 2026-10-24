@@ -90,6 +90,8 @@ code, .mono { font-family: var(--mono); font-size: 13px; }
 .side .grow { flex: 1; }
 .health { display: flex; flex-direction: column; gap: 8px; padding: 12px 10px; border: 1px solid var(--line); border-radius: 10px; font-size: 13px; }
 .health div { display: flex; align-items: center; gap: 8px; }
+.health .key { padding-left: 14px; font-size: 12px; }
+.health .key code { font-size: 11px; }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
 .dot.ok { background: var(--ok); } .dot.bad { background: var(--bad); }
 .who { display: flex; align-items: center; gap: 10px; padding: 4px 6px; font-size: 13px; }
