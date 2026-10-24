@@ -6,6 +6,12 @@ Notable changes to ktms-admin. The format follows
 
 ## [Unreleased]
 
+### Added
+- `KTMS_READ_KEY`: an optional Keystone key with the `admin:read` scope (Keystone 1.2+). Admin API
+  reads and every call of a viewer go with it; changes keep `KTMS_ADMIN_KEY`. The sidebar's
+  health shows whether each key is accepted for its job: the admin key may change Keystone, the
+  read key may read and nothing more.
+
 ## [1.0.0] - 2026-10-23
 
 The first stable release, paired with Keystone. The Model Switchboard. (KTMS) 1.0: ktms-admin

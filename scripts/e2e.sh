@@ -97,12 +97,12 @@ docker run -d --name "$P-ktms" --network "$NET" \
 	-e BOOTSTRAP_ADMIN_KEY="$BOOTSTRAP" -e REDIS_ADDR="$P-redis:6379" -e ROUTING_RELOAD_SECONDS=1 \
 	-e USAGE_COLLECTOR_HOST="$P-tm:9090" -e USAGE_COLLECTOR_TOKEN="$W" "$P-ktms-img" >/dev/null
 
-# run_console KEY TOKEN starts the console on localhost only, without sign-in.
+# run_console KEY TOKEN [READ_KEY] starts the console on localhost only, without sign-in.
 run_console() {
 	docker rm -f "$P-admin" >/dev/null 2>&1 || true
 	docker run -d --name "$P-admin" --network "$NET" -p "127.0.0.1:$ADMIN_PORT:8080" \
 		-e PUBLIC_URL="$CONSOLE" -e INSECURE_NO_AUTH=true \
-		-e KTMS_ADDR="$P-ktms:9090" -e KTMS_ADMIN_KEY="$1" \
+		-e KTMS_ADDR="$P-ktms:9090" -e KTMS_ADMIN_KEY="$1" -e KTMS_READ_KEY="${3:-}" \
 		-e TOKENMETER_URL="http://$P-tm:8080" -e TOKENMETER_TOKEN="$2" "$P-admin-img" >/dev/null
 	wait_for "$CONSOLE/healthz"
 }
@@ -171,6 +171,31 @@ until api GET "/api/usage?from=$SINCE&to=$DAY&group=model" | jq -e '(.report.gro
 	sleep 1
 done
 echo "e2e: the call's usage went KTMS -> light-tokenmeter (write token) -> console (read token)"
+
+# Keystone 1.2 knows admin:read; an older one refuses the scope as unknown,
+# and only then is this part skipped.
+if READ_KEY=$(api POST /api/proxy/keys '{"name":"console-read","scopes":["admin:read"]}' 2>"$WORK/read-key.err" | jq -er .plain_key); then
+	# A bogus read key breaks reads and not changes: reads carry KTMS_READ_KEY.
+	run_console "$CONSOLE_KEY" "$R" "ktms_not_a_key"
+	if api GET /api/proxy/config >/dev/null 2>&1; then fail "a read did not go with KTMS_READ_KEY"; fi
+	api PUT /api/proxy/rules '{"rules":[{"name":"catch-all","priority":10,"use":["mock-gpt"],"enabled":true}]}' >/dev/null ||
+		fail "a change went with KTMS_READ_KEY"
+	run_console "$CONSOLE_KEY" "$R" "$READ_KEY"
+	api GET /api/health | jq -e '.proxy.ok and (.proxy.keys | length == 2) and all(.proxy.keys[]; .ok)' >/dev/null ||
+		fail "health with both keys: $(api GET /api/health)"
+	api GET /api/proxy/config | jq -e '.models | map(.id) | index("mock-gpt")' >/dev/null || fail "a read with KTMS_READ_KEY"
+	api PUT /api/proxy/rules '{"rules":[{"name":"catch-all","priority":10,"use":["mock-gpt"],"enabled":true}]}' >/dev/null ||
+		fail "a change with KTMS_ADMIN_KEY next to a read key"
+	# The read key as the admin key: the console sees it cannot change anything.
+	run_console "$READ_KEY" "$R"
+	api GET /api/health | jq -e '.proxy.ok == false and .proxy.auth == true' >/dev/null ||
+		fail "a read key as KTMS_ADMIN_KEY was not reported: $(api GET /api/health)"
+	echo "e2e: reads go with KTMS_READ_KEY, changes with KTMS_ADMIN_KEY, and a wrong key is reported"
+elif grep -q 'unknown scope' "$WORK/read-key.err"; then
+	echo "e2e: ktms@$KTMS_REF has no admin:read scope; KTMS_READ_KEY not tested"
+else
+	fail "minting a read key: $(cat "$WORK/read-key.err")"
+fi
 
 # A token without the read scope must show as refused, not as down.
 run_console "$CONSOLE_KEY" "$W"

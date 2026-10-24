@@ -39,6 +39,10 @@ type Server struct {
 	data  pb.GatewayServiceClient
 	usage *usage.Client
 
+	keyMu     sync.Mutex
+	keyStatus []keyStatus
+	keyAt     time.Time
+
 	priceMu    sync.Mutex
 	prices     map[string]usage.Price
 	pricesAt   time.Time
@@ -55,8 +59,8 @@ func New(cfg *config.Config, a *auth.Handler) (*Server, func(), error) {
 			creds = nil
 		}
 		opts := []grpc.DialOption{
-			grpc.WithUnaryInterceptor(attachKey(cfg.ProxyAdminKey)),
-			grpc.WithStreamInterceptor(attachStreamKey(cfg.ProxyAdminKey)),
+			grpc.WithUnaryInterceptor(attachKey(s.keyFor)),
+			grpc.WithStreamInterceptor(attachStreamKey(s.keyFor)),
 		}
 		if creds == nil {
 			opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -81,19 +85,51 @@ func New(cfg *config.Config, a *auth.Handler) (*Server, func(), error) {
 	return s, closer, nil
 }
 
-func attachKey(key string) grpc.UnaryClientInterceptor {
+func attachKey(key func(context.Context, string) string) grpc.UnaryClientInterceptor {
 	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, inv grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-		ctx = metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+key)
+		ctx = metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+key(ctx, method))
 		return inv(ctx, method, req, reply, cc, opts...)
 	}
 }
 
-func attachStreamKey(key string) grpc.StreamClientInterceptor {
+func attachStreamKey(key func(context.Context, string) string) grpc.StreamClientInterceptor {
 	return func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
-		ctx = metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+key)
+		ctx = metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+key(ctx, method))
 		return streamer(ctx, desc, cc, method, opts...)
 	}
 }
+
+type viewerCtx struct{}
+type keyCtx struct{}
+
+// keyFor picks the Keystone key for a call. With KTMS_READ_KEY set, Admin API
+// reads and anything a viewer does go with it, so a read or a viewer can
+// change nothing even if a route's guard were wrong.
+func (s *Server) keyFor(ctx context.Context, method string) string {
+	if k, ok := ctx.Value(keyCtx{}).(string); ok {
+		return k
+	}
+	if s.cfg.ProxyReadKey == "" {
+		return s.cfg.ProxyAdminKey
+	}
+	if ctx.Value(viewerCtx{}) != nil || readMethod(method) {
+		return s.cfg.ProxyReadKey
+	}
+	return s.cfg.ProxyAdminKey
+}
+
+// readMethods are the Admin API calls Keystone lets admin:read make. Listed,
+// not guessed from names, so a new RPC goes with the admin key until added.
+var readMethods = map[string]bool{
+	pb.AdminService_GetConfig_FullMethodName: true, pb.AdminService_ListAPIKeys_FullMethodName: true,
+	pb.AdminService_ListNodeKeys_FullMethodName: true, pb.AdminService_ListNodes_FullMethodName: true,
+	pb.AdminService_ListUserRateLimits_FullMethodName: true, pb.AdminService_ListSpendLimits_FullMethodName: true,
+	pb.AdminService_ListOrganizations_FullMethodName: true, pb.AdminService_GetTeam_FullMethodName: true,
+	pb.AdminService_ListTeams_FullMethodName: true, pb.AdminService_GetTeamSpend_FullMethodName: true,
+	pb.AdminService_GetSpend_FullMethodName: true, "/ktms.v1.AdminService/ExplainRoute": true,
+}
+
+func readMethod(method string) bool { return readMethods[method] }
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
@@ -233,6 +269,9 @@ func (s *Server) guard(pol policy, h handler) http.HandlerFunc {
 				return
 			}
 		}
+		if u.IsViewer() {
+			r = r.WithContext(context.WithValue(r.Context(), viewerCtx{}, true))
+		}
 		defer func() {
 			if rec := recover(); rec != nil {
 				log.Error().Interface("panic", rec).Str("path", r.URL.Path).Msg("handler panic")
@@ -313,7 +352,7 @@ func backendErr(w http.ResponseWriter, err error) {
 	}
 	msg := st.Message()
 	if st.Code() == codes.Unauthenticated || st.Code() == codes.PermissionDenied {
-		msg = "the KTMS gateway rejected the console's admin key: " + msg
+		msg = "the KTMS gateway rejected the console's key (KTMS_ADMIN_KEY, or KTMS_READ_KEY for reads when it is set): " + msg
 	}
 	if st.Code() == codes.Unavailable {
 		msg = "the KTMS gateway is unreachable: " + msg
@@ -340,29 +379,124 @@ type backendStatus struct {
 	OK      bool   `json:"ok"`
 	Error   string `json:"error,omitempty"`
 	// Auth marks a refused key or token, so the console does not call a running backend down.
-	Auth bool `json:"auth,omitempty"`
+	Auth bool        `json:"auth,omitempty"`
+	Keys []keyStatus `json:"keys,omitempty"`
+}
+
+// keyStatus says whether Keystone takes one of the console's keys for what
+// the console uses it for.
+type keyStatus struct {
+	Name    string `json:"name"` // KTMS_ADMIN_KEY or KTMS_READ_KEY
+	OK      bool   `json:"ok"`
+	Refused bool   `json:"refused,omitempty"` // Keystone answered; the key is wrong for its job
+	Error   string `json:"error,omitempty"`
+}
+
+// keyCheckTTL spaces the key probes: each one is a refused call in
+// Keystone's log, and a key's scopes rarely change.
+const keyCheckTTL = time.Minute
+
+// checkKeys probes each key without changing anything: MintAPIKey with no
+// name and an unknown scope fails validation after the scope check, so its
+// code tells whether the key may write. The probes run on their own context.
+func (s *Server) checkKeys() []keyStatus {
+	s.keyMu.Lock()
+	defer s.keyMu.Unlock()
+	if s.keyStatus != nil && time.Since(s.keyAt) < keyCheckTTL {
+		return s.keyStatus
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	probe := func(name, key string, wantWrite bool) keyStatus {
+		st := keyStatus{Name: name, OK: true}
+		kctx := context.WithValue(ctx, keyCtx{}, key)
+		if _, err := s.admin.ListAPIKeys(kctx, &pb.ListAPIKeysRequest{}); err != nil {
+			return failed(st, err)
+		}
+		_, err := s.admin.MintAPIKey(kctx, &pb.MintAPIKeyRequest{Scopes: []string{"-"}})
+		switch status.Code(err) {
+		case codes.InvalidArgument:
+			if !wantWrite {
+				st.OK, st.Refused, st.Error = false, true, "the key can change Keystone: mint one with only the admin:read scope"
+			}
+		case codes.PermissionDenied:
+			if wantWrite {
+				st.OK, st.Refused, st.Error = false, true, "the key cannot change Keystone: it needs the admin scope"
+			}
+		case codes.OK:
+			log.Error().Str("key", name).Msg("Keystone accepted an invalid MintAPIKey probe")
+			st.OK, st.Error = false, "Keystone accepted an invalid key request"
+		default:
+			return failed(st, err)
+		}
+		return st
+	}
+	var wg sync.WaitGroup
+	out := []keyStatus{{}}
+	if s.cfg.ProxyReadKey != "" {
+		out = append(out, keyStatus{})
+		wg.Add(1)
+		go func() { defer wg.Done(); out[1] = probe("KTMS_READ_KEY", s.cfg.ProxyReadKey, false) }()
+	}
+	out[0] = probe("KTMS_ADMIN_KEY", s.cfg.ProxyAdminKey, true)
+	wg.Wait()
+	s.keyStatus, s.keyAt = out, time.Now()
+	return out
+}
+
+func failed(st keyStatus, err error) keyStatus {
+	c := status.Code(err)
+	st.OK, st.Error = false, status.Convert(err).Message()
+	st.Refused = c == codes.Unauthenticated || c == codes.PermissionDenied
+	return st
 }
 
 func (s *Server) health(w http.ResponseWriter, r *http.Request, _ *auth.User) {
 	ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
 	defer cancel()
 	out := map[string]backendStatus{"proxy": {}, "usage": {}}
+	var wg sync.WaitGroup
+	var proxy, use backendStatus
 	if s.admin != nil {
-		st := backendStatus{Enabled: true, OK: true}
-		if _, err := s.admin.ListAPIKeys(ctx, &pb.ListAPIKeysRequest{}); err != nil {
-			st.OK, st.Error = false, status.Convert(err).Message()
-			c := status.Code(err)
-			st.Auth = c == codes.Unauthenticated || c == codes.PermissionDenied
-		}
-		out["proxy"] = st
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			proxy = backendStatus{Enabled: true, OK: true}
+			if _, err := s.admin.ListAPIKeys(ctx, &pb.ListAPIKeysRequest{}); err != nil {
+				k := failed(keyStatus{}, err)
+				proxy.OK, proxy.Error, proxy.Auth = false, k.Error, k.Refused
+			}
+			if !proxy.OK && !proxy.Auth {
+				return // down: the keys cannot be judged
+			}
+			proxy.Keys = s.checkKeys()
+			for _, k := range proxy.Keys {
+				if !k.OK {
+					proxy.OK, proxy.Auth = false, proxy.Auth || k.Refused
+					if proxy.Error == "" {
+						proxy.Error = k.Name + ": " + k.Error
+					}
+				}
+			}
+		}()
 	}
 	if s.usage != nil {
-		st := backendStatus{Enabled: true, OK: true}
-		if err := s.usage.Ready(ctx); err != nil {
-			var authErr *usage.AuthError
-			st.OK, st.Error, st.Auth = false, err.Error(), errors.As(err, &authErr)
-		}
-		out["usage"] = st
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			use = backendStatus{Enabled: true, OK: true}
+			if err := s.usage.Ready(ctx); err != nil {
+				var authErr *usage.AuthError
+				use.OK, use.Error, use.Auth = false, err.Error(), errors.As(err, &authErr)
+			}
+		}()
+	}
+	wg.Wait()
+	if s.admin != nil {
+		out["proxy"] = proxy
+	}
+	if s.usage != nil {
+		out["usage"] = use
 	}
 	writeJSON(w, http.StatusOK, out)
 }

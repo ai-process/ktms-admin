@@ -67,8 +67,9 @@ function Health() {
   const [h, setH] = useState(session.health);
   useEffect(() => { api('GET', '/api/health').then((x) => { session.health = x; setH(x); }).catch(() => {}); }, []);
   const row = (label, st) => st?.enabled && html`<div title=${st.error || 'reachable'}><span class=${cx('dot', st.ok ? 'ok' : 'bad')}></span>${label}${!st.ok && html`<span class="small err-text">${st.auth ? 'refused' : 'down'}</span>`}</div>`;
+  const keyRow = (k) => html`<div class="key" title=${k.error || 'accepted'}><span class=${cx('dot', k.ok ? 'ok' : 'bad')}></span><code>${k.name}</code>${!k.ok && html`<span class="small err-text">${k.refused ? 'refused' : 'unchecked'}</span>`}</div>`;
   if (!h || (!h.proxy?.enabled && !h.usage?.enabled)) return null;
-  return html`<div class="health" aria-label="Backends">${row('KTMS gateway', h.proxy)}${row('Tokenmeter', h.usage)}</div>`;
+  return html`<div class="health" aria-label="Backends">${row('KTMS gateway', h.proxy)}${h.proxy?.keys?.map(keyRow)}${row('Tokenmeter', h.usage)}</div>`;
 }
 
 function RoleBadge({ role }) {
