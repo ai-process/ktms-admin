@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"sync"
 	"testing"
 
 	"google.golang.org/grpc"
@@ -20,10 +21,18 @@ type scopedAdmin struct {
 	key   func(context.Context, string) string
 	admin string
 	read  string
+	mu    sync.Mutex        // the health probes call concurrently
 	used  map[string]string // method → key it carried
+	mints int
+	down  bool
 }
 
 func (f *scopedAdmin) check(ctx context.Context, method string, write bool) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.down {
+		return status.Error(codes.Unavailable, "connection refused")
+	}
 	k := f.key(ctx, method)
 	f.used[method] = k
 	switch {
@@ -45,6 +54,9 @@ func (f *scopedAdmin) ListAPIKeys(ctx context.Context, r *pb.ListAPIKeysRequest,
 }
 
 func (f *scopedAdmin) MintAPIKey(ctx context.Context, r *pb.MintAPIKeyRequest, o ...grpc.CallOption) (*pb.MintAPIKeyResponse, error) {
+	f.mu.Lock()
+	f.mints++
+	f.mu.Unlock()
 	if err := f.check(ctx, "/ktms.v1.AdminService/MintAPIKey", true); err != nil {
 		return nil, err
 	}
@@ -141,8 +153,21 @@ func TestHealthChecksBothKeys(t *testing.T) {
 	}
 
 	// An admin key in KTMS_READ_KEY is reported: it is not read-only.
-	s, _ = scoped(t, "ktms_admin")
-	if st := health(s); st.OK || st.Keys[1].OK {
+	s, sa = scoped(t, "ktms_admin")
+	if st := health(s); st.OK || st.Keys[1].OK || !st.Keys[1].Refused {
 		t.Fatalf("an admin key as the read key: %+v", st)
+	}
+	// The probes are cached: Keystone sees them once a minute, not per page.
+	before := sa.mints
+	health(s)
+	if sa.mints != before {
+		t.Fatalf("keys probed again within %s", keyCheckTTL)
+	}
+
+	// A gateway that is down is down, not a refused key.
+	s, sa = scoped(t, "ktms_read")
+	sa.down = true
+	if st := health(s); st.OK || st.Auth || st.Error == "" {
+		t.Fatalf("a gateway that is down: %+v", st)
 	}
 }

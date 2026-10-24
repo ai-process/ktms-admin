@@ -39,6 +39,10 @@ type Server struct {
 	data  pb.GatewayServiceClient
 	usage *usage.Client
 
+	keyMu     sync.Mutex
+	keyStatus []keyStatus
+	keyAt     time.Time
+
 	priceMu    sync.Mutex
 	prices     map[string]usage.Price
 	pricesAt   time.Time
@@ -114,11 +118,18 @@ func (s *Server) keyFor(ctx context.Context, method string) string {
 	return s.cfg.ProxyAdminKey
 }
 
-// readMethod is an Admin API call that admin:read allows.
-func readMethod(method string) bool {
-	name, ok := strings.CutPrefix(method, "/ktms.v1.AdminService/")
-	return ok && (strings.HasPrefix(name, "Get") || strings.HasPrefix(name, "List") || name == "ExplainRoute")
+// readMethods are the Admin API calls Keystone lets admin:read make. Listed,
+// not guessed from names, so a new RPC goes with the admin key until added.
+var readMethods = map[string]bool{
+	pb.AdminService_GetConfig_FullMethodName: true, pb.AdminService_ListAPIKeys_FullMethodName: true,
+	pb.AdminService_ListNodeKeys_FullMethodName: true, pb.AdminService_ListNodes_FullMethodName: true,
+	pb.AdminService_ListUserRateLimits_FullMethodName: true, pb.AdminService_ListSpendLimits_FullMethodName: true,
+	pb.AdminService_ListOrganizations_FullMethodName: true, pb.AdminService_GetTeam_FullMethodName: true,
+	pb.AdminService_ListTeams_FullMethodName: true, pb.AdminService_GetTeamSpend_FullMethodName: true,
+	pb.AdminService_GetSpend_FullMethodName: true, "/ktms.v1.AdminService/ExplainRoute": true,
 }
+
+func readMethod(method string) bool { return readMethods[method] }
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
@@ -341,7 +352,7 @@ func backendErr(w http.ResponseWriter, err error) {
 	}
 	msg := st.Message()
 	if st.Code() == codes.Unauthenticated || st.Code() == codes.PermissionDenied {
-		msg = "the KTMS gateway rejected the console's admin key: " + msg
+		msg = "the KTMS gateway rejected the console's key (KTMS_ADMIN_KEY, or KTMS_READ_KEY for reads when it is set): " + msg
 	}
 	if st.Code() == codes.Unavailable {
 		msg = "the KTMS gateway is unreachable: " + msg
@@ -375,72 +386,117 @@ type backendStatus struct {
 // keyStatus says whether Keystone takes one of the console's keys for what
 // the console uses it for.
 type keyStatus struct {
-	Name  string `json:"name"` // KTMS_ADMIN_KEY or KTMS_READ_KEY
-	OK    bool   `json:"ok"`
-	Error string `json:"error,omitempty"`
+	Name    string `json:"name"` // KTMS_ADMIN_KEY or KTMS_READ_KEY
+	OK      bool   `json:"ok"`
+	Refused bool   `json:"refused,omitempty"` // Keystone answered; the key is wrong for its job
+	Error   string `json:"error,omitempty"`
 }
 
+// keyCheckTTL spaces the key probes: each one is a refused call in
+// Keystone's log, and a key's scopes rarely change.
+const keyCheckTTL = time.Minute
+
 // checkKeys probes each key without changing anything: MintAPIKey with no
-// name fails validation after the scope check, so its error tells whether the
-// key may write.
-func (s *Server) checkKeys(ctx context.Context) []keyStatus {
-	mayWrite := func(key string) (bool, error) {
-		_, err := s.admin.MintAPIKey(context.WithValue(ctx, keyCtx{}, key), &pb.MintAPIKeyRequest{})
-		switch status.Code(err) {
-		case codes.InvalidArgument, codes.OK:
-			return true, nil
-		case codes.PermissionDenied:
-			return false, nil
+// name and an unknown scope fails validation after the scope check, so its
+// code tells whether the key may write. The probes run on their own context.
+func (s *Server) checkKeys() []keyStatus {
+	s.keyMu.Lock()
+	defer s.keyMu.Unlock()
+	if s.keyStatus != nil && time.Since(s.keyAt) < keyCheckTTL {
+		return s.keyStatus
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	probe := func(name, key string, wantWrite bool) keyStatus {
+		st := keyStatus{Name: name, OK: true}
+		kctx := context.WithValue(ctx, keyCtx{}, key)
+		if _, err := s.admin.ListAPIKeys(kctx, &pb.ListAPIKeysRequest{}); err != nil {
+			return failed(st, err)
 		}
-		return false, err
+		_, err := s.admin.MintAPIKey(kctx, &pb.MintAPIKeyRequest{Scopes: []string{"-"}})
+		switch status.Code(err) {
+		case codes.InvalidArgument:
+			if !wantWrite {
+				st.OK, st.Refused, st.Error = false, true, "the key can change Keystone: mint one with only the admin:read scope"
+			}
+		case codes.PermissionDenied:
+			if wantWrite {
+				st.OK, st.Refused, st.Error = false, true, "the key cannot change Keystone: it needs the admin scope"
+			}
+		case codes.OK:
+			log.Error().Str("key", name).Msg("Keystone accepted an invalid MintAPIKey probe")
+			st.OK, st.Error = false, "Keystone accepted an invalid key request"
+		default:
+			return failed(st, err)
+		}
+		return st
 	}
-	admin := keyStatus{Name: "KTMS_ADMIN_KEY", OK: true}
-	if w, err := mayWrite(s.cfg.ProxyAdminKey); err != nil {
-		admin.OK, admin.Error = false, status.Convert(err).Message()
-	} else if !w {
-		admin.OK, admin.Error = false, "the key cannot change Keystone: it needs the admin scope"
+	var wg sync.WaitGroup
+	out := []keyStatus{{}}
+	if s.cfg.ProxyReadKey != "" {
+		out = append(out, keyStatus{})
+		wg.Add(1)
+		go func() { defer wg.Done(); out[1] = probe("KTMS_READ_KEY", s.cfg.ProxyReadKey, false) }()
 	}
-	out := []keyStatus{admin}
-	if s.cfg.ProxyReadKey == "" {
-		return out
-	}
-	read := keyStatus{Name: "KTMS_READ_KEY", OK: true}
-	if _, err := s.admin.ListAPIKeys(context.WithValue(ctx, keyCtx{}, s.cfg.ProxyReadKey), &pb.ListAPIKeysRequest{}); err != nil {
-		read.OK, read.Error = false, status.Convert(err).Message()
-	} else if w, err := mayWrite(s.cfg.ProxyReadKey); err != nil {
-		read.OK, read.Error = false, status.Convert(err).Message()
-	} else if w {
-		read.OK, read.Error = false, "the key can change Keystone: mint one with only the admin:read scope"
-	}
-	return append(out, read)
+	out[0] = probe("KTMS_ADMIN_KEY", s.cfg.ProxyAdminKey, true)
+	wg.Wait()
+	s.keyStatus, s.keyAt = out, time.Now()
+	return out
+}
+
+func failed(st keyStatus, err error) keyStatus {
+	c := status.Code(err)
+	st.OK, st.Error = false, status.Convert(err).Message()
+	st.Refused = c == codes.Unauthenticated || c == codes.PermissionDenied
+	return st
 }
 
 func (s *Server) health(w http.ResponseWriter, r *http.Request, _ *auth.User) {
 	ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
 	defer cancel()
 	out := map[string]backendStatus{"proxy": {}, "usage": {}}
+	var wg sync.WaitGroup
+	var proxy, use backendStatus
 	if s.admin != nil {
-		st := backendStatus{Enabled: true, OK: true}
-		if _, err := s.admin.ListAPIKeys(ctx, &pb.ListAPIKeysRequest{}); err != nil {
-			st.OK, st.Error = false, status.Convert(err).Message()
-			c := status.Code(err)
-			st.Auth = c == codes.Unauthenticated || c == codes.PermissionDenied
-		}
-		if st.OK || st.Auth {
-			st.Keys = s.checkKeys(ctx)
-			for _, k := range st.Keys {
-				st.OK, st.Auth = st.OK && k.OK, st.Auth || !k.OK
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			proxy = backendStatus{Enabled: true, OK: true}
+			if _, err := s.admin.ListAPIKeys(ctx, &pb.ListAPIKeysRequest{}); err != nil {
+				k := failed(keyStatus{}, err)
+				proxy.OK, proxy.Error, proxy.Auth = false, k.Error, k.Refused
 			}
-		}
-		out["proxy"] = st
+			if !proxy.OK && !proxy.Auth {
+				return // down: the keys cannot be judged
+			}
+			proxy.Keys = s.checkKeys()
+			for _, k := range proxy.Keys {
+				if !k.OK {
+					proxy.OK, proxy.Auth = false, proxy.Auth || k.Refused
+					if proxy.Error == "" {
+						proxy.Error = k.Name + ": " + k.Error
+					}
+				}
+			}
+		}()
 	}
 	if s.usage != nil {
-		st := backendStatus{Enabled: true, OK: true}
-		if err := s.usage.Ready(ctx); err != nil {
-			var authErr *usage.AuthError
-			st.OK, st.Error, st.Auth = false, err.Error(), errors.As(err, &authErr)
-		}
-		out["usage"] = st
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			use = backendStatus{Enabled: true, OK: true}
+			if err := s.usage.Ready(ctx); err != nil {
+				var authErr *usage.AuthError
+				use.OK, use.Error, use.Auth = false, err.Error(), errors.As(err, &authErr)
+			}
+		}()
+	}
+	wg.Wait()
+	if s.admin != nil {
+		out["proxy"] = proxy
+	}
+	if s.usage != nil {
+		out["usage"] = use
 	}
 	writeJSON(w, http.StatusOK, out)
 }

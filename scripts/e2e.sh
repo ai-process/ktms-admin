@@ -172,9 +172,14 @@ until api GET "/api/usage?from=$SINCE&to=$DAY&group=model" | jq -e '(.report.gro
 done
 echo "e2e: the call's usage went KTMS -> light-tokenmeter (write token) -> console (read token)"
 
-# Keystone 1.2 knows admin:read; an older one refuses the scope, and this part
-# is skipped.
-if READ_KEY=$(api POST /api/proxy/keys '{"name":"console-read","scopes":["admin:read"]}' 2>/dev/null | jq -er .plain_key); then
+# Keystone 1.2 knows admin:read; an older one refuses the scope as unknown,
+# and only then is this part skipped.
+if READ_KEY=$(api POST /api/proxy/keys '{"name":"console-read","scopes":["admin:read"]}' 2>"$WORK/read-key.err" | jq -er .plain_key); then
+	# A bogus read key breaks reads and not changes: reads carry KTMS_READ_KEY.
+	run_console "$CONSOLE_KEY" "$R" "ktms_not_a_key"
+	if api GET /api/proxy/config >/dev/null 2>&1; then fail "a read did not go with KTMS_READ_KEY"; fi
+	api PUT /api/proxy/rules '{"rules":[{"name":"catch-all","priority":10,"use":["mock-gpt"],"enabled":true}]}' >/dev/null ||
+		fail "a change went with KTMS_READ_KEY"
 	run_console "$CONSOLE_KEY" "$R" "$READ_KEY"
 	api GET /api/health | jq -e '.proxy.ok and (.proxy.keys | length == 2) and all(.proxy.keys[]; .ok)' >/dev/null ||
 		fail "health with both keys: $(api GET /api/health)"
@@ -186,8 +191,10 @@ if READ_KEY=$(api POST /api/proxy/keys '{"name":"console-read","scopes":["admin:
 	api GET /api/health | jq -e '.proxy.ok == false and .proxy.auth == true' >/dev/null ||
 		fail "a read key as KTMS_ADMIN_KEY was not reported: $(api GET /api/health)"
 	echo "e2e: reads go with KTMS_READ_KEY, changes with KTMS_ADMIN_KEY, and a wrong key is reported"
-else
+elif grep -q 'unknown scope' "$WORK/read-key.err"; then
 	echo "e2e: ktms@$KTMS_REF has no admin:read scope; KTMS_READ_KEY not tested"
+else
+	fail "minting a read key: $(cat "$WORK/read-key.err")"
 fi
 
 # A token without the read scope must show as refused, not as down.

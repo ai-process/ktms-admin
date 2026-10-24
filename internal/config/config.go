@@ -50,7 +50,7 @@ type Config struct {
 	// ProxyReadKey, a key with the admin:read scope, carries every read and
 	// every viewer's call, so those cannot change Keystone. Optional.
 	ProxyReadKey string
-	ProxyTLS      bool
+	ProxyTLS     bool
 
 	TokenmeterURL string
 	// TokenmeterToken is a light-tokenmeter bearer token with the read scope.
@@ -117,7 +117,7 @@ func Load() (*Config, error) {
 		InsecureNoAuth:     env("INSECURE_NO_AUTH", "") == "true",
 		ProxyAddr:          env("KTMS_ADDR", env("LLM_PROXY_ADDR", "")),
 		ProxyAdminKey:      env("KTMS_ADMIN_KEY", env("LLM_PROXY_ADMIN_KEY", "")),
-		ProxyReadKey:       strings.TrimSpace(env("KTMS_READ_KEY", "")),
+		ProxyReadKey:       env("KTMS_READ_KEY", ""),
 		ProxyTLS:           env("KTMS_TLS", env("LLM_PROXY_TLS", "")) == "true",
 		TokenmeterURL:      strings.TrimRight(env("TOKENMETER_URL", ""), "/"),
 		// Trimmed: a secret written with echo ends in a newline, which no header may carry.
