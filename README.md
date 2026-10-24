@@ -213,7 +213,7 @@ The console's own `/api` serves its web UI only and is not a public API.
 
 | ktms-admin | KTMS gateway | light-tokenmeter |
 | --- | --- | --- |
-| 1.x | 1.x | 1.x; with its authentication on, set `TOKENMETER_TOKEN` to a `read` token |
+| 1.x | 1.x; `KTMS_READ_KEY` needs 1.2 or later | 1.x; with its authentication on, set `TOKENMETER_TOKEN` to a `read` token |
 | 0.4.x | 0.14.x | 0.1.x |
 | 0.3.x and earlier | 0.13.x | 0.1.x |
 

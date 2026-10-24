@@ -6,11 +6,17 @@ Notable changes to ktms-admin. The format follows
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-24
+
 ### Added
 - `KTMS_READ_KEY`: an optional Keystone key with the `admin:read` scope (Keystone 1.2+). Admin API
   reads and every call of a viewer go with it; changes keep `KTMS_ADMIN_KEY`. The sidebar's
   health shows whether each key is accepted for its job: the admin key may change Keystone, the
   read key may read and nothing more.
+
+### Changed
+- Tested against KTMS 1.2.0 and light-tokenmeter 1.1.0 (`scripts/e2e.refs`); the `ktms.v1` copy
+  follows KTMS 1.2.0. Every KTMS 1.x release still works.
 
 ## [1.0.0] - 2026-10-23
 
