@@ -56,6 +56,10 @@ docker run -d --name ktms-admin -p 8080:8080 \
   coyl/ktms-admin:latest
 ```
 
+Pin a release with `coyl/ktms-admin:X.Y.Z`; `X.Y` follows the newest release of its line and `latest`
+the newest of all. Images are signed ([SECURITY.md](SECURITY.md)); the old name `coyl/llm-proxy-admin`
+gets no releases after 0.4.0.
+
 Open `PUBLIC_URL`, sign in with that e-mail and password, and you are in.
 [`examples/compose.yaml`](examples/compose.yaml) starts the whole family (KTMS, light-tokenmeter and
 this console on one Postgres) with the first-run steps in its header.
@@ -373,18 +377,5 @@ Layout: `cmd/ktms-admin` (entrypoint), `internal/auth` (sessions, allowlists, si
 `internal/api` (JSON API and guards), `internal/usage` (light-tokenmeter client and the greedy/worthy
 analysis), `internal/config`, `internal/web` (embedded UI).
 
-### Releasing
-
-Pushing a `vX.Y.Z` tag publishes a multi-arch image to Docker Hub as `coyl/ktms-admin:<version>`.
-`latest` moves only with the newest stable release. The old name `coyl/llm-proxy-admin` gets no new
-releases after 0.4.0. The
-image is signed with keyless cosign and carries an SBOM and provenance (verify like the gateway's
-images, see [KTMS SECURITY.md](https://github.com/ai-process/ktms/blob/main/SECURITY.md#verifying-a-release),
-with `docker-publish.yml` of `ai-process/ktms-admin`). The repository needs the secrets
-`DOCKER_USERNAME` and `DOCKER_PASSWORD`.
-
-```bash
-git tag v1.0.0 && git push origin v1.0.0
-```
-
-Contributions are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md). Licensed under the [Apache License 2.0](LICENSE).
+Contributions are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md); maintainers release as described in
+[RELEASING.md](RELEASING.md). Licensed under the [Apache License 2.0](LICENSE).
