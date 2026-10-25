@@ -62,7 +62,9 @@ gets no releases after 0.4.0.
 
 Open `PUBLIC_URL`, sign in with that e-mail and password, and you are in.
 [`examples/compose.yaml`](examples/compose.yaml) starts the whole family (KTMS, light-tokenmeter and
-this console on one Postgres) with the first-run steps in its header.
+this console on one Postgres) with the first-run steps in its header. An AI assistant can write the
+deployment for you: the [Claude Code plugin](https://github.com/ai-process/ktms#claude-code-plugin-and-skills)
+(`/ktms:deploy`) or the [Deploy the stack](https://ai-process.dev/docs/prompts/deploy-stack/) prompt.
 
 **Just looking around on your machine?** Skip sign-in entirely, on localhost only:
 
