@@ -6,6 +6,8 @@ Notable changes to ktms-admin. The format follows
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-10-26
+
 ### Security
 - The image is built on Alpine 3.23 with `ca-certificates` 20261020 or newer, which no longer
   trusts the eMudhra intermediates whose keys leaked in October 2026, and with Go 1.27.3.
