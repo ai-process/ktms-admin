@@ -1,4 +1,4 @@
-FROM golang:1.26-alpine AS builder
+FROM golang:1.27.3-alpine3.23 AS builder
 ARG TARGETOS=linux
 ARG TARGETARCH
 WORKDIR /app
@@ -8,9 +8,10 @@ COPY . .
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -ldflags="-s -w" -o /out/ktms-admin ./cmd/ktms-admin
 
-FROM alpine:3.21
-# CA certificates are needed to reach identity providers for sign-in.
-RUN apk add --no-cache ca-certificates && adduser -D -u 10001 appuser
+FROM alpine:3.23
+# CA certificates are needed to reach identity providers for sign-in; 20261020 distrusts the
+# eMudhra intermediates whose keys leaked.
+RUN apk add --no-cache 'ca-certificates>=20261020-r0' && adduser -D -u 10001 appuser
 COPY --from=builder /out/ktms-admin /ktms-admin
 USER appuser
 EXPOSE 8080
