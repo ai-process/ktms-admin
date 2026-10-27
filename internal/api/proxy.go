@@ -1154,3 +1154,70 @@ func (s *Server) modelPrices(ctx context.Context) map[string]usage.Price {
 	s.prices, s.pricesAt = p, time.Now()
 	return p
 }
+
+// ---- MCP servers ----
+
+func (s *Server) proxyUpsertMCPServer(w http.ResponseWriter, r *http.Request, u *auth.User) {
+	var spec pb.MCPServerSpec
+	if err := readProto(r, &spec); err != nil {
+		backendErr(w, badBody(err))
+		return
+	}
+	spec.Name = r.PathValue("name")
+	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
+	defer cancel()
+	if _, err := s.admin.UpsertMCPServer(ctx, &pb.UpsertMCPServerRequest{Server: &spec}); err != nil {
+		backendErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) proxyDeleteMCPServer(w http.ResponseWriter, r *http.Request, u *auth.User) {
+	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
+	defer cancel()
+	if _, err := s.admin.DeleteMCPServer(ctx, &pb.DeleteMCPServerRequest{Name: r.PathValue("name")}); err != nil {
+		backendErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// proxySetMCPCredential passes the value to KTMS and nowhere else: it is not
+// logged, echoed or kept by the console.
+func (s *Server) proxySetMCPCredential(w http.ResponseWriter, r *http.Request, u *auth.User) {
+	var req pb.SetMCPCredentialRequest
+	if err := readProto(r, &req); err != nil {
+		backendErr(w, badBody(err))
+		return
+	}
+	req.Server = r.PathValue("name")
+	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
+	defer cancel()
+	if _, err := s.admin.SetMCPCredential(ctx, &req); err != nil {
+		backendErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) proxyDeleteMCPCredential(w http.ResponseWriter, r *http.Request, u *auth.User) {
+	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
+	defer cancel()
+	if _, err := s.admin.DeleteMCPCredential(ctx, &pb.DeleteMCPCredentialRequest{Server: r.PathValue("name")}); err != nil {
+		backendErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) proxyListMCPTools(w http.ResponseWriter, r *http.Request, u *auth.User) {
+	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
+	defer cancel()
+	resp, err := s.admin.ListMCPTools(ctx, &pb.ListMCPToolsRequest{Server: r.PathValue("name")})
+	if err != nil {
+		backendErr(w, err)
+		return
+	}
+	writeProto(w, resp)
+}

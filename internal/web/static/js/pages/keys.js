@@ -4,6 +4,7 @@ import { VENDORS } from './models.js';
 
 const SCOPES = [
   ['generate', 'Call models', 'Text, streaming, speech, images, judge and embeddings, through the rules.'],
+  ['mcp', 'Use MCP tools', 'The tools of the MCP servers at /mcp, within the key\u2019s and its team\u2019s allowed MCP.'],
   ['admin', 'Manage the gateway', 'Models, rules, keys and limits. Give it to people and consoles, not services.'],
 ];
 const nanoUSD = (v) => num(v) / 1e9;
@@ -155,6 +156,7 @@ function PolicyChips({ policy }) {
   if ((p.allowed_models || []).length) chips.push(html`<span class="chip" key="m" title=${p.allowed_models.join(', ')}>${p.allowed_models.length === 1 ? p.allowed_models[0] : p.allowed_models.length + ' models'}</span>`);
   if (num(p.rpm_limit) > 0) chips.push(html`<span class="chip" key="r">${compact(num(p.rpm_limit))} rpm</span>`);
   if (num(p.tpm_limit) > 0) chips.push(html`<span class="chip" key="t">${compact(num(p.tpm_limit))} tpm</span>`);
+  if ((p.allowed_mcp || []).length) chips.push(html`<span class="chip" key="c" title=${p.allowed_mcp.join(', ')}>${p.allowed_mcp.length === 1 ? p.allowed_mcp[0] : p.allowed_mcp.length + ' MCP entries'}</span>`);
   return chips.length ? html`<div class="cluster">${chips}</div>` : html`<span class="muted">—</span>`;
 }
 
@@ -174,7 +176,8 @@ function PolicyForm({ k, models, close }) {
     const rpm = num(fd.get('rpm')), tpm = num(fd.get('tpm'));
     if (![rpm, tpm].every((v) => Number.isInteger(v) && v >= 0)) throw new Error('Rates are whole numbers, 0 for no limit.');
     const allowed = models.length ? picked : String(fd.get('models') || '').split(',').map((m) => m.trim()).filter(Boolean);
-    await api('PUT', `/api/proxy/keys/${encodeURIComponent(k.name)}/policy`, { allowed_models: allowed, rpm_limit: rpm, tpm_limit: String(tpm) });
+    const mcp = String(fd.get('mcp') || '').split(',').map((m) => m.trim()).filter(Boolean);
+    await api('PUT', `/api/proxy/keys/${encodeURIComponent(k.name)}/policy`, { allowed_models: allowed, rpm_limit: rpm, tpm_limit: String(tpm), allowed_mcp: mcp });
     toast('Policy saved');
   };
   return html`<${FormDialog} title=${'Policy of ' + k.name} sub="Applies from the key's next call, on top of its team's models and each model's limits." close=${close} onSubmit=${submit}>
@@ -188,6 +191,7 @@ function PolicyForm({ k, models, close }) {
       <${Field} label="Requests per minute" hint="Over all models; 0 = no limit."><input name="rpm" type="number" min="0" step="1" defaultValue=${num(k.policy?.rpm_limit)} /><//>
       <${Field} label="Tokens per minute" hint="Input and output over all models; 0 = no limit."><input name="tpm" type="number" min="0" step="1" defaultValue=${num(k.policy?.tpm_limit)} /><//>
     </div>
+    <${Field} label="Allowed MCP" hint="For a key with the mcp scope: servers (github) and tools (github/create_issue), comma-separated; empty allows what the team allows."><input name="mcp" defaultValue=${(k.policy?.allowed_mcp || []).join(', ')} autocomplete="off" /><//>
   <//>`;
 }
 

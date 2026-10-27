@@ -11,6 +11,7 @@ import { TenantsPage } from './pages/tenants.js';
 import { CabinetPage } from './pages/cabinet.js';
 import { PlaygroundPage } from './pages/playground.js';
 import { JudgePage } from './pages/judge.js';
+import { MCPPage } from './pages/mcp.js';
 
 // Each page declares who may open it; the server enforces the same split.
 const PAGES = {
@@ -22,6 +23,7 @@ const PAGES = {
   limits: { title: 'Limits', icon: 'limits', comp: LimitsPage, ok: () => hasProxy() && canReadGlobal() },
   keys: { title: 'Keys', icon: 'keys', comp: KeysPage, ok: () => hasProxy() },
   nodes: { title: 'Nodes', icon: 'nodes', comp: NodesPage, ok: () => hasProxy() && canReadGlobal() },
+  mcp: { title: 'MCP servers', icon: 'mcp', comp: MCPPage, ok: () => hasProxy() && canReadGlobal() },
   // Run with the console's own key, outside any team's models and budget.
   playground: { title: 'Playground', icon: 'playground', comp: PlaygroundPage, ok: () => hasProxy() && isAdmin() },
   judge: { title: 'Judge', icon: 'judge', comp: JudgePage, ok: () => hasProxy() && isAdmin() },
@@ -29,7 +31,7 @@ const PAGES = {
 
 const GROUPS = () => inTeam()
   ? [['My team', ['cabinet', 'keys']]]
-  : [['Spend', ['usage']], ['Tenancy', ['tenants']], ['Gateway', ['models', 'rules', 'limits', 'keys', 'nodes']], ['Tools', ['playground', 'judge']]];
+  : [['Spend', ['usage']], ['Tenancy', ['tenants']], ['Gateway', ['models', 'rules', 'limits', 'keys', 'nodes', 'mcp']], ['Tools', ['playground', 'judge']]];
 
 function defaultPage() {
   const order = inTeam() ? ['cabinet', 'keys'] : ['usage', 'models', 'keys', 'cabinet'];
