@@ -215,7 +215,7 @@ The console's own `/api` serves its web UI only and is not a public API.
 
 | ktms-admin | KTMS gateway | light-tokenmeter |
 | --- | --- | --- |
-| 1.x | 1.x; `KTMS_READ_KEY` needs 1.2 or later | 1.x; with its authentication on, set `TOKENMETER_TOKEN` to a `read` token |
+| 1.x | 1.x; `KTMS_READ_KEY` needs 1.2 or later, the MCP servers page 1.4 or later | 1.x; with its authentication on, set `TOKENMETER_TOKEN` to a `read` token |
 | 0.4.x | 0.14.x | 0.1.x |
 | 0.3.x and earlier | 0.13.x | 0.1.x |
 
@@ -334,6 +334,11 @@ encryption key version.
 shows its spend this month against the budget and its keys.
 
 **Nodes.** Local GPU nodes with state, queue, VRAM and speed, refreshed every 15 seconds, and their keys.
+
+**MCP servers.** The servers KTMS's MCP gateway proxies at `/mcp`: add, edit and remove them, set or
+remove the header each one is sent (write-only, like vendor credentials; only its fingerprint shows), and
+list a server's tools as the entries a key's or team's *Allowed MCP* takes. Keys get the *Use MCP tools*
+access and an *Allowed MCP* list in their policy; teams get one too.
 
 **Playground.** Send a prompt or multi-turn conversation through the same routing your clients use, with SSE streaming, tool definitions, interactive tool result responses, effort selection, and attributes. The call is attributed to `console.playground` and your e-mail.
 

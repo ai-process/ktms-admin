@@ -6,6 +6,12 @@ Notable changes to ktms-admin. The format follows
 
 ## [Unreleased]
 
+### Added
+- MCP servers page for KTMS's MCP gateway (KTMS 1.4 or later): register servers, set or remove
+  their credential (write-only), list their tools. Keys get the `mcp` access and an *Allowed MCP*
+  list in their policy, and teams an *Allowed MCP* list. The `ktms.v1` copy follows KTMS's MCP
+  gateway RPCs.
+
 ## [1.1.2] - 2026-10-27
 
 ### Changed

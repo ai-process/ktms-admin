@@ -127,6 +127,7 @@ var readMethods = map[string]bool{
 	pb.AdminService_ListOrganizations_FullMethodName: true, pb.AdminService_GetTeam_FullMethodName: true,
 	pb.AdminService_ListTeams_FullMethodName: true, pb.AdminService_GetTeamSpend_FullMethodName: true,
 	pb.AdminService_GetSpend_FullMethodName: true, "/ktms.v1.AdminService/ExplainRoute": true,
+	pb.AdminService_ListMCPTools_FullMethodName: true,
 }
 
 func readMethod(method string) bool { return readMethods[method] }
@@ -176,6 +177,11 @@ func (s *Server) Handler() http.Handler {
 		api("GET /api/proxy/teams/{id}/cabinet", team, s.proxyTeamCabinet)
 		api("GET /api/proxy/team-spend", globalRead, s.proxyTeamsSpend)
 		api("POST /api/proxy/rotate", adminOnly, s.proxyRotate)
+		api("PUT /api/proxy/mcp-servers/{name}", adminOnly, s.proxyUpsertMCPServer)
+		api("DELETE /api/proxy/mcp-servers/{name}", adminOnly, s.proxyDeleteMCPServer)
+		api("PUT /api/proxy/mcp-servers/{name}/credential", adminOnly, s.proxySetMCPCredential)
+		api("DELETE /api/proxy/mcp-servers/{name}/credential", adminOnly, s.proxyDeleteMCPCredential)
+		api("GET /api/proxy/mcp-servers/{name}/tools", globalRead, s.proxyListMCPTools)
 		// The console's own gateway key runs these, outside any team's models and budget.
 		api("POST /api/proxy/playground", adminOnly, s.proxyPlayground)
 		api("POST /api/proxy/playground/stream", adminOnly, s.proxyPlaygroundStream)

@@ -79,13 +79,14 @@ function OrgForm({ close }) {
 
 function TeamForm({ team, orgs, models, close }) {
   const isNew = !team;
-  const t = team || { org_id: orgs[0]?.id || '', name: '', monthly_budget_usd: 0, allowed_models: [] };
+  const t = team || { org_id: orgs[0]?.id || '', name: '', monthly_budget_usd: 0, allowed_models: [], allowed_mcp: [] };
   // Models outside the loaded catalog stay listed so saving never drops them.
   const all = [...new Set([...models, ...(t.allowed_models || [])])];
   const [picked, setPicked] = useState(t.allowed_models || []);
   const toggle = (m) => setPicked(picked.includes(m) ? picked.filter((x) => x !== m) : [...picked, m]);
   const submit = async (fd) => {
-    const body = { name: String(fd.get('name')).trim(), monthly_budget_usd: num(fd.get('monthly_budget_usd')), allowed_models: all.filter((m) => picked.includes(m)) };
+    const allowedMCP = String(fd.get('allowed_mcp') || '').split(',').map((m) => m.trim()).filter(Boolean);
+    const body = { name: String(fd.get('name')).trim(), monthly_budget_usd: num(fd.get('monthly_budget_usd')), allowed_models: all.filter((m) => picked.includes(m)), allowed_mcp: allowedMCP };
     if (!body.name) throw new Error('Give the team a name.');
     if (isNew) await api('POST', '/api/proxy/teams', { ...body, org_id: fd.get('org_id') });
     else await api('PUT', '/api/proxy/teams/' + encodeURIComponent(t.id), body);
@@ -100,5 +101,6 @@ function TeamForm({ team, orgs, models, close }) {
       <div class="cluster">${all.map((m) => html`<button type="button" key=${m} class="toggle-chip" aria-pressed=${picked.includes(m) ? 'true' : 'false'} onClick=${() => toggle(m)}>${m}</button>`)}</div>
       <p class="small muted" style=${{ marginTop: '8px' }}>${picked.length ? `Only these ${picked.length} may be called; rules skip the rest for this team.` : 'None selected: the team may call every model.'}</p>
     </fieldset>
+    <${Field} label="Allowed MCP" hint="MCP servers (github) and tools (github/create_issue) the team's keys may use, comma-separated; empty = any."><input name="allowed_mcp" defaultValue=${(t.allowed_mcp || []).join(', ')} autocomplete="off" /><//>
   <//>`;
 }
