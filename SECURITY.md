@@ -19,7 +19,7 @@ From 1.0.0 on, images are signed with keyless [Sigstore cosign](https://docs.sig
 SBOM and SLSA provenance. Use cosign 3 and pin the identity to the tag you verify:
 
 ```bash
-V=v1.1.1
+V=v1.1.2
 cosign verify coyl/ktms-admin:${V#v} \
   --certificate-identity "https://github.com/ai-process/ktms-admin/.github/workflows/docker-publish.yml@refs/tags/$V" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
