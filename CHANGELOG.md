@@ -6,6 +6,8 @@ Notable changes to ktms-admin. The format follows
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-10-27
+
 ### Changed
 - Tested against KTMS 1.3.6 and light-tokenmeter 1.1.0 (`scripts/e2e.refs`); the `ktms.v1` copy
   follows KTMS 1.3.6, which adds `NodeRegistryService.PullNodeUsage` (unused by the console).
