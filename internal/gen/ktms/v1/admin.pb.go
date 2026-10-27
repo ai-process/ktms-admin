@@ -4250,7 +4250,7 @@ func (x *GetSpendResponse) GetWindows() []*SpendWindow {
 
 // MCPServerSpec is an upstream MCP server, proxied at /mcp/{name} and, with
 // its tools named name__tool, at /mcp. Its credential is not part of the spec:
-// SetMCPCredential stores it.
+// SetMCPCredential stores it. Experimental: the MCP gateway may change in a 1.x minor release.
 type MCPServerSpec struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	Name      string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`           // 1-32 of a-z, 0-9 and "-", starting with a letter

@@ -439,7 +439,7 @@ message GetSpendResponse {
 
 // MCPServerSpec is an upstream MCP server, proxied at /mcp/{name} and, with
 // its tools named name__tool, at /mcp. Its credential is not part of the spec:
-// SetMCPCredential stores it.
+// SetMCPCredential stores it. Experimental: the MCP gateway may change in a 1.x minor release.
 message MCPServerSpec {
   string name = 1; // 1-32 of a-z, 0-9 and "-", starting with a letter
   string url = 2; // https; http only with allow_private
