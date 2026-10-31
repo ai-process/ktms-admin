@@ -333,7 +333,7 @@ encryption key version.
 **Tenants** and **Team.** Organizations, teams, their monthly budgets and model allowlists; each team's page
 shows its spend this month against the budget and its keys.
 
-**Nodes.** Local GPU nodes with state, queue, VRAM and speed, refreshed every 15 seconds, and their keys.
+**Nodes.** Local GPU nodes with state, queue, VRAM and speed, refreshed every 15 seconds, and their keys. Each node shows its level and what set it (its own schedule, its owner, the schedule or an override from KTMS). **Schedule** edits the rules KTMS keeps for the node and holds it at a level for 30 minutes to 24 hours (KTMS 1.5+); a node follows them only when its owner hands the schedule to KTMS in the tray or with `--schedule-source=ktms`, and the owner's own pause still wins.
 
 **MCP servers.** The servers KTMS's MCP gateway proxies at `/mcp`: add, edit and remove them, set or
 remove the header each one is sent (write-only, like vendor credentials; only its fingerprint shows), and
