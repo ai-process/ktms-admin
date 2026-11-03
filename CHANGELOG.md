@@ -6,6 +6,8 @@ Notable changes to ktms-admin. The format follows
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-11-03
+
 ### Added
 - Node schedules (KTMS 1.5 or later): the Nodes page shows each node's level and what set it,
   marks nodes that take their schedule from KTMS, and its **Schedule** dialog edits the rules KTMS
@@ -15,10 +17,11 @@ Notable changes to ktms-admin. The format follows
 - The Nodes page names the `PAUSED` state.
 - MCP servers page for KTMS's MCP gateway (KTMS 1.4 or later): register servers, set or remove
   their credential (write-only), list their tools. Keys get the `mcp` access and an *Allowed MCP*
-  list in their policy, and teams an *Allowed MCP* list. The `ktms.v1` copy follows KTMS 1.4.0.
+  list in their policy, and teams an *Allowed MCP* list.
 
 ### Changed
-- Tested against KTMS 1.4.0 and light-tokenmeter 1.2.0 (`scripts/e2e.refs`).
+- Tested against KTMS 1.5.0 and light-tokenmeter 1.2.0 (`scripts/e2e.refs`); the `ktms.v1` copy
+  follows KTMS 1.5.0.
 
 ## [1.1.2] - 2026-10-27
 
