@@ -215,7 +215,7 @@ The console's own `/api` serves its web UI only and is not a public API.
 
 | ktms-admin | KTMS gateway | light-tokenmeter |
 | --- | --- | --- |
-| 1.x | 1.x; `KTMS_READ_KEY` needs 1.2 or later, the MCP servers page 1.4 or later | 1.x; with its authentication on, set `TOKENMETER_TOKEN` to a `read` token |
+| 1.x | 1.x; `KTMS_READ_KEY` needs 1.2 or later, the MCP servers page 1.4 or later, node schedules on the Nodes page 1.5 or later | 1.x; with its authentication on, set `TOKENMETER_TOKEN` to a `read` token |
 | 0.4.x | 0.14.x | 0.1.x |
 | 0.3.x and earlier | 0.13.x | 0.1.x |
 
@@ -333,7 +333,7 @@ encryption key version.
 **Tenants** and **Team.** Organizations, teams, their monthly budgets and model allowlists; each team's page
 shows its spend this month against the budget and its keys.
 
-**Nodes.** Local GPU nodes with state, queue, VRAM and speed, refreshed every 15 seconds, and their keys.
+**Nodes.** Local GPU nodes with state, queue, VRAM and speed, refreshed every 15 seconds, and their keys. Each node shows its level and what set it (its own schedule, its owner, the schedule or an override from KTMS). **Schedule** edits the rules KTMS keeps for the node and holds it at a level for 30 minutes to 24 hours (KTMS 1.5+); a node follows them only when its owner hands the schedule to KTMS in the tray or with `--schedule-source=ktms`, and the owner's own pause still wins.
 
 **MCP servers.** The servers KTMS's MCP gateway proxies at `/mcp`: add, edit and remove them, set or
 remove the header each one is sent (write-only, like vendor credentials; only its fingerprint shows), and

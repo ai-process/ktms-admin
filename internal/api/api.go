@@ -127,7 +127,8 @@ var readMethods = map[string]bool{
 	pb.AdminService_ListOrganizations_FullMethodName: true, pb.AdminService_GetTeam_FullMethodName: true,
 	pb.AdminService_ListTeams_FullMethodName: true, pb.AdminService_GetTeamSpend_FullMethodName: true,
 	pb.AdminService_GetSpend_FullMethodName: true, "/ktms.v1.AdminService/ExplainRoute": true,
-	pb.AdminService_ListMCPTools_FullMethodName: true,
+	pb.AdminService_ListMCPTools_FullMethodName:    true,
+	pb.AdminService_GetNodeSchedule_FullMethodName: true, pb.AdminService_ListNodeSchedules_FullMethodName: true,
 }
 
 func readMethod(method string) bool { return readMethods[method] }
@@ -152,6 +153,11 @@ func (s *Server) Handler() http.Handler {
 		api("GET /api/proxy/key-spend", team, s.proxyKeysSpend)
 		api("GET /api/proxy/nodes", globalRead, s.proxyListNodes)
 		api("POST /api/proxy/nodes/{id}/drain", adminOnly, s.proxyDrainNode)
+		api("GET /api/proxy/nodes/{id}/schedule", globalRead, s.proxyGetNodeSchedule)
+		api("PUT /api/proxy/nodes/{id}/schedule", adminOnly, s.proxySetNodeSchedule)
+		api("DELETE /api/proxy/nodes/{id}/schedule", adminOnly, s.proxyDeleteNodeSchedule)
+		api("PUT /api/proxy/nodes/{id}/override", adminOnly, s.proxySetNodeOverride)
+		api("DELETE /api/proxy/nodes/{id}/override", adminOnly, s.proxyClearNodeOverride)
 		api("GET /api/proxy/node-keys", globalRead, s.proxyListNodeKeys)
 		api("POST /api/proxy/node-keys", adminOnly, s.proxyMintNodeKey)
 		api("POST /api/proxy/node-keys/revoke", adminOnly, s.proxyRevokeNodeKey)

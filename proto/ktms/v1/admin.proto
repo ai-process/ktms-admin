@@ -5,6 +5,7 @@ package ktms.v1;
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 import "ktms/v1/gateway.proto";
+import "ktms/v1/node.proto";
 
 option go_package = "github.com/ai-process/ktms/gen/ktms/v1;ktmsv1";
 
@@ -130,6 +131,10 @@ message APIKeyPolicy {
   // MCP servers ("github") and single tools ("github/create_issue") a key with
   // the mcp scope may use; empty = any. Others are hidden and refused.
   repeated string allowed_mcp = 4;
+  // "restricted" keeps every call of the key on self-hosted nodes. In
+  // SetAPIKeyPolicy, unlike its other fields, "" keeps the current value and
+  // only "unrestricted" lifts it, so an older client cannot lift a restriction.
+  string data_classification = 5;
 }
 
 // SetAPIKeyPolicy replaces a key's policy; it applies from the key's next call.
@@ -238,6 +243,9 @@ message NodeInfo {
   repeated string warm_models = 18;
   uint32 capacity_percent = 19; // current level of the node's schedule
   int32 effective_slots = 20; // concurrent requests allowed at that level
+  string schedule_source = 21; // local | ktms; empty from agents that predate it
+  string capacity_source = 22; // schedule | override | ktms_schedule | ktms_override | default
+  google.protobuf.Timestamp capacity_until = 23; // end of the override behind capacity_percent
 }
 
 message ListNodesResponse {
@@ -249,6 +257,44 @@ message DrainNodeRequest {
 }
 
 message DrainNodeResponse {}
+
+message GetNodeScheduleRequest {
+  string node_id = 1;
+}
+
+// NodeScheduleInfo is what KTMS keeps for a node: the agent follows it only
+// when it runs with schedule_source "ktms" (NodeInfo.schedule_source).
+message NodeScheduleInfo {
+  string node_id = 1;
+  string text = 2; // "[days] HH:MM-HH:MM level" per line; empty = 100%
+  int64 version = 3; // 0 = nothing stored
+  NodeCapacityOverride override = 4; // unset = none in force
+  google.protobuf.Timestamp updated_at = 5;
+}
+
+message SetNodeScheduleRequest {
+  string node_id = 1;
+  string text = 2; // validated with the agent's parser; empty = 100% all the time
+}
+
+message SetNodeCapacityOverrideRequest {
+  string node_id = 1;
+  uint32 level = 2; // 0-100
+  google.protobuf.Timestamp until = 3; // 1 minute to 24 hours ahead
+  bool clear = 4; // remove the override; level and until are ignored
+}
+
+message ListNodeSchedulesRequest {}
+
+message ListNodeSchedulesResponse {
+  repeated NodeScheduleInfo schedules = 1;
+}
+
+message DeleteNodeScheduleRequest {
+  string node_id = 1;
+}
+
+message DeleteNodeScheduleResponse {}
 
 message UserRateLimitSpec {
   string user_id = 1; // user identity or "*" wildcard for default across users
@@ -333,6 +379,7 @@ message Team {
   repeated string allowed_models = 5;
   google.protobuf.Timestamp created_at = 6;
   repeated string allowed_mcp = 7; // as APIKeyPolicy.allowed_mcp, for every key of the team
+  string data_classification = 8; // as APIKeyPolicy.data_classification, for every key of the team
 }
 
 message CreateOrganizationRequest {
@@ -361,6 +408,7 @@ message CreateTeamRequest {
   double monthly_budget_usd = 3;
   repeated string allowed_models = 4;
   repeated string allowed_mcp = 5;
+  string data_classification = 6;
 }
 
 message CreateTeamResponse {
@@ -391,6 +439,7 @@ message UpdateTeamRequest {
   double monthly_budget_usd = 3;
   repeated string allowed_models = 4;
   repeated string allowed_mcp = 5;
+  string data_classification = 6; // "" keeps the current one, "unrestricted" lifts it
 }
 
 message UpdateTeamResponse {
@@ -527,6 +576,12 @@ service AdminService {
   rpc ListNodeKeys(ListNodeKeysRequest) returns (ListNodeKeysResponse);
   rpc ListNodes(ListNodesRequest) returns (ListNodesResponse);
   rpc DrainNode(DrainNodeRequest) returns (DrainNodeResponse);
+  // Schedules KTMS sends to nodes that hand their schedule to it.
+  rpc GetNodeSchedule(GetNodeScheduleRequest) returns (NodeScheduleInfo);
+  rpc ListNodeSchedules(ListNodeSchedulesRequest) returns (ListNodeSchedulesResponse);
+  rpc SetNodeSchedule(SetNodeScheduleRequest) returns (NodeScheduleInfo);
+  rpc SetNodeCapacityOverride(SetNodeCapacityOverrideRequest) returns (NodeScheduleInfo);
+  rpc DeleteNodeSchedule(DeleteNodeScheduleRequest) returns (DeleteNodeScheduleResponse);
   rpc SetUserRateLimit(SetUserRateLimitRequest) returns (SetUserRateLimitResponse);
   rpc DeleteUserRateLimit(DeleteUserRateLimitRequest) returns (DeleteUserRateLimitResponse);
   rpc ListUserRateLimits(ListUserRateLimitsRequest) returns (ListUserRateLimitsResponse);
@@ -565,6 +620,7 @@ message ExplainRouteRequest {
   string placement = 5; // nodes_first | nodes_only | cloud_first | cloud_only, empty for the rule's default
   string model_override = 6; // as in GenerateTextRequest
   repeated string capabilities = 7; // capabilities the request needs, e.g. "google_search"
+  string data_classification = 8; // as in GenerateTextRequest
 }
 
 message RouteCandidate {

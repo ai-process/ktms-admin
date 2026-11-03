@@ -35,6 +35,8 @@ type fakeAdmin struct {
 	spendLimits      []*pb.SpendLimitSpec
 	lastPolicy       *pb.SetAPIKeyPolicyRequest
 	lastSpend        *pb.GetSpendRequest
+	lastSchedule     *pb.SetNodeScheduleRequest
+	lastOverride     *pb.SetNodeCapacityOverrideRequest
 }
 
 type fakeData struct {

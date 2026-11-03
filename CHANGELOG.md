@@ -7,6 +7,12 @@ Notable changes to ktms-admin. The format follows
 ## [Unreleased]
 
 ### Added
+- Node schedules (KTMS 1.5 or later): the Nodes page shows each node's level and what set it,
+  marks nodes that take their schedule from KTMS, and its **Schedule** dialog edits the rules KTMS
+  keeps for a node and holds the node at a level for a while. Viewers see them read-only. The
+  `ktms.v1` copy adds `GetNodeSchedule`, `ListNodeSchedules`, `SetNodeSchedule`,
+  `SetNodeCapacityOverride` and `DeleteNodeSchedule`; the first two go with `KTMS_READ_KEY`.
+- The Nodes page names the `PAUSED` state.
 - MCP servers page for KTMS's MCP gateway (KTMS 1.4 or later): register servers, set or remove
   their credential (write-only), list their tools. Keys get the `mcp` access and an *Allowed MCP*
   list in their policy, and teams an *Allowed MCP* list. The `ktms.v1` copy follows KTMS 1.4.0.
