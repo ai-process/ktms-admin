@@ -38,29 +38,37 @@ type agentPage struct {
 	Agents []map[string]any `json:"agents"`
 }
 
-// agentKey reports whether a key is a person's agent key, as this page mints them.
-func agentKey(k *pb.APIKeyInfo) bool {
-	return !k.GetDisabled() && slices.Equal(k.GetScopes(), []string{"mcp"}) && slices.Equal(k.GetPolicy().GetAllowedMcp(), []string{agentsServer})
+// agentKey reports whether a key is the person's agent key, as this page
+// mints them; the owner is checked here too, not left to KTMS's filter.
+func agentKey(k *pb.APIKeyInfo, who string) bool {
+	return !k.GetDisabled() && k.GetOwner() == who && slices.Equal(k.GetScopes(), []string{"mcp"}) &&
+		slices.Equal(k.GetPolicy().GetAllowedMcp(), []string{agentsServer})
 }
 
 func (s *Server) agentGet(w http.ResponseWriter, r *http.Request, u *auth.User) {
 	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
 	defer cancel()
 	who := owner(u)
-	keys, err := s.admin.ListAPIKeys(ctx, &pb.ListAPIKeysRequest{Owner: who})
-	if err != nil {
-		backendErr(w, err)
-		return
-	}
+	var keys *pb.ListAPIKeysResponse
+	var kerr error
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		keys, kerr = s.admin.ListAPIKeys(ctx, &pb.ListAPIKeysRequest{Owner: who})
+	}()
 	// Revoked agents too: their conversations stay readable until they expire.
 	agents, err := s.admin.ListAgents(ctx, &pb.ListAgentsRequest{Owner: who, IncludeRevoked: true})
+	<-done
+	if err == nil {
+		err = kerr
+	}
 	if err != nil {
 		backendErr(w, err)
 		return
 	}
 	page := agentPage{Email: who, MCPURL: s.cfg.AgentsMCPURL, Keys: []map[string]any{}, Agents: []map[string]any{}}
 	for _, k := range keys.GetKeys() {
-		if !agentKey(k) {
+		if !agentKey(k, who) {
 			continue
 		}
 		v, err := protoValue(k)
@@ -71,6 +79,9 @@ func (s *Server) agentGet(w http.ResponseWriter, r *http.Request, u *auth.User) 
 		page.Keys = append(page.Keys, v)
 	}
 	for _, a := range agents.GetAgents() {
+		if a.GetOwner() != who {
+			continue
+		}
 		v, err := protoValue(a)
 		if err != nil {
 			backendErr(w, err)
@@ -87,15 +98,19 @@ var notLocal, notLabel = regexp.MustCompile(`[^a-z0-9._-]+`), regexp.MustCompile
 // each other: the address with "_" for "@" (no domain has one, so two
 // addresses never meet) and a label. A long one keeps a hash of the address.
 func agentName(email, label string) (string, error) {
-	local, domain, _ := strings.Cut(strings.ToLower(strings.TrimSpace(email)), "@")
-	local = strings.Trim(notLocal.ReplaceAllString(local, "-"), "-._")
+	addr := strings.ToLower(strings.TrimSpace(email))
+	rawLocal, rawDomain, _ := strings.Cut(addr, "@")
+	local := strings.Trim(notLocal.ReplaceAllString(rawLocal, "-"), "-._")
+	domain := strings.Trim(notLocal.ReplaceAllString(rawDomain, "-"), "-._")
 	if local == "" || domain == "" {
 		return "", fmt.Errorf("cannot make an agent name of %q", email)
 	}
 	name := local + "_" + domain
-	if len(name) > 40 {
-		sum := sha256.Sum256([]byte(local + "@" + domain))
-		name = strings.TrimRight(name[:32], "-._") + "-" + hex.EncodeToString(sum[:])[:7]
+	// An address that lost characters, or a long one, keeps a hash of the
+	// whole, so two people never share a name. Only ASCII is left to cut.
+	if local != rawLocal || domain != rawDomain || len(name) > 40 {
+		sum := sha256.Sum256([]byte(addr))
+		name = strings.TrimRight(name[:min(len(name), 32)], "-._") + "-" + hex.EncodeToString(sum[:])[:7]
 	}
 	l := strings.Trim(notLabel.ReplaceAllString(strings.ToLower(label), "-"), "-")
 	if len(l) > 20 {
@@ -157,7 +172,7 @@ func (s *Server) agentRevokeKey(w http.ResponseWriter, r *http.Request, u *auth.
 		backendErr(w, err)
 		return
 	}
-	if !slices.ContainsFunc(keys.GetKeys(), func(k *pb.APIKeyInfo) bool { return k.GetName() == name && agentKey(k) }) {
+	if !slices.ContainsFunc(keys.GetKeys(), func(k *pb.APIKeyInfo) bool { return k.GetName() == name && agentKey(k, owner(u)) }) {
 		writeErr(w, http.StatusNotFound, "not_found", "you have no agent key "+name)
 		return
 	}
@@ -176,7 +191,9 @@ func (s *Server) ownAgents(ctx context.Context, u *auth.User) ([]string, error) 
 	}
 	var names []string
 	for _, a := range res.GetAgents() {
-		names = append(names, a.GetName())
+		if a.GetOwner() == owner(u) {
+			names = append(names, a.GetName())
+		}
 	}
 	return names, nil
 }
@@ -211,7 +228,7 @@ func (s *Server) agentTask(w http.ResponseWriter, r *http.Request, u *auth.User)
 		return
 	}
 	t, err := s.admin.GetAgentTask(s.asConsole(ctx), &pb.GetAgentTaskRequest{TaskId: r.PathValue("id")})
-	if err != nil && status.Code(err) != codes.NotFound {
+	if err != nil && status.Code(err) != codes.NotFound && status.Code(err) != codes.InvalidArgument {
 		backendErr(w, err)
 		return
 	}

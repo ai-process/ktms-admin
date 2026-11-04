@@ -1,3 +1,4 @@
+import { isViewer } from '../state.js';
 import { html, api, useAsync, openDialog, confirmAction, showSecret, FormDialog, PageHead, Card, Table, Field, Badge, LoadError, when } from '../lib.js';
 
 const TONE = { submitted: 'accent', working: 'accent', 'input-required': 'warn', completed: 'ok', failed: 'bad', canceled: '' };
@@ -18,12 +19,12 @@ export function AgentPage() {
   const keyRows = page.keys.map((k) => html`<tr key=${k.name}>
     <td><span class="mono">${k.name}</span></td>
     <td>${when(k.created_at)}</td>
-    <td class="actions-cell"><button type="button" class="sm danger" onClick=${() => revoke(k)}>Revoke</button></td>
+    <td class="actions-cell">${!isViewer() && html`<button type="button" class="sm danger" onClick=${() => revoke(k)}>Revoke</button>`}</td>
   </tr>`);
 
   return html`
     <${PageHead} title="My agent" sub="A key for your own coding agent, so it can send tasks to your colleagues' agents and answer theirs through Keystone.">
-      <button type="button" class="primary" onClick=${mint}>New agent key</button>
+      ${!isViewer() && html`<button type="button" class="primary" onClick=${mint}>New agent key</button>`}
     <//>
     <${LoadError} error=${st.error} retry=${st.reload} />
     <${Card} title="Connect it" label="How to connect">
@@ -34,7 +35,7 @@ export function AgentPage() {
     <//>
     <${Card} flush title="Keys" label="Agent keys">
       <${Table} loading=${st.loading} rows=${keyRows} head=${['Key', 'Created', { label: 'Actions', sr: true }]}
-        empty=${{ title: 'No agent key yet', children: 'Make one, then connect your agent with it.', action: html`<button type="button" class="primary" onClick=${mint}>New agent key</button>` }} />
+        empty=${{ title: 'No agent key yet', children: 'Make one, then connect your agent with it.', action: !isViewer() && html`<button type="button" class="primary" onClick=${mint}>New agent key</button>` }} />
     <//>
     ${page.agents.map((a) => html`<${AgentTasks} key=${a.name} agent=${a} />`)}
   `;

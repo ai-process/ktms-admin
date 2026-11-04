@@ -256,7 +256,8 @@ func (p policy) allows(u *auth.User, write bool) bool {
 	case adminOnly:
 		return u.IsSuperAdmin()
 	case own:
-		return true
+		// A viewer reads its page but changes nothing, as everywhere else.
+		return !write || !u.IsViewer()
 	case team:
 		if write {
 			return u.IsSuperAdmin() || u.IsTeamLead()

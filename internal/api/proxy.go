@@ -98,13 +98,13 @@ func (s *Server) proxyRevokeKey(w http.ResponseWriter, r *http.Request, u *auth.
 	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
 	defer cancel()
 	if !u.IsSuperAdmin() {
-		isOwnTeam, err := s.ownsKey(ctx, u, name)
+		ok, err := s.managesKey(ctx, u, name)
 		if err != nil {
 			backendErr(w, err)
 			return
 		}
-		if !isOwnTeam {
-			writeErr(w, http.StatusForbidden, "forbidden", "cannot revoke keys belonging to other teams")
+		if !ok {
+			writeErr(w, http.StatusForbidden, "forbidden", "team leads revoke only their team's generate keys")
 			return
 		}
 	}
@@ -115,21 +115,36 @@ func (s *Server) proxyRevokeKey(w http.ResponseWriter, r *http.Request, u *auth.
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-// ownsKey reports whether a user who is not a super admin may manage the key:
-// only keys of their own team.
-func (s *Server) ownsKey(ctx context.Context, u *auth.User, name string) (bool, error) {
+// teamKey is the named key if it belongs to the user's team, else nil.
+func (s *Server) teamKey(ctx context.Context, u *auth.User, name string) (*pb.APIKeyInfo, error) {
 	keysResp, err := s.admin.ListAPIKeys(ctx, &pb.ListAPIKeysRequest{})
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 	for _, k := range keysOfTeam(keysResp.Keys, u.TeamID) {
-		// A team lead manages generate keys only: a person's mcp agent key is
-		// theirs, and an empty allowed_mcp on it would open every MCP server.
 		if k.Name == name {
-			return !slices.ContainsFunc(k.Scopes, func(s string) bool { return s != "generate" }), nil
+			return k, nil
 		}
 	}
-	return false, nil
+	return nil, nil
+}
+
+// ownsKey reports whether a user who is not a super admin may read the key:
+// any key of their own team.
+func (s *Server) ownsKey(ctx context.Context, u *auth.User, name string) (bool, error) {
+	k, err := s.teamKey(ctx, u, name)
+	return k != nil, err
+}
+
+// managesKey reports whether they may change or revoke it: a team key with
+// generate scope only, since an empty allowed_mcp on an mcp key opens every server.
+func (s *Server) managesKey(ctx context.Context, u *auth.User, name string) (bool, error) {
+	k, err := s.teamKey(ctx, u, name)
+	return k != nil && generateOnly(k), err
+}
+
+func generateOnly(k *pb.APIKeyInfo) bool {
+	return !slices.ContainsFunc(k.GetScopes(), func(s string) bool { return s != "generate" })
 }
 
 // proxySetKeyPolicy replaces a key's allowed models and rates. A team lead may
@@ -145,13 +160,13 @@ func (s *Server) proxySetKeyPolicy(w http.ResponseWriter, r *http.Request, u *au
 	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
 	defer cancel()
 	if !u.IsSuperAdmin() {
-		ok, err := s.ownsKey(ctx, u, name)
+		ok, err := s.managesKey(ctx, u, name)
 		if err != nil {
 			backendErr(w, err)
 			return
 		}
 		if !ok {
-			writeErr(w, http.StatusForbidden, "forbidden", "cannot change keys belonging to other teams")
+			writeErr(w, http.StatusForbidden, "forbidden", "team leads change only their team's generate keys")
 			return
 		}
 	}

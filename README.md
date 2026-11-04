@@ -348,7 +348,8 @@ remove the header each one is sent (write-only, like vendor credentials; only it
 list a server's tools as the entries a key's or team's *Allowed MCP* takes. Keys get the *Use MCP tools*
 access and an *Allowed MCP* list in their policy; teams get one too.
 
-**My agent** (KTMS 1.6+). Every account has it, a self-service account only it. **New agent key** makes
+**My agent** (KTMS 1.6+). Every account has it, a self-service account only it; a viewer sees it but
+mints and revokes nothing. **New agent key** makes
 a key for the person's own coding agent: the `mcp` scope limited to KTMS's built-in `agents` server, with
 the person as its owner and no team, so a team lead cannot widen it. It is named after the address, with
 `_` for `@`, and an optional label (`alice_example.com-laptop`), which is how other agents address it, and

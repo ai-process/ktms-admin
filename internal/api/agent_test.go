@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -20,17 +21,18 @@ import (
 
 type agentAdmin struct {
 	pb.AdminServiceClient
-	keys     []*pb.APIKeyInfo
-	agents   []*pb.AgentInfo
-	tasks    map[string]*pb.AgentTask
-	lastMint *pb.MintAPIKeyRequest
-	revoked  []string
+	ignoreOwner bool // an older KTMS drops the owner filter
+	keys        []*pb.APIKeyInfo
+	agents      []*pb.AgentInfo
+	tasks       map[string]*pb.AgentTask
+	lastMint    *pb.MintAPIKeyRequest
+	revoked     []string
 }
 
 func (f *agentAdmin) ListAPIKeys(_ context.Context, r *pb.ListAPIKeysRequest, _ ...grpc.CallOption) (*pb.ListAPIKeysResponse, error) {
 	var out []*pb.APIKeyInfo
 	for _, k := range f.keys {
-		if r.GetOwner() == "" || k.GetOwner() == r.GetOwner() {
+		if f.ignoreOwner || r.GetOwner() == "" || k.GetOwner() == r.GetOwner() {
 			out = append(out, k)
 		}
 	}
@@ -58,7 +60,7 @@ func (f *agentAdmin) GetTeam(_ context.Context, r *pb.GetTeamRequest, _ ...grpc.
 func (f *agentAdmin) ListAgents(_ context.Context, r *pb.ListAgentsRequest, _ ...grpc.CallOption) (*pb.ListAgentsResponse, error) {
 	var out []*pb.AgentInfo
 	for _, a := range f.agents {
-		if r.GetOwner() == "" || a.GetOwner() == r.GetOwner() {
+		if f.ignoreOwner || r.GetOwner() == "" || a.GetOwner() == r.GetOwner() {
 			out = append(out, a)
 		}
 	}
@@ -198,11 +200,19 @@ func TestAgentName(t *testing.T) {
 		{"bob@corp.de", "Laptop 2", "bob_corp.de-laptop-2"},
 		{"ann.test@corp.com", "", "ann.test_corp.com"},
 		{"ann-test@corp.com", "", "ann-test_corp.com"},
-		{"a+b@corp.com", "ci", "a-b_corp.com-ci"},
 	} {
 		if got, err := agentName(c.email, c.label); err != nil || got != c.want {
 			t.Errorf("agentName(%q, %q) = %q, %v; want %q", c.email, c.label, got, err, c.want)
 		}
+	}
+	// Characters that had to go leave a hash, so a+b and a-b never meet.
+	plus, _ := agentName("a+b@corp.com", "")
+	dash, _ := agentName("a-b@corp.com", "")
+	if plus == dash || dash != "a-b_corp.com" {
+		t.Errorf("a+b -> %q, a-b -> %q", plus, dash)
+	}
+	if idn, err := agentName("anna@bücher.de", ""); err != nil || strings.ContainsFunc(idn, func(r rune) bool { return r > 127 }) {
+		t.Errorf("IDN domain -> %q, %v", idn, err)
 	}
 	long, err := agentName("firstname.middlename.lastname-contractor@verylongcompanyname.com", "laptop")
 	other, _ := agentName("firstname.middlename.lastname-contractor@verylongcompanyname.org", "laptop")
@@ -227,5 +237,39 @@ func TestTeamLeadCannotEditAgentKey(t *testing.T) {
 	}
 	if w := call(h, "PUT", "/api/proxy/keys/search-service/policy", `{}`, lead, csrf); w.Code != 200 {
 		t.Fatalf("team lead lost its own generate key: %d %s", w.Code, w.Body)
+	}
+}
+
+// Against a KTMS that ignores the owner filter, nobody reaches another's key.
+func TestAgentOwnerCheckedInConsole(t *testing.T) {
+	h, fa := agentServer(t)
+	fa.ignoreOwner = true
+	ann := sessionCookie(t, "ann@corp.com")
+	if w := call(h, "DELETE", "/api/agent/keys/bob_corp.com-agent", "", ann, csrf); w.Code != http.StatusNotFound || len(fa.revoked) != 0 {
+		t.Fatalf("revoked bob's key: %d %v", w.Code, fa.revoked)
+	}
+	var page agentPage
+	if w := call(h, "GET", "/api/agent", "", ann, nil); json.Unmarshal(w.Body.Bytes(), &page) != nil || len(page.Keys) != 0 || len(page.Agents) != 1 {
+		t.Fatalf("page = %s", w.Body)
+	}
+	if w := call(h, "GET", "/api/agent/tasks?agent=bob_corp.com-agent", "", ann, nil); w.Code != http.StatusNotFound {
+		t.Fatalf("read bob's tasks: %d", w.Code)
+	}
+}
+
+// A viewer opens the page but changes nothing; a team lead still reads the
+// spend of a team key it may not change.
+func TestViewerAndTeamLeadLimits(t *testing.T) {
+	h, fa := tenantServer(t)
+	if w := call(h, "POST", "/api/agent/keys", `{}`, sessionCookie(t, "p@view.com"), csrf); w.Code != http.StatusForbidden {
+		t.Fatalf("viewer minted an agent key: %d", w.Code)
+	}
+	fa.keys = append(fa.keys, &pb.APIKeyInfo{Name: "mixed", TeamId: "team-1", Scopes: []string{"generate", "mcp"}})
+	lead := sessionCookie(t, "lead@corp.com")
+	if w := call(h, "GET", "/api/proxy/spend?subject_type=key&subject_id=mixed", "", lead, nil); w.Code != 200 {
+		t.Fatalf("team lead spend of its mixed key = %d %s", w.Code, w.Body)
+	}
+	if w := call(h, "DELETE", "/api/proxy/keys/mixed", "", lead, csrf); w.Code != http.StatusForbidden {
+		t.Fatalf("team lead revoked a mixed key: %d", w.Code)
 	}
 }

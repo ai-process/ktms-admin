@@ -56,7 +56,7 @@ func main() {
 	if err != nil {
 		log.Fatal().Err(err).Msg("SELF_SERVICE_EMAILS")
 	}
-	if admins.AllowsAll() || viewers.AllowsAll() {
+	if admins.AllowsAll() || viewers.AllowsAll() || self.AllowsAll() {
 		log.Warn().Msg("an allowlist contains *@*: everyone who can sign in gets access")
 	}
 	if admins.HasWildcard() {
