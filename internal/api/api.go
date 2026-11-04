@@ -129,6 +129,7 @@ var readMethods = map[string]bool{
 	pb.AdminService_GetSpend_FullMethodName: true, "/ktms.v1.AdminService/ExplainRoute": true,
 	pb.AdminService_ListMCPTools_FullMethodName:    true,
 	pb.AdminService_GetNodeSchedule_FullMethodName: true, pb.AdminService_ListNodeSchedules_FullMethodName: true,
+	pb.AdminService_ListAgents_FullMethodName: true, pb.AdminService_ListAgentTasks_FullMethodName: true,
 }
 
 func readMethod(method string) bool { return readMethods[method] }
@@ -144,6 +145,11 @@ func (s *Server) Handler() http.Handler {
 	api("GET /api/me", anyUser, s.me)
 	api("GET /api/health", anyUser, s.health)
 	if s.admin != nil {
+		api("GET /api/agent", own, s.agentGet)
+		api("POST /api/agent/keys", own, s.agentMintKey)
+		api("DELETE /api/agent/keys/{name}", own, s.agentRevokeKey)
+		api("GET /api/agent/tasks", own, s.agentTasks)
+		api("GET /api/agent/tasks/{id}", own, s.agentTask)
 		api("GET /api/proxy/config", globalRead, s.proxyConfig)
 		api("GET /api/proxy/keys", team, s.proxyListKeys)
 		api("POST /api/proxy/keys", team, s.proxyMintKey)
@@ -238,6 +244,7 @@ const (
 	globalRead               // every tenant's data: admins and viewers
 	adminOnly                // global changes, and calls made with the console's own key
 	team                     // admins and viewers globally, team users for their own team
+	own                      // every signed-in person, self included, for their own agent only
 )
 
 func (p policy) allows(u *auth.User, write bool) bool {
@@ -248,6 +255,9 @@ func (p policy) allows(u *auth.User, write bool) bool {
 		return !write && u.CanReadGlobal()
 	case adminOnly:
 		return u.IsSuperAdmin()
+	case own:
+		// A viewer reads its page but changes nothing, as everywhere else.
+		return !write || !u.IsViewer()
 	case team:
 		if write {
 			return u.IsSuperAdmin() || u.IsTeamLead()

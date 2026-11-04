@@ -39,7 +39,7 @@ export function KeysPage({ params }) {
     <td><${SpendChips} spend=${k.disabled ? {} : st.data?.spend?.[k.name]} failed=${!!st.data?.spendError} /></td>
     <td>${when(k.created_at)}</td>
     <td>${k.disabled ? html`<${Badge}>Revoked<//>` : html`<${Badge} tone="ok">Active<//>`}</td>
-    <td class="actions-cell">${canMint && !k.disabled && html`<button type="button" class="sm" onClick=${() => editPolicy(k)}>Policy</button><button type="button" class="sm danger" onClick=${() => revoke(k)}>Revoke</button>`}</td>
+    <td class="actions-cell">${canMint && !k.disabled && (isAdmin() || (k.scopes || []).every((s) => s === 'generate')) && html`<button type="button" class="sm" onClick=${() => editPolicy(k)}>Policy</button><button type="button" class="sm danger" onClick=${() => revoke(k)}>Revoke</button>`}</td>
   </tr>`);
 
   return html`
