@@ -203,6 +203,12 @@ the door. An empty list admits nobody.
   Neither sees other tenants, global config or usage, nor uses Playground or Judge, which run on the
   console's own key outside the team's limits. An entry here overrides a matching `ALLOWED_EMAILS` pattern;
   entries without a team or with another role are skipped and logged.
+- **`SELF_SERVICE_EMAILS`** (optional, KTMS 1.6+) lets a whole company in to one page: **My agent**,
+  where each person makes and revokes a key for their own coding agent and reads its conversations
+  with the other agents. Nothing else of the console opens for them. The pattern is checked last, so
+  `ALLOWED_EMAILS=alice@example.com` with `SELF_SERVICE_EMAILS=*@example.com` makes Alice an admin
+  and everyone else at example.com a self-service user. A pattern in `ALLOWED_EMAILS` makes everyone
+  it matches an admin, so the console warns about one at start: list admins by address.
 - Lists are checked on **every request**, so removing someone ends their access immediately, not at
   session expiry. Changing a list needs a restart.
 
@@ -215,7 +221,7 @@ The console's own `/api` serves its web UI only and is not a public API.
 
 | ktms-admin | KTMS gateway | light-tokenmeter |
 | --- | --- | --- |
-| 1.x | 1.x; `KTMS_READ_KEY` needs 1.2 or later, the MCP servers page 1.4 or later, node schedules on the Nodes page 1.5 or later | 1.x; with its authentication on, set `TOKENMETER_TOKEN` to a `read` token |
+| 1.x | 1.x; `KTMS_READ_KEY` needs 1.2 or later, the MCP servers page 1.4 or later, node schedules on the Nodes page 1.5 or later, the My agent page 1.6 or later | 1.x; with its authentication on, set `TOKENMETER_TOKEN` to a `read` token |
 | 0.4.x | 0.14.x | 0.1.x |
 | 0.3.x and earlier | 0.13.x | 0.1.x |
 
@@ -259,8 +265,10 @@ All settings are environment variables; see [`env.example`](env.example).
 | `AUTH_HEADER_EMAIL` | `X-Forwarded-Email` | The header the proxy names the user's e-mail in. |
 | `AUTH_HEADER_NAME` | empty | Optional header with the user's display name. |
 | `CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD` | empty | Turn on [Cloudflare Access](#sign-in-behind-an-access-proxy) sign-in. |
-| `ALLOWED_EMAILS` | – | Admin patterns. At least one of `ALLOWED_EMAILS`, `VIEWER_EMAILS` or `TEAM_MEMBERSHIPS` must be non-empty. |
+| `ALLOWED_EMAILS` | – | Admin patterns. At least one of `ALLOWED_EMAILS`, `VIEWER_EMAILS`, `TEAM_MEMBERSHIPS` or `SELF_SERVICE_EMAILS` must be non-empty. |
 | `VIEWER_EMAILS` | empty | Read-only patterns. |
+| `SELF_SERVICE_EMAILS` | empty | Patterns that see only **My agent**: their own agent key and its conversations (KTMS 1.6+). Checked after every other list. |
+| `KTMS_AGENTS_MCP_URL` | empty | KTMS's `/mcp/agents` as people's agents reach it, such as `https://ktms.example.com/mcp/agents`; **My agent** shows it in the command that connects an agent. |
 | `TEAM_MEMBERSHIPS` | empty | Team workspaces: `email:team_id[:teamlead\|member[:org_id]]`, see [Who may sign in](#who-may-sign-in). |
 | `DEV_USER_ROLE`, `DEV_USER_TEAM_ID`, `DEV_USER_ORG_ID` | admin | With `INSECURE_NO_AUTH`: the role and team of the local dev user. |
 | `SESSION_SECRET` | random | 32+ characters; signs the session cookie. Set it, or sessions end at every restart and cannot be shared between replicas. |
@@ -339,6 +347,14 @@ shows its spend this month against the budget and its keys.
 remove the header each one is sent (write-only, like vendor credentials; only its fingerprint shows), and
 list a server's tools as the entries a key's or team's *Allowed MCP* takes. Keys get the *Use MCP tools*
 access and an *Allowed MCP* list in their policy; teams get one too.
+
+**My agent** (KTMS 1.6+). Every account has it, a self-service account only it. **New agent key** makes
+a key for the person's own coding agent: the `mcp` scope limited to KTMS's built-in `agents` server, with
+the person as its owner and, for a team member, the team. It is named after the address and an optional
+label (`alice.example-laptop`), which is how other agents address it, and shown once. The page shows the
+command that connects the agent, the person's agent keys (revoke them here) and each agent's conversations
+with the other agents, with their messages. These routes run with `KTMS_ADMIN_KEY`, since no read key may
+mint, and check the key's or agent's owner on every call.
 
 **Playground.** Send a prompt or multi-turn conversation through the same routing your clients use, with SSE streaming, tool definitions, interactive tool result responses, effort selection, and attributes. The call is attributed to `console.playground` and your e-mail.
 

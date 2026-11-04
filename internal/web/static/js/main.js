@@ -1,6 +1,6 @@
 // KTMS admin console: shell, navigation and hash routing.
 import { html, render, useState, useEffect, api, Icon, Toasts, cx } from './lib.js';
-import { session, isAdmin, canReadGlobal, inTeam, hasProxy, hasUsage } from './state.js';
+import { session, isAdmin, canReadGlobal, inTeam, isSelf, hasProxy, hasUsage } from './state.js';
 import { UsagePage } from './pages/usage.js';
 import { ModelsPage } from './pages/models.js';
 import { RulesPage } from './pages/rules.js';
@@ -12,6 +12,7 @@ import { CabinetPage } from './pages/cabinet.js';
 import { PlaygroundPage } from './pages/playground.js';
 import { JudgePage } from './pages/judge.js';
 import { MCPPage } from './pages/mcp.js';
+import { AgentPage } from './pages/agent.js';
 
 // Each page declares who may open it; the server enforces the same split.
 const PAGES = {
@@ -21,20 +22,23 @@ const PAGES = {
   models: { title: 'Models', icon: 'models', comp: ModelsPage, ok: () => hasProxy() && canReadGlobal() },
   rules: { title: 'Rules', icon: 'rules', comp: RulesPage, ok: () => hasProxy() && canReadGlobal() },
   limits: { title: 'Limits', icon: 'limits', comp: LimitsPage, ok: () => hasProxy() && canReadGlobal() },
-  keys: { title: 'Keys', icon: 'keys', comp: KeysPage, ok: () => hasProxy() },
+  keys: { title: 'Keys', icon: 'keys', comp: KeysPage, ok: () => hasProxy() && !isSelf() },
   nodes: { title: 'Nodes', icon: 'nodes', comp: NodesPage, ok: () => hasProxy() && canReadGlobal() },
   mcp: { title: 'MCP servers', icon: 'mcp', comp: MCPPage, ok: () => hasProxy() && canReadGlobal() },
   // Run with the console's own key, outside any team's models and budget.
   playground: { title: 'Playground', icon: 'playground', comp: PlaygroundPage, ok: () => hasProxy() && isAdmin() },
   judge: { title: 'Judge', icon: 'judge', comp: JudgePage, ok: () => hasProxy() && isAdmin() },
+  agent: { title: 'My agent', icon: 'agent', comp: AgentPage, ok: () => hasProxy() },
 };
 
-const GROUPS = () => inTeam()
-  ? [['My team', ['cabinet', 'keys']]]
-  : [['Spend', ['usage']], ['Tenancy', ['tenants']], ['Gateway', ['models', 'rules', 'limits', 'keys', 'nodes', 'mcp']], ['Tools', ['playground', 'judge']]];
+const GROUPS = () => isSelf()
+  ? [['Me', ['agent']]]
+  : inTeam()
+    ? [['My team', ['cabinet', 'keys']], ['Me', ['agent']]]
+    : [['Spend', ['usage']], ['Tenancy', ['tenants']], ['Gateway', ['models', 'rules', 'limits', 'keys', 'nodes', 'mcp']], ['Tools', ['playground', 'judge']], ['Me', ['agent']]];
 
 function defaultPage() {
-  const order = inTeam() ? ['cabinet', 'keys'] : ['usage', 'models', 'keys', 'cabinet'];
+  const order = isSelf() ? ['agent'] : inTeam() ? ['cabinet', 'keys'] : ['usage', 'models', 'keys', 'cabinet'];
   return order.find((n) => PAGES[n].ok()) || null;
 }
 
@@ -75,7 +79,7 @@ function Health() {
 }
 
 function RoleBadge({ role }) {
-  const tone = { admin: 'accent', teamlead: 'ok', viewer: '', member: '' }[role] || '';
+  const tone = { admin: 'accent', teamlead: 'ok', viewer: '', member: '', self: '' }[role] || '';
   return html`<span class=${cx('badge', tone)}>${role || 'member'}</span>`;
 }
 

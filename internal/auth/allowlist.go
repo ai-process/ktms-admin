@@ -80,6 +80,16 @@ func glob(pat, s string) bool {
 	return px == len(pat)
 }
 
+// HasWildcard reports whether a pattern matches more than one address.
+func (a *Allowlist) HasWildcard() bool {
+	for _, p := range a.patterns {
+		if strings.Contains(p.local, "*") || strings.Contains(p.domain, "*") {
+			return true
+		}
+	}
+	return false
+}
+
 // AllowsAll reports whether a "*@*" pattern admits every address.
 func (a *Allowlist) AllowsAll() bool {
 	for _, p := range a.patterns {

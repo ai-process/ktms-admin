@@ -52,8 +52,15 @@ func main() {
 	if err != nil {
 		log.Fatal().Err(err).Msg("VIEWER_EMAILS")
 	}
+	self, err := auth.ParseAllowlist(cfg.SelfServiceEmails)
+	if err != nil {
+		log.Fatal().Err(err).Msg("SELF_SERVICE_EMAILS")
+	}
 	if admins.AllowsAll() || viewers.AllowsAll() {
 		log.Warn().Msg("an allowlist contains *@*: everyone who can sign in gets access")
+	}
+	if admins.HasWildcard() {
+		log.Warn().Msg("ALLOWED_EMAILS has a pattern: everyone it matches is an admin. List admins by address and put patterns in SELF_SERVICE_EMAILS")
 	}
 	secret := cfg.SessionSecret
 	switch {
@@ -75,7 +82,7 @@ func main() {
 	}
 	handler := auth.New(auth.Options{
 		PublicURL: cfg.PublicURL, Methods: methods,
-		Admins: admins, Viewers: viewers, TeamMemberships: memberships,
+		Admins: admins, Viewers: viewers, SelfService: self, TeamMemberships: memberships,
 		DevUserRole: cfg.DevUserRole, DevUserTeamID: cfg.DevUserTeamID, DevUserOrgID: cfg.DevUserOrgID,
 		Signer: auth.NewSigner(secret), SessionTTL: cfg.SessionTTL,
 		SecureCookies: cfg.SecureCookies(), InsecureNoAuth: cfg.InsecureNoAuth,

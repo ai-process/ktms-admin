@@ -6,6 +6,15 @@ Notable changes to ktms-admin. The format follows
 
 ## [Unreleased]
 
+### Added
+- **My agent** page (KTMS 1.6+): every person makes and revokes a key for their own coding agent,
+  limited to KTMS's `agents` inbox and owned by them, and reads its conversations with other agents.
+- `SELF_SERVICE_EMAILS`: patterns, such as the whole company, that sign in to **My agent** only. They
+  are checked after `ALLOWED_EMAILS`, `VIEWER_EMAILS` and `TEAM_MEMBERSHIPS`, so named admins keep
+  their role; a pattern in `ALLOWED_EMAILS` is now warned about at start.
+- `KTMS_AGENTS_MCP_URL` for the connect command on that page. The `ktms.v1` copy adds `owner` on keys
+  and `ListAgents`, `SetAgentRecording`, `ListAgentTasks` and `GetAgentTask`.
+
 ## [1.2.0] - 2026-11-03
 
 ### Added

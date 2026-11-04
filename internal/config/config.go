@@ -25,8 +25,9 @@ type Config struct {
 	GitHubURL          string
 	AllowedEmails      string
 	ViewerEmails       string
+	SelfServiceEmails  string // patterns signed in with only their own agent key and inbox
 	TeamMemberships    string // email:team_id:role[:org_id]
-	DevUserRole        string // admin | viewer | teamlead | member
+	DevUserRole        string // admin | viewer | teamlead | member | self
 	DevUserTeamID      string
 	DevUserOrgID       string
 	SessionSecret      string
@@ -51,6 +52,8 @@ type Config struct {
 	// every viewer's call, so those cannot change Keystone. Optional.
 	ProxyReadKey string
 	ProxyTLS     bool
+	// AgentsMCPURL is KTMS's /mcp/agents as people's agents reach it, shown on the agent page.
+	AgentsMCPURL string
 
 	TokenmeterURL string
 	// TokenmeterToken is a light-tokenmeter bearer token with the read scope.
@@ -101,6 +104,7 @@ func Load() (*Config, error) {
 		GitHubURL:          env("GITHUB_URL", ""),
 		AllowedEmails:      env("ALLOWED_EMAILS", ""),
 		ViewerEmails:       env("VIEWER_EMAILS", ""),
+		SelfServiceEmails:  env("SELF_SERVICE_EMAILS", ""),
 		TeamMemberships:    env("TEAM_MEMBERSHIPS", ""),
 		DevUserRole:        env("DEV_USER_ROLE", ""),
 		DevUserTeamID:      env("DEV_USER_TEAM_ID", ""),
@@ -119,6 +123,7 @@ func Load() (*Config, error) {
 		ProxyAdminKey:      env("KTMS_ADMIN_KEY", env("LLM_PROXY_ADMIN_KEY", "")),
 		ProxyReadKey:       env("KTMS_READ_KEY", ""),
 		ProxyTLS:           env("KTMS_TLS", env("LLM_PROXY_TLS", "")) == "true",
+		AgentsMCPURL:       strings.TrimRight(env("KTMS_AGENTS_MCP_URL", ""), "/"),
 		TokenmeterURL:      strings.TrimRight(env("TOKENMETER_URL", ""), "/"),
 		// Trimmed: a secret written with echo ends in a newline, which no header may carry.
 		TokenmeterToken: strings.TrimSpace(env("TOKENMETER_TOKEN", "")),
@@ -185,8 +190,8 @@ func (c *Config) Validate() error {
 		return errors.New("set both GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET, or neither")
 	case (c.CFAccessTeamDomain == "") != (c.CFAccessAUD == ""):
 		return errors.New("set both CF_ACCESS_TEAM_DOMAIN and CF_ACCESS_AUD, or neither")
-	case strings.TrimSpace(c.AllowedEmails) == "" && strings.TrimSpace(c.ViewerEmails) == "" && strings.TrimSpace(c.TeamMemberships) == "":
-		return errors.New("ALLOWED_EMAILS, VIEWER_EMAILS and TEAM_MEMBERSHIPS are empty: nobody could sign in")
+	case strings.TrimSpace(c.AllowedEmails) == "" && strings.TrimSpace(c.ViewerEmails) == "" && strings.TrimSpace(c.TeamMemberships) == "" && strings.TrimSpace(c.SelfServiceEmails) == "":
+		return errors.New("ALLOWED_EMAILS, VIEWER_EMAILS, TEAM_MEMBERSHIPS and SELF_SERVICE_EMAILS are empty: nobody could sign in")
 	}
 	seen := map[string]bool{}
 	for _, p := range c.OIDCProviders {
