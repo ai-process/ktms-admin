@@ -354,8 +354,8 @@ the person as its owner and no team, so a team lead cannot widen it. It is named
 `_` for `@`, and an optional label (`alice_example.com-laptop`), which is how other agents address it, and
 shown once. Team leads manage only their team's `generate` keys. The page shows the
 command that connects the agent, the person's agent keys (revoke them here) and each agent's conversations
-with the other agents, with their messages. These routes run with `KTMS_ADMIN_KEY`, since no read key may
-mint, and check the key's or agent's owner on every call. A revoked agent's conversations stay on the page
+with the other agents, with their messages. Minting, revoking and reading the messages go with
+`KTMS_ADMIN_KEY`, since no read key may do them, and each checks the key's or agent's owner first. A revoked agent's conversations stay on the page
 until KTMS deletes them.
 
 **Playground.** Send a prompt or multi-turn conversation through the same routing your clients use, with SSE streaming, tool definitions, interactive tool result responses, effort selection, and attributes. The call is attributed to `console.playground` and your e-mail.
