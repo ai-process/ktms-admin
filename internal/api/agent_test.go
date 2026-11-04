@@ -93,14 +93,14 @@ func agentServer(t *testing.T) (http.Handler, *agentAdmin) {
 		Admins: admins, SelfService: self, TeamMemberships: members,
 		Signer: auth.NewSigner("0123456789abcdef0123456789abcdef"), SessionTTL: time.Hour})
 	fa := &agentAdmin{
-		keys: []*pb.APIKeyInfo{{Name: "bob.corp-agent", Owner: "bob@corp.com", Scopes: []string{"mcp"}, Policy: &pb.APIKeyPolicy{AllowedMcp: []string{"agents"}}}},
+		keys: []*pb.APIKeyInfo{{Name: "bob_corp.com-agent", Owner: "bob@corp.com", Scopes: []string{"mcp"}, Policy: &pb.APIKeyPolicy{AllowedMcp: []string{"agents"}}}},
 		agents: []*pb.AgentInfo{
-			{Name: "ann.corp-agent", Owner: "ann@corp.com"},
-			{Name: "bob.corp-agent", Owner: "bob@corp.com"},
+			{Name: "ann_corp.com-agent", Owner: "ann@corp.com"},
+			{Name: "bob_corp.com-agent", Owner: "bob@corp.com"},
 		},
 		tasks: map[string]*pb.AgentTask{
-			"t-ann": {TaskId: "t-ann", From: "ann.corp-agent", To: "bob.corp-agent", Status: "submitted", Messages: []*pb.AgentMessage{{Text: "hi bob"}}},
-			"t-bob": {TaskId: "t-bob", From: "bob.corp-agent", To: "other", Status: "working"},
+			"t-ann": {TaskId: "t-ann", From: "ann_corp.com-agent", To: "bob_corp.com-agent", Status: "submitted", Messages: []*pb.AgentMessage{{Text: "hi bob"}}},
+			"t-bob": {TaskId: "t-bob", From: "bob_corp.com-agent", To: "other", Status: "working"},
 		},
 	}
 	s := &Server{cfg: &config.Config{PublicURL: "https://admin.example.com", AgentsMCPURL: "https://ktms.corp.com/mcp/agents"}, auth: h, admin: fa, data: &fakeData{}}
@@ -128,13 +128,13 @@ func TestSelfServiceSeesOnlyItsAgent(t *testing.T) {
 	}
 
 	// The key is the person's, may only reach agents, and takes the next free name.
-	fa.keys = append(fa.keys, &pb.APIKeyInfo{Name: "ann.corp-laptop", Disabled: true})
+	fa.keys = append(fa.keys, &pb.APIKeyInfo{Name: "ann_corp.com-laptop", Disabled: true})
 	w := call(h, "POST", "/api/agent/keys", `{"label":"Laptop"}`, ann, csrf)
 	var minted struct {
 		Name     string `json:"name"`
 		PlainKey string `json:"plain_key"`
 	}
-	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &minted) != nil || minted.Name != "ann.corp-laptop-2" || minted.PlainKey == "" {
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &minted) != nil || minted.Name != "ann_corp.com-laptop-2" || minted.PlainKey == "" {
 		t.Fatalf("mint = %d %s", w.Code, w.Body)
 	}
 	m := fa.lastMint
@@ -151,17 +151,17 @@ func TestSelfServiceSeesOnlyItsAgent(t *testing.T) {
 		t.Fatalf("page = %d %s", w.Code, w.Body)
 	}
 
-	if w := call(h, "DELETE", "/api/agent/keys/bob.corp-agent", "", ann, csrf); w.Code != http.StatusNotFound || len(fa.revoked) != 0 {
+	if w := call(h, "DELETE", "/api/agent/keys/bob_corp.com-agent", "", ann, csrf); w.Code != http.StatusNotFound || len(fa.revoked) != 0 {
 		t.Fatalf("revoked another person's key: %d %v", w.Code, fa.revoked)
 	}
-	if w := call(h, "DELETE", "/api/agent/keys/ann.corp-laptop-2", "", ann, csrf); w.Code != 200 || !slices.Equal(fa.revoked, []string{"ann.corp-laptop-2"}) {
+	if w := call(h, "DELETE", "/api/agent/keys/ann_corp.com-laptop-2", "", ann, csrf); w.Code != 200 || !slices.Equal(fa.revoked, []string{"ann_corp.com-laptop-2"}) {
 		t.Fatalf("revoke own = %d %v", w.Code, fa.revoked)
 	}
 
-	if w := call(h, "GET", "/api/agent/tasks?agent=bob.corp-agent", "", ann, nil); w.Code != http.StatusNotFound {
+	if w := call(h, "GET", "/api/agent/tasks?agent=bob_corp.com-agent", "", ann, nil); w.Code != http.StatusNotFound {
 		t.Fatalf("read another person's tasks: %d", w.Code)
 	}
-	if w := call(h, "GET", "/api/agent/tasks?agent=ann.corp-agent", "", ann, nil); w.Code != 200 {
+	if w := call(h, "GET", "/api/agent/tasks?agent=ann_corp.com-agent", "", ann, nil); w.Code != 200 {
 		t.Fatalf("own tasks = %d %s", w.Code, w.Body)
 	}
 	if w := call(h, "GET", "/api/agent/tasks/t-ann", "", ann, nil); w.Code != 200 {
@@ -174,7 +174,7 @@ func TestSelfServiceSeesOnlyItsAgent(t *testing.T) {
 	}
 }
 
-// A named admin outranks the company pattern; a team member's agent joins the team.
+// A named admin outranks the company pattern; a team member's agent stays theirs.
 func TestSelfServiceRoles(t *testing.T) {
 	h, fa := agentServer(t)
 	if w := call(h, "GET", "/api/proxy/keys", "", sessionCookie(t, "boss@x.com"), nil); w.Code != 200 {
@@ -183,10 +183,49 @@ func TestSelfServiceRoles(t *testing.T) {
 	if w := call(h, "POST", "/api/agent/keys", `{}`, sessionCookie(t, "dev@corp.com"), csrf); w.Code != 200 {
 		t.Fatalf("member mint = %d %s", w.Code, w.Body)
 	}
-	if fa.lastMint.GetName() != "dev.corp" || fa.lastMint.GetTeamId() != "team-1" || fa.lastMint.GetOrgId() != "org-1" {
+	// Not bound to the team: a team lead must not reach its policy.
+	if fa.lastMint.GetName() != "dev_corp.com" || fa.lastMint.GetTeamId() != "" {
 		t.Fatalf("member's agent key = %v", fa.lastMint)
 	}
 	if w := call(h, "GET", "/api/agent", "", sessionCookie(t, "eve@else.com"), nil); w.Code != http.StatusUnauthorized {
 		t.Fatalf("a stranger reached the agent page: %d", w.Code)
+	}
+}
+
+func TestAgentName(t *testing.T) {
+	for _, c := range []struct{ email, label, want string }{
+		{"Bob@Corp.com", "", "bob_corp.com"},
+		{"bob@corp.de", "Laptop 2", "bob_corp.de-laptop-2"},
+		{"ann.test@corp.com", "", "ann.test_corp.com"},
+		{"ann-test@corp.com", "", "ann-test_corp.com"},
+		{"a+b@corp.com", "ci", "a-b_corp.com-ci"},
+	} {
+		if got, err := agentName(c.email, c.label); err != nil || got != c.want {
+			t.Errorf("agentName(%q, %q) = %q, %v; want %q", c.email, c.label, got, err, c.want)
+		}
+	}
+	long, err := agentName("firstname.middlename.lastname-contractor@verylongcompanyname.com", "laptop")
+	other, _ := agentName("firstname.middlename.lastname-contractor@verylongcompanyname.org", "laptop")
+	if err != nil || len(long) > 63 || long == other {
+		t.Errorf("long names %q, %q, %v", long, other, err)
+	}
+	if _, err := agentName("x@corp.com", "a-very-long-label-indeed"); err == nil {
+		t.Error("a label over 20 characters passed")
+	}
+}
+
+// A team lead may not touch a key of the team that is not a generate key.
+func TestTeamLeadCannotEditAgentKey(t *testing.T) {
+	h, fa := tenantServer(t)
+	fa.keys = append(fa.keys, &pb.APIKeyInfo{Name: "dev-agent", TeamId: "team-1", Scopes: []string{"mcp"}, Policy: &pb.APIKeyPolicy{AllowedMcp: []string{"agents"}}})
+	lead := sessionCookie(t, "lead@corp.com")
+	if w := call(h, "PUT", "/api/proxy/keys/dev-agent/policy", `{}`, lead, csrf); w.Code != http.StatusForbidden {
+		t.Fatalf("team lead cleared an mcp key's policy: %d", w.Code)
+	}
+	if w := call(h, "DELETE", "/api/proxy/keys/dev-agent", "", lead, csrf); w.Code != http.StatusForbidden {
+		t.Fatalf("team lead revoked an mcp key: %d", w.Code)
+	}
+	if w := call(h, "PUT", "/api/proxy/keys/search-service/policy", `{}`, lead, csrf); w.Code != 200 {
+		t.Fatalf("team lead lost its own generate key: %d %s", w.Code, w.Body)
 	}
 }

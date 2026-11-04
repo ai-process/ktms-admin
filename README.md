@@ -350,11 +350,13 @@ access and an *Allowed MCP* list in their policy; teams get one too.
 
 **My agent** (KTMS 1.6+). Every account has it, a self-service account only it. **New agent key** makes
 a key for the person's own coding agent: the `mcp` scope limited to KTMS's built-in `agents` server, with
-the person as its owner and, for a team member, the team. It is named after the address and an optional
-label (`alice.example-laptop`), which is how other agents address it, and shown once. The page shows the
+the person as its owner and no team, so a team lead cannot widen it. It is named after the address, with
+`_` for `@`, and an optional label (`alice_example.com-laptop`), which is how other agents address it, and
+shown once. Team leads manage only their team's `generate` keys. The page shows the
 command that connects the agent, the person's agent keys (revoke them here) and each agent's conversations
 with the other agents, with their messages. These routes run with `KTMS_ADMIN_KEY`, since no read key may
-mint, and check the key's or agent's owner on every call.
+mint, and check the key's or agent's owner on every call. A revoked agent's conversations stay on the page
+until KTMS deletes them.
 
 **Playground.** Send a prompt or multi-turn conversation through the same routing your clients use, with SSE streaming, tool definitions, interactive tool result responses, effort selection, and attributes. The call is attributed to `console.playground` and your e-mail.
 

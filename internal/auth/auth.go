@@ -94,8 +94,6 @@ func (u *User) IsTeamLead() bool {
 
 func (u *User) IsViewer() bool { return u.Role == RoleViewer }
 
-func (u *User) IsSelf() bool { return u.Role == RoleSelf }
-
 // InTeam reports a team-scoped user: they see their own team, nothing global.
 func (u *User) InTeam() bool {
 	return (u.Role == RoleTeamLead || u.Role == RoleMember) && u.TeamID != ""

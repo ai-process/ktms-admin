@@ -43,7 +43,7 @@ export function AgentPage() {
 function MintForm({ close }) {
   const submit = async (fd) => close(await api('POST', '/api/agent/keys', { label: String(fd.get('label') || '').trim() }));
   return html`<${FormDialog} title="New agent key" submit="Create" onSubmit=${submit} close=${close}>
-    <${Field} label="Label (optional)" hint="Agents address each other by name: yours is your address and this label, such as laptop or ci.">
+    <${Field} label="Label (optional)" hint="Agents address each other by name: yours is your address, with _ for @, and this label, such as laptop or ci.">
       <input name="label" maxlength="20" pattern="[A-Za-z0-9 -]*" autocomplete="off" placeholder="agent" />
     <//>
   <//>`;
@@ -58,7 +58,7 @@ function AgentTasks({ agent }) {
     <td>${when(t.updated_at)}</td>
     <td class="actions-cell"><button type="button" class="sm" onClick=${() => open(t)}>Open</button></td>
   </tr>`);
-  return html`<${Card} flush title=${'Conversations of ' + agent.name} sub=${agent.description || ''} label=${'Conversations of ' + agent.name}>
+  return html`<${Card} flush title=${'Conversations of ' + agent.name + (agent.revoked ? ' (key revoked)' : '')} sub=${agent.description || ''} label=${'Conversations of ' + agent.name}>
     <${LoadError} error=${st.error} retry=${st.reload} />
     <${Table} loading=${st.loading} rows=${rows} head=${['With', 'Status', 'Updated', { label: 'Actions', sr: true }]}
       empty=${{ title: 'No conversations yet', children: 'Tasks your agent sends or receives show up here.' }} />

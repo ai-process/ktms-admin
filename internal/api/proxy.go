@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -122,8 +123,10 @@ func (s *Server) ownsKey(ctx context.Context, u *auth.User, name string) (bool, 
 		return false, err
 	}
 	for _, k := range keysOfTeam(keysResp.Keys, u.TeamID) {
+		// A team lead manages generate keys only: a person's mcp agent key is
+		// theirs, and an empty allowed_mcp on it would open every MCP server.
 		if k.Name == name {
-			return true, nil
+			return !slices.ContainsFunc(k.Scopes, func(s string) bool { return s != "generate" }), nil
 		}
 	}
 	return false, nil
