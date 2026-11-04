@@ -1,5 +1,4 @@
 # Refs scripts/e2e.sh tests against unless KTMS_REF / TOKENMETER_REF are set:
 # the released pair this console is tested with. The daily run uses main.
-# Until KTMS ships the agents' inbox: its branch, then the release tag.
-E2E_KTMS_REF=feat/agent-inbox
+E2E_KTMS_REF=v1.6.0-beta.1
 E2E_TOKENMETER_REF=v1.2.0
