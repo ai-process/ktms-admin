@@ -6,6 +6,10 @@ Notable changes to ktms-admin. The format follows
 
 ## [Unreleased]
 
+### Added
+- Keys: the access "Read agents' conversations" (`agents:read`, KTMS 1.6), for whoever audits
+  the agents' conversations. Such a key sees every team, so the wizard refuses it a team.
+
 ## [1.2.0] - 2026-11-03
 
 ### Added

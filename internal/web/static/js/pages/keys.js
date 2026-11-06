@@ -6,7 +6,10 @@ const SCOPES = [
   ['generate', 'Call models', 'Text, streaming, speech, images, judge and embeddings, through the rules.'],
   ['mcp', 'Use MCP tools', 'The tools of the MCP servers at /mcp, within the key\u2019s and its team\u2019s allowed MCP.'],
   ['admin', 'Manage the gateway', 'Models, rules, keys and limits. Give it to people and consoles, not services.'],
+  ['agents:read', 'Read agents\u2019 conversations', 'The agents, their tasks and messages, and nothing else: for whoever audits them. Sees every team, so it has none. Needs KTMS 1.6.'],
 ];
+// Keys with these scopes read every tenant, so KTMS refuses them a team.
+const TENANTLESS = ['admin:read', 'agents:read'];
 const nanoUSD = (v) => num(v) / 1e9;
 
 export function KeysPage({ params }) {
@@ -72,6 +75,8 @@ function Wizard({ teams, team, onDone }) {
   const validate = () => {
     if (s.step === 0 && !s.name.trim()) return 'Give the key a name.';
     if (labels[s.step] === 'Access' && !s.scopes.length) return 'Pick at least one kind of access.';
+    const reader = s.scopes.find((x) => TENANTLESS.includes(x));
+    if (labels[s.step] === 'Access' && reader && s.team) return `A key that may ${reader === 'agents:read' ? 'read agents\u2019 conversations' : 'read the whole gateway'} sees every team: go back and pick No team.`;
     if (labels[s.step] === 'Limits' && [s.daily, s.monthly].some((v) => v !== '' && !(num(v) > 0))) return 'A cap must be above $0, or left empty.';
     if (labels[s.step] === 'Limits' && [s.rpm, s.tpm].some((v) => v !== '' && !(Number.isInteger(num(v)) && num(v) > 0))) return 'A rate must be a whole number above 0, or left empty.';
     return '';
