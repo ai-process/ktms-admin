@@ -17,6 +17,8 @@ Notable changes to ktms-admin. The format follows
   their role; a pattern in `ALLOWED_EMAILS` is now warned about at start.
 - `KTMS_AGENTS_MCP_URL` for the connect command on that page. The `ktms.v1` copy adds `owner` on keys
   and `ListAgents`, `SetAgentRecording`, `ListAgentTasks` and `GetAgentTask`.
+- Keys: the access "Read agents' conversations" (`agents:read`, KTMS 1.6), for whoever audits
+  the agents' conversations. Such a key sees every team, so the wizard refuses it a team.
 
 ## [1.2.0] - 2026-11-03
 
