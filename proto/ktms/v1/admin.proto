@@ -113,7 +113,7 @@ message GetConfigResponse {
 
 message MintAPIKeyRequest {
   string name = 1;
-  repeated string scopes = 2; // "generate" | "mcp" | "admin" | "admin:read"
+  repeated string scopes = 2; // "generate" | "mcp" | "admin" | "admin:read" | "agents:read"
   string org_id = 3;
   string team_id = 4;
   APIKeyPolicy policy = 5;
@@ -624,8 +624,13 @@ service AdminService {
   // SetAgentRecording sets how much of an agent's conversations the journal keeps.
   rpc SetAgentRecording(SetAgentRecordingRequest) returns (SetAgentRecordingResponse);
   rpc ListAgentTasks(ListAgentTasksRequest) returns (ListAgentTasksResponse);
-  // GetAgentTask returns the messages too, so it needs the admin scope.
+  // GetAgentTask returns the messages too, so it needs "agents:read" (or
+  // "admin"); ListAgents and ListAgentTasks accept it besides "admin:read".
   rpc GetAgentTask(GetAgentTaskRequest) returns (AgentTask);
+  // ReplyAgentTask answers a task, or corrects the answer of an ended one, as
+  // the owner of one of its agents: the console's self-service page calls it
+  // for the signed-in person. owner must be the owner of the agent's key.
+  rpc ReplyAgentTask(ReplyAgentTaskRequest) returns (AgentTask);
 }
 
 message ExplainRouteRequest {
@@ -700,6 +705,13 @@ message ListAgentTasksRequest {
   string agent = 1; // tasks this agent sent or received; required
   bool open_only = 2; // submitted, working and input-required only
   int32 limit = 3; // default 100, at most 500
+  // Only tasks in these statuses (submitted, working, input-required, completed,
+  // failed, canceled); empty for all, an unknown one is INVALID_ARGUMENT. With
+  // open_only, the statuses that are both listed and open.
+  repeated string statuses = 4;
+  // Only tasks waiting for these reasons (question, guardrail_hold,
+  // needs_owner); empty for any, an unknown one is INVALID_ARGUMENT.
+  repeated string reason_codes = 5;
 }
 
 message AgentMessage {
@@ -707,6 +719,20 @@ message AgentMessage {
   string role = 2; // user: the task's sender; agent: its recipient
   string text = 3;
   google.protobuf.Timestamp created_at = 4;
+  string author = 5; // agent, or owner when the agent's person wrote it
+  bool correction = 6; // amends the answer after the task ended
+}
+
+message ReplyAgentTaskRequest {
+  string agent = 1; // the agent the owner speaks for: the task's sender or recipient
+  string owner = 2; // the signed-in person; must own the agent's key
+  string task_id = 3;
+  string text = 4;
+  // As the reply tool: the recipient's side sets working, input-required,
+  // completed (default) or failed, the sender's side working or canceled.
+  string status = 5;
+  // Amend the answer of an ended task the agent received; status stays.
+  bool correction = 6;
 }
 
 // AgentTask follows A2A: status is submitted, working, input-required,
@@ -722,6 +748,11 @@ message AgentTask {
   google.protobuf.Timestamp created_at = 8;
   google.protobuf.Timestamp updated_at = 9;
   repeated AgentMessage messages = 10; // GetAgentTask only
+  // Why an input-required task waits: question (for its sender), guardrail_hold
+  // (a guardrail holds it for the recipient's person) or needs_owner (the
+  // recipient's agent asks its own person).
+  string reason_code = 11;
+  string answered_by = 12; // ended tasks: agent or owner, who gave the latest answer
 }
 
 message ListAgentTasksResponse {

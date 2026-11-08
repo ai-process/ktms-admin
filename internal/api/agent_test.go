@@ -27,6 +27,13 @@ type agentAdmin struct {
 	tasks       map[string]*pb.AgentTask
 	lastMint    *pb.MintAPIKeyRequest
 	revoked     []string
+	replies     []*pb.ReplyAgentTaskRequest
+}
+
+func (f *agentAdmin) ReplyAgentTask(_ context.Context, r *pb.ReplyAgentTaskRequest, _ ...grpc.CallOption) (*pb.AgentTask, error) {
+	f.replies = append(f.replies, r)
+	t := f.tasks[r.GetTaskId()]
+	return &pb.AgentTask{TaskId: t.GetTaskId(), Status: "completed", AnsweredBy: "owner"}, nil
 }
 
 func (f *agentAdmin) ListAPIKeys(_ context.Context, r *pb.ListAPIKeysRequest, _ ...grpc.CallOption) (*pb.ListAPIKeysResponse, error) {
@@ -271,5 +278,38 @@ func TestViewerAndTeamLeadLimits(t *testing.T) {
 	}
 	if w := call(h, "DELETE", "/api/proxy/keys/mixed", "", lead, csrf); w.Code != http.StatusForbidden {
 		t.Fatalf("team lead revoked a mixed key: %d", w.Code)
+	}
+}
+
+// A person answers and corrects only for their own agent, on a task it is in.
+func TestOwnerReplyInConsole(t *testing.T) {
+	h, fa := agentServer(t)
+	bob := sessionCookie(t, "bob@corp.com")
+	ann := sessionCookie(t, "ann@corp.com")
+	for _, c := range []struct {
+		who  *http.Cookie
+		id   string
+		body string
+	}{
+		{ann, "t-ann", `{"agent":"bob_corp.com-agent","text":"x"}`}, // someone else's agent
+		{bob, "t-bob", `{"agent":"ann_corp.com-agent","text":"x"}`}, // someone else's agent
+		{bob, "nope", `{"agent":"bob_corp.com-agent","text":"x"}`},  // no such task
+	} {
+		if w := call(h, "POST", "/api/agent/tasks/"+c.id+"/reply", c.body, c.who, csrf); w.Code != http.StatusNotFound {
+			t.Fatalf("reply %s %s = %d", c.id, c.body, w.Code)
+		}
+	}
+	if len(fa.replies) != 0 {
+		t.Fatalf("refused replies reached KTMS: %v", fa.replies)
+	}
+	w := call(h, "POST", "/api/agent/tasks/t-ann/reply", `{"agent":"bob_corp.com-agent","text":"use main","status":"working"}`, bob, csrf)
+	if w.Code != 200 || len(fa.replies) != 1 || fa.replies[0].GetOwner() != "bob@corp.com" || fa.replies[0].GetStatus() != "working" {
+		t.Fatalf("own reply = %d %s, %v", w.Code, w.Body, fa.replies)
+	}
+	if w := call(h, "POST", "/api/agent/tasks/t-ann/reply", `{"agent":"bob_corp.com-agent","text":"fix","correction":true}`, bob, csrf); w.Code != 200 || !fa.replies[1].GetCorrection() {
+		t.Fatalf("own correction = %d %s", w.Code, w.Body)
+	}
+	if w := call(h, "POST", "/api/agent/tasks/t-ann/reply", `{"agent":"bob_corp.com-agent","text":"x"}`, bob, nil); w.Code != http.StatusForbidden {
+		t.Fatalf("reply without the CSRF header = %d", w.Code)
 	}
 }

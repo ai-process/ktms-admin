@@ -239,3 +239,44 @@ func (s *Server) agentTask(w http.ResponseWriter, r *http.Request, u *auth.User)
 	}
 	writeProto(w, t)
 }
+
+// agentReply answers a task, or corrects an ended one's answer, as the person
+// who owns one of its agents. KTMS checks the owner too; the console checks
+// first so someone else's task answers exactly as a missing one.
+func (s *Server) agentReply(w http.ResponseWriter, r *http.Request, u *auth.User) {
+	var in struct {
+		Agent      string `json:"agent"`
+		Text       string `json:"text"`
+		Status     string `json:"status"`
+		Correction bool   `json:"correction"`
+	}
+	if err := readJSON(r, &in); err != nil {
+		backendErr(w, badBody(err))
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
+	defer cancel()
+	own, err := s.ownAgents(ctx, u)
+	if err != nil {
+		backendErr(w, err)
+		return
+	}
+	id := r.PathValue("id")
+	t, err := s.admin.GetAgentTask(s.asConsole(ctx), &pb.GetAgentTaskRequest{TaskId: id})
+	if err != nil && status.Code(err) != codes.NotFound && status.Code(err) != codes.InvalidArgument {
+		backendErr(w, err)
+		return
+	}
+	if err != nil || !slices.Contains(own, in.Agent) || in.Agent != t.GetFrom() && in.Agent != t.GetTo() {
+		writeErr(w, http.StatusNotFound, "not_found", "no such task")
+		return
+	}
+	out, err := s.admin.ReplyAgentTask(s.asConsole(ctx), &pb.ReplyAgentTaskRequest{
+		Agent: in.Agent, Owner: owner(u), TaskId: id, Text: in.Text, Status: in.Status, Correction: in.Correction,
+	})
+	if err != nil {
+		backendErr(w, err)
+		return
+	}
+	writeProto(w, out)
+}

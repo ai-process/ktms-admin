@@ -150,6 +150,7 @@ func (s *Server) Handler() http.Handler {
 		api("DELETE /api/agent/keys/{name}", own, s.agentRevokeKey)
 		api("GET /api/agent/tasks", own, s.agentTasks)
 		api("GET /api/agent/tasks/{id}", own, s.agentTask)
+		api("POST /api/agent/tasks/{id}/reply", own, s.agentReply)
 		api("GET /api/proxy/config", globalRead, s.proxyConfig)
 		api("GET /api/proxy/keys", team, s.proxyListKeys)
 		api("POST /api/proxy/keys", team, s.proxyMintKey)

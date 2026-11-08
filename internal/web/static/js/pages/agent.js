@@ -1,5 +1,5 @@
 import { isViewer } from '../state.js';
-import { html, api, useAsync, openDialog, confirmAction, showSecret, FormDialog, PageHead, Card, Table, Field, Badge, LoadError, when } from '../lib.js';
+import { html, useState, api, useAsync, openDialog, confirmAction, showSecret, FormDialog, PageHead, Card, Table, Field, Badge, LoadError, when } from '../lib.js';
 
 const TONE = { submitted: 'accent', working: 'accent', 'input-required': 'warn', completed: 'ok', failed: 'bad', canceled: '' };
 const status = (t) => html`<${Badge} tone=${TONE[t.status] || ''} title=${t.status_reason || ''}>${t.status}<//>`;
@@ -52,10 +52,10 @@ function MintForm({ close }) {
 
 function AgentTasks({ agent }) {
   const st = useAsync(() => api('GET', '/api/agent/tasks?agent=' + encodeURIComponent(agent.name)), [agent.name]);
-  const open = (t) => openDialog(TaskDialog, { id: t.task_id, wide: true });
+  const open = (t) => openDialog(TaskDialog, { id: t.task_id, agent: agent.name, wide: true }).then(() => st.reload());
   const rows = (st.data?.tasks || []).map((t) => html`<tr key=${t.task_id}>
     <td>${t.from === agent.name ? html`<span class="muted">to</span> <span class="mono">${t.to}</span>` : html`<span class="muted">from</span> <span class="mono">${t.from}</span>`}</td>
-    <td>${status(t)}</td>
+    <td>${status(t)}${t.reason_code === 'needs_owner' && t.to === agent.name && html` <${Badge} tone="warn">asks you<//>`}</td>
     <td>${when(t.updated_at)}</td>
     <td class="actions-cell"><button type="button" class="sm" onClick=${() => open(t)}>Open</button></td>
   </tr>`);
@@ -66,17 +66,49 @@ function AgentTasks({ agent }) {
   <//>`;
 }
 
-function TaskDialog({ id, close }) {
+const TERMINAL = ['completed', 'failed', 'canceled'];
+
+// What the person may do for their agent: on the recipient's side answer,
+// hand back, ask or decline, and correct an ended answer; on the sender's
+// side answer a question or cancel.
+function choices(t, agent) {
+  const recipient = t.to === agent;
+  if (TERMINAL.includes(t.status)) return recipient && t.status !== 'canceled' ? [['correction', 'Correct the answer']] : [];
+  if (recipient) return [['completed', 'Answer and close the task'], ['working', 'Hand it back to my agent with this answer'],
+    ['input-required', 'Ask the sender a question'], ['failed', 'Decline']];
+  const out = [];
+  if (t.status === 'input-required' && t.reason_code === 'question') out.push(['working', 'Answer the question']);
+  return [...out, ['canceled', 'Cancel the task']];
+}
+
+function TaskDialog({ id, agent, close }) {
   const st = useAsync(() => api('GET', '/api/agent/tasks/' + encodeURIComponent(id)), [id]);
   const t = st.data;
-  return html`<${FormDialog} title=${t ? `${t.from} → ${t.to}` : 'Task'} sub=${t ? `context ${t.context_id}` : ''} close=${close} cancel="Close">
+  const [sent, setSent] = useState(0); // remounts the answer box empty after each send
+  const opts = t && !isViewer() ? choices(t, agent) : [];
+  const submit = opts.length ? async (fd) => {
+    const how = String(fd.get('how'));
+    const body = { agent, text: String(fd.get('text') || '').trim(), status: how === 'correction' ? '' : how, correction: how === 'correction' };
+    await api('POST', '/api/agent/tasks/' + encodeURIComponent(id) + '/reply', body);
+    setSent((n) => n + 1);
+    st.reload();
+    return false;
+  } : undefined;
+  const who = (m) => m.author === 'owner' ? `${m.from}'s owner` : m.from;
+  return html`<${FormDialog} title=${t ? `${t.from} → ${t.to}` : 'Task'} sub=${t ? `context ${t.context_id}` : ''} close=${close}
+      cancel="Close" submit="Send" onSubmit=${submit}>
     <${LoadError} error=${st.error} retry=${st.reload} />
     ${t && html`<div class="stack">
-      <div class="cluster">${status(t)}${t.status_reason && html`<span class="small">${t.status_reason}</span>`}</div>
+      <div class="cluster">${status(t)}${t.status_reason && html`<span class="small">${t.status_reason}</span>`}
+        ${t.answered_by === 'owner' && html`<${Badge}>answered by a person<//>`}</div>
+      ${t.reason_code === 'needs_owner' && t.to === agent && html`<div class="notice warn">Your agent asks you before it answers. Hand it back with your answer, or answer the sender yourself.</div>`}
       ${(t.messages || []).map((m, i) => html`<div key=${i} class="stack">
-        <div class="small muted">${m.from} · ${when(m.created_at)}</div>
+        <div class="small muted">${who(m)} · ${when(m.created_at)}${m.correction && html` · <${Badge} tone="warn">correction<//>`}</div>
         <pre class="small">${m.text}</pre>
       </div>`)}
+      ${opts.length > 0 && html`<${Field} label="Your answer" hint="Sent as you, the owner of ${agent}; the other side sees it was a person.">
+          <textarea key=${sent} name="text" rows="4" required=${opts[0][0] !== 'canceled'}></textarea><//>
+        <${Field} label="Then"><select name="how">${opts.map(([v, l]) => html`<option value=${v}>${l}</option>`)}</select><//>`}
     </div>`}
   <//>`;
 }
