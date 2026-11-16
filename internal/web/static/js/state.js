@@ -9,6 +9,8 @@ export const isAdmin = () => role() === 'admin';
 export const isTeamLead = () => role() === 'teamlead';
 export const isViewer = () => role() === 'viewer';
 export const isMember = () => role() === 'member';
+// self signs in with only their own agent key and inbox.
+export const isSelf = () => role() === 'self';
 // Viewers read everything an admin reads; team users only their own team.
 export const canReadGlobal = () => isAdmin() || isViewer();
 export const inTeam = () => (isTeamLead() || isMember()) && !!session.me?.user?.team_id;

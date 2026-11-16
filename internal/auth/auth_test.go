@@ -134,3 +134,24 @@ func TestTeamMemberships(t *testing.T) {
 		t.Fatalf("unexpected dev user: %+v", uDev)
 	}
 }
+
+// A pattern for the whole company makes self accounts; a named admin, viewer
+// or team member keeps their role.
+func TestSelfServiceIsLast(t *testing.T) {
+	admins, _ := ParseAllowlist("boss@corp.com")
+	viewers, _ := ParseAllowlist("audit@corp.com")
+	self, _ := ParseAllowlist("*@corp.com")
+	h := New(Options{Admins: admins, Viewers: viewers, SelfService: self,
+		TeamMemberships: ParseTeamMemberships("dev@corp.com:team-1:member")})
+	for email, want := range map[string]string{
+		"boss@corp.com": RoleAdmin, "audit@corp.com": RoleViewer, "dev@corp.com": RoleMember,
+		"Ann@Corp.com": RoleSelf, "eve@else.com": "",
+	} {
+		if got := h.roleFor(email); got != want {
+			t.Errorf("%s: role %q, want %q", email, got, want)
+		}
+	}
+	if !self.HasWildcard() || admins.HasWildcard() {
+		t.Error("HasWildcard")
+	}
+}

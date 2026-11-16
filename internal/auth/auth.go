@@ -17,6 +17,8 @@ const (
 	RoleTeamLead = "teamlead"
 	RoleMember   = "member"
 	RoleViewer   = "viewer"
+	// RoleSelf may only mint and revoke its own agent key and read its inbox.
+	RoleSelf = "self"
 )
 
 type TeamMemberInfo struct {
@@ -113,6 +115,7 @@ type Options struct {
 	Methods         []Method
 	Admins          *Allowlist
 	Viewers         *Allowlist
+	SelfService     *Allowlist
 	TeamMemberships map[string]TeamMemberInfo
 	DevUserRole     string
 	DevUserTeamID   string
@@ -144,6 +147,10 @@ func (h *Handler) memberFor(email string) (role, teamID, orgID string) {
 	}
 	if h.o.Viewers != nil && h.o.Viewers.Match(email) {
 		return RoleViewer, "", ""
+	}
+	// Last, so a pattern for the whole company never outranks a named admin.
+	if h.o.SelfService != nil && h.o.SelfService.Match(email) {
+		return RoleSelf, "", ""
 	}
 	return "", "", ""
 }

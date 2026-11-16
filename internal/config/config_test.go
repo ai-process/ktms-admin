@@ -54,6 +54,11 @@ func TestValidate(t *testing.T) {
 	if err := teamsOnly.Validate(); err != nil {
 		t.Errorf("TEAM_MEMBERSHIPS alone rejected: %v", err)
 	}
+	selfOnly := ok
+	selfOnly.AllowedEmails, selfOnly.SelfServiceEmails = "", "*@x.com"
+	if err := selfOnly.Validate(); err != nil {
+		t.Errorf("SELF_SERVICE_EMAILS alone rejected: %v", err)
+	}
 	dev := Config{PublicURL: "http://localhost:8080", InsecureNoAuth: true, ProxyAddr: "p:9090", ProxyAdminKey: "k"}
 	if err := dev.Validate(); err != nil {
 		t.Errorf("local insecure mode rejected: %v", err)
