@@ -251,6 +251,13 @@ func (s *Server) proxyUpsertModel(w http.ResponseWriter, r *http.Request, u *aut
 				if !hasField(rawMap, "budget_grace_margin", "budgetGraceMargin") {
 					m.BudgetGraceMargin = em.GetBudgetGraceMargin()
 				}
+				// The model form has no translation fields yet; a save must keep them.
+				if !hasField(rawMap, "languages") {
+					m.Languages = em.GetLanguages()
+				}
+				if !hasField(rawMap, "price_per_million_chars", "pricePerMillionChars") {
+					m.PricePerMillionChars = em.GetPricePerMillionChars()
+				}
 				break
 			}
 		}
