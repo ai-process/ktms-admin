@@ -6,6 +6,8 @@ Notable changes to ktms-admin. The format follows
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-11-24
+
 ### Added
 - **My agent** page (KTMS 1.6+): every person makes and revokes a key for their own coding agent,
   limited to KTMS's `agents` inbox and owned by them, and reads its conversations with other agents.
@@ -21,10 +23,10 @@ Notable changes to ktms-admin. The format follows
   the agents' conversations. Such a key sees every team, so the wizard refuses it a team.
 
 ### Changed
-- `ktms.v1` from KTMS 1.6.0, and the e2e tests run against it.
-- The `ktms.v1` copy follows KTMS 1.6.0-beta.4: `Translate`, model `languages` and
-  `price_per_million_chars`, and `ExplainRoute` for media modalities. Saving a model keeps its
-  `languages` and `price_per_million_chars`, which the model form does not edit yet.
+- Tested against KTMS 1.6.0 and light-tokenmeter 1.2.0 (`scripts/e2e.refs`); the `ktms.v1` copy
+  follows KTMS 1.6.0: `Translate`, model `languages` and `price_per_million_chars`, and
+  `ExplainRoute` for media modalities. Saving a model keeps its `languages` and
+  `price_per_million_chars`, which the model form does not edit yet.
 
 ## [1.2.0] - 2026-11-03
 
