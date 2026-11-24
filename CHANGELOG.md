@@ -21,6 +21,7 @@ Notable changes to ktms-admin. The format follows
   the agents' conversations. Such a key sees every team, so the wizard refuses it a team.
 
 ### Changed
+- `ktms.v1` from KTMS 1.6.0, and the e2e tests run against it.
 - The `ktms.v1` copy follows KTMS 1.6.0-beta.4: `Translate`, model `languages` and
   `price_per_million_chars`, and `ExplainRoute` for media modalities. Saving a model keeps its
   `languages` and `price_per_million_chars`, which the model form does not edit yet.
