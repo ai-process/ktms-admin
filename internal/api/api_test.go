@@ -357,13 +357,15 @@ func TestUpsertModelPreservesOperationalFields(t *testing.T) {
 	fa.config = &pb.GetConfigResponse{
 		Models: []*pb.ModelSpec{
 			{
-				Id:                "m_existing",
-				Vendor:            "openai",
-				Rpm:               100,
-				RpmBurst:          15,
-				QueueTimeoutMs:    250,
-				BudgetGraceMargin: 0.1,
-				Enabled:           true,
+				Id:                   "m_existing",
+				Vendor:               "openai",
+				Rpm:                  100,
+				RpmBurst:             15,
+				QueueTimeoutMs:       250,
+				BudgetGraceMargin:    0.1,
+				Enabled:              true,
+				Languages:            &pb.ModelLanguages{Source: []string{"*"}, Target: []string{"de"}},
+				PricePerMillionChars: 20,
 			},
 		},
 	}
@@ -386,6 +388,12 @@ func TestUpsertModelPreservesOperationalFields(t *testing.T) {
 	}
 	if fa.upserted.BudgetGraceMargin != 0.1 {
 		t.Errorf("expected budget_grace_margin 0.1 preserved, got %f", fa.upserted.BudgetGraceMargin)
+	}
+	if got := fa.upserted.GetLanguages().GetTarget(); len(got) != 1 || got[0] != "de" {
+		t.Errorf("expected languages preserved, got %v", fa.upserted.GetLanguages())
+	}
+	if fa.upserted.PricePerMillionChars != 20 {
+		t.Errorf("expected price_per_million_chars 20 preserved, got %f", fa.upserted.PricePerMillionChars)
 	}
 
 	bodyZero := `{"vendor":"openai","rpm":120,"rpm_burst":0,"queue_timeout_ms":0,"budget_grace_margin":0,"enabled":true}`

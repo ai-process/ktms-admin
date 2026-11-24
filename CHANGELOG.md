@@ -20,6 +20,11 @@ Notable changes to ktms-admin. The format follows
 - Keys: the access "Read agents' conversations" (`agents:read`, KTMS 1.6), for whoever audits
   the agents' conversations. Such a key sees every team, so the wizard refuses it a team.
 
+### Changed
+- The `ktms.v1` copy follows KTMS 1.6.0-beta.4: `Translate`, model `languages` and
+  `price_per_million_chars`, and `ExplainRoute` for media modalities. Saving a model keeps its
+  `languages` and `price_per_million_chars`, which the model form does not edit yet.
+
 ## [1.2.0] - 2026-11-03
 
 ### Added
