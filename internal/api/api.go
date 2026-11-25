@@ -171,6 +171,7 @@ func (s *Server) Handler() http.Handler {
 		api("PUT /api/proxy/models/{id}", adminOnly, s.proxyUpsertModel)
 		api("DELETE /api/proxy/models/{id}", adminOnly, s.proxyDeleteModel)
 		api("PUT /api/proxy/rules", adminOnly, s.proxyReplaceRules)
+		api("POST /api/proxy/explain", globalQuery, s.proxyExplain)
 		api("GET /api/proxy/user-rate-limits", globalRead, s.proxyListUserRateLimits)
 		api("PUT /api/proxy/user-rate-limits", adminOnly, s.proxySetUserRateLimit)
 		api("DELETE /api/proxy/user-rate-limits", adminOnly, s.proxyDeleteUserRateLimit)
@@ -246,6 +247,7 @@ const (
 	adminOnly                // global changes, and calls made with the console's own key
 	team                     // admins and viewers globally, team users for their own team
 	own                      // every signed-in person, self included, for their own agent only
+	globalQuery              // a read of every tenant's data with a body (POST): admins and viewers
 )
 
 func (p policy) allows(u *auth.User, write bool) bool {
@@ -254,6 +256,8 @@ func (p policy) allows(u *auth.User, write bool) bool {
 		return !write
 	case globalRead:
 		return !write && u.CanReadGlobal()
+	case globalQuery:
+		return u.CanReadGlobal()
 	case adminOnly:
 		return u.IsSuperAdmin()
 	case own:

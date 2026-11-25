@@ -6,6 +6,16 @@ Notable changes to ktms-admin. The format follows
 
 ## [Unreleased]
 
+### Added
+- Competencies and needs (KTMS 1.7): a competencies field on the model form and column in the models
+  table, needs on rules (with the editor's checks: a chain must meet the rule's needs, and the catch-all
+  per effort is no longer required once a model declares competencies), needs in the Playground, and
+  *Where would it go?*: the gateway's `ExplainRoute` for a client key, with the selection's candidates.
+  Efforts stay as deprecated.
+
+### Fixed
+- Saving a model from a form without the competencies field keeps them.
+
 ## [1.3.0] - 2026-11-24
 
 ### Added

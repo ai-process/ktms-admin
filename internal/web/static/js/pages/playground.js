@@ -1,4 +1,4 @@
-import { html, useState, useRef, api, apiStream, useAsync, toast, PageHead, Card, Field, Check, LoadError, parseAttrs, cx } from '../lib.js';
+import { html, useState, useRef, api, apiStream, useAsync, toast, PageHead, Card, Field, Check, LoadError, parseAttrs, parseLevels, formatLevels, cx } from '../lib.js';
 import { loadCfg } from '../state.js';
 
 const SAMPLE_TOOLS = [{
@@ -36,7 +36,7 @@ const metaLine = (m, ttft) => m && `${m.resolved_model || '…'} · ${m.resolved
 export function PlaygroundPage({ params }) {
   const cfg = useAsync(() => loadCfg(), []);
   const [opts, setOpts] = useState({
-    model: params.get('model') || 'auto', effort: params.get('effort') || 'medium', attrs: params.get('attrs') || '',
+    model: params.get('model') || 'auto', effort: params.get('effort') ?? 'medium', needs: params.get('needs') || '', attrs: params.get('attrs') || '',
     system: '', stream: true, tools: false, toolsJson: JSON.stringify(SAMPLE_TOOLS, null, 2),
   });
   const [prompt, setPrompt] = useState('');
@@ -55,8 +55,10 @@ export function PlaygroundPage({ params }) {
   const turn = async (history) => {
     let toolDefs;
     try { toolDefs = tools(); } catch (e) { toast('Tools JSON is not valid: ' + e.message, true); return; }
+    let needs;
+    try { needs = parseLevels(opts.needs); } catch (e) { toast('Needs: ' + e.message, true); return; }
     const payload = {
-      model: opts.model, effort: opts.effort, system: opts.system, attributes: parseAttrs(opts.attrs), tools: toolDefs,
+      model: opts.model, effort: opts.effort, needs, system: opts.system, attributes: parseAttrs(opts.attrs), tools: toolDefs,
       messages: history.map((m) => ({ role: m.role, text: m.text || '', tool_call_id: m.tool_call_id, tool_calls: m.tool_calls })),
     };
     setBusy(true);
@@ -124,7 +126,8 @@ export function PlaygroundPage({ params }) {
         <${Card} title="Request">
           <${Field} label="Model"><select value=${opts.model} onChange=${(e) => set({ model: e.currentTarget.value })}>
             <option value="auto">auto: let the rules choose</option>${models.map((m) => html`<option value=${m.id}>${m.id}</option>`)}</select><//>
-          <${Field} label="Effort" hint="Rules match on it when the model is auto."><select value=${opts.effort} onChange=${(e) => set({ effort: e.currentTarget.value })}>${['low', 'medium', 'high'].map((x) => html`<option value=${x}>${x}</option>`)}</select><//>
+          <${Field} label="Needs" hint="topic=level, comma separated (basic, proficient, expert): what rules and the selection route on when the model is auto."><input value=${opts.needs} placeholder="general=basic, medical=proficient" onInput=${(e) => set({ needs: e.currentTarget.value })} /><//>
+          <${Field} label="Effort" hint="Deprecated: the general need. Needs that name general win."><select value=${opts.effort} onChange=${(e) => set({ effort: e.currentTarget.value })}>${[['', 'none (needs only)'], ['low', 'low'], ['medium', 'medium'], ['high', 'high']].map(([v, l]) => html`<option value=${v}>${l}</option>`)}</select><//>
           <${Field} label="Attributes" hint="key=value, comma separated: what rules match on."><input value=${opts.attrs} placeholder="service=support-bot" onInput=${(e) => set({ attrs: e.currentTarget.value })} /><//>
           <${Field} label="System instruction"><textarea rows="3" value=${opts.system} onInput=${(e) => set({ system: e.currentTarget.value })} placeholder="Optional" /><//>
           <${Check} label="Stream the answer" checked=${opts.stream} onChange=${(e) => set({ stream: e.currentTarget.checked })} />
@@ -132,6 +135,7 @@ export function PlaygroundPage({ params }) {
           ${opts.tools && html`<${Field} label="Tool definitions (JSON)"><textarea class="code" rows="10" value=${opts.toolsJson} onInput=${(e) => set({ toolsJson: e.currentTarget.value })} /><//>
             <button type="button" class="sm" style=${{ alignSelf: 'flex-start' }} onClick=${() => set({ toolsJson: JSON.stringify(SAMPLE_TOOLS, null, 2) })}>Reset to the sample tool</button>`}
         <//>
+        <${ExplainCard} opts=${opts} />
       </div>
       <div style=${{ flex: '3 1 520px' }} class="stack">
         <${Card} title="Conversation" actions=${conv.length > 0 && html`<button type="button" class="sm" onClick=${() => setConv([])} disabled=${busy}>Clear</button>`}>
@@ -176,4 +180,35 @@ function ToolCall({ tc, done, reply, busy }) {
       <button type="button" class="sm primary" style=${{ alignSelf: 'flex-start' }} disabled=${busy || !out.trim()} onClick=${() => reply(tc.id, out.trim())}>Send tool output</button>
     </div>`}
   </div>`;
+}
+
+const EFFORT_ENUM = { low: 'EFFORT_LOW', medium: 'EFFORT_MEDIUM', high: 'EFFORT_HIGH' };
+
+// ExplainCard dry-runs the request for a client key (ExplainRoute): the rule
+// or the selection, every candidate and why it stays or goes. No vendor is called.
+function ExplainCard({ opts }) {
+  const [key, setKey] = useState('');
+  const [res, setRes] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const run = async () => {
+    let needs;
+    try { needs = parseLevels(opts.needs); } catch (e) { toast('Needs: ' + e.message, true); return; }
+    const body = {
+      api_key_name: key.trim(), needs, effort: EFFORT_ENUM[opts.effort] || 'EFFORT_UNSPECIFIED',
+      attributes: parseAttrs(opts.attrs), model_override: opts.model === 'auto' ? '' : opts.model,
+    };
+    setBusy(true);
+    try { setRes(await api('POST', '/api/proxy/explain', body)); } catch (e) { toast(e.message, true); } finally { setBusy(false); }
+  };
+  const ranked = (c) => res.selected && (!c.dropped || c.dropped === 'chain_length');
+  return html`<${Card} title="Where would it go?">
+    <${Field} label="Client key" hint="The key a service calls with: its vendor keys and allowed models decide."><input value=${key} placeholder="billing" onInput=${(e) => setKey(e.currentTarget.value)} /><//>
+    <button type="button" class="sm" style=${{ alignSelf: 'flex-start' }} disabled=${busy || !key.trim()} onClick=${run}>Explain the route</button>
+    ${res && html`<div class="stack small" role="status">
+      <div>${res.selected ? 'No rule matched: selected by needs' : res.rule ? 'Rule ' + res.rule : 'No rule'}${Object.keys(res.needs || {}).length ? ' · needs ' + formatLevels(res.needs) : ''}</div>
+      <ol>${(res.candidates || []).map((c) => html`<li key=${c.model_id}><span class="mono">${c.model_id}</span> ${c.dropped ? html`<span class="muted">dropped: ${c.dropped}</span>` : html`<span class="ok-text">kept</span>`}${ranked(c) && html` <span class="muted">· +${c.excess} levels · $${Number(c.blended_price_per_mtok).toFixed(3)} / Mtok</span>`}</li>`)}</ol>
+      <div>Tries: ${(res.models || []).join(' → ') || '—'}</div>
+      ${res.error && html`<div class="err-text">A call would fail: ${res.error}</div>`}
+    </div>`}
+  <//>`;
 }

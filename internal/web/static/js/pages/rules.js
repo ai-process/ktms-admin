@@ -1,4 +1,4 @@
-import { html, useState, useEffect, useMemo, api, useAsync, confirmAction, toast, PageHead, Card, Seg, Field, Check, Badge, Icon, LoadError, Empty, EFFORTS, effortName, num, cx } from '../lib.js';
+import { html, useState, useEffect, useMemo, api, useAsync, confirmAction, toast, PageHead, Card, Seg, Field, Check, Badge, Icon, LoadError, Empty, EFFORTS, effortName, num, cx, formatLevels, parseLevels, effortLevel, meets, meetsAll, selects } from '../lib.js';
 import { isAdmin, loadCfg } from '../state.js';
 
 const LEVELS = ['EFFORT_LOW', 'EFFORT_MEDIUM', 'EFFORT_HIGH'];
@@ -8,25 +8,30 @@ const SWATCH = ['var(--series-1)', 'var(--series-3)', 'var(--series-2)', 'var(--
 
 const blankRule = (rules) => ({
   name: '', priority: (rules.reduce((m, r) => Math.max(m, num(r.priority)), 0) || 0) + 10,
-  effort: 'EFFORT_UNSPECIFIED', attributes: {}, use: [], weights: [], enabled: true,
+  effort: 'EFFORT_UNSPECIFIED', needs: {}, attributes: {}, use: [], weights: [], enabled: true,
   shadow_model: '', shadow_percentage: 0, shadow_eval: false,
 });
 
 const toDraft = (r) => ({
   ...r,
   effort: r.effort || 'EFFORT_UNSPECIFIED',
+  needsText: formatLevels(r.needs),
   conds: Object.entries(r.attributes || {}).map(([key, value]) => ({ key, value })),
   chain: (r.use || []).map((id, i) => ({ id, weight: r.weights?.length === r.use.length ? num(r.weights[i]) : 0 })),
   split: (r.weights || []).length > 0 && (r.use || []).length > 1,
   shadow_model: r.shadow_model || '', shadow_percentage: num(r.shadow_percentage), shadow_eval: !!r.shadow_eval,
 });
 
+// needsOf reads the draft's needs; a typo is reported by problems, not thrown.
+const needsOf = (d) => { try { return [parseLevels(d.needsText), '']; } catch (e) { return [{}, e.message]; } };
+
 const fromDraft = (d) => {
+  const [needs, needsErr] = needsOf(d);
   const attributes = {};
   for (const c of d.conds) if (c.key.trim()) attributes[c.key.trim()] = c.value.trim();
   const use = d.chain.map((m) => m.id);
   return {
-    name: d.name.trim(), priority: num(d.priority), effort: d.effort, attributes, use,
+    name: d.name.trim(), priority: num(d.priority), effort: d.effort, needs, needsErr, attributes, use,
     weights: d.split && use.length > 1 ? d.chain.map((m) => Math.round(num(m.weight))) : [],
     enabled: d.enabled, shadow_model: d.shadow_model, shadow_percentage: d.shadow_model ? num(d.shadow_percentage) : 0,
     shadow_eval: !!d.shadow_model && d.shadow_eval,
@@ -34,11 +39,18 @@ const fromDraft = (d) => {
 };
 
 const efforts = (r) => (!r.effort || r.effort === 'EFFORT_UNSPECIFIED' ? LEVELS : [r.effort]);
-const serves = (m, e) => (m?.efforts || []).includes(e);
+const serves = (m, e) => meets(m, 'general', effortLevel(e));
+const hasNeeds = (r) => Object.keys(r.needs || {}).length > 0;
+// least is the smallest request a rule with needs takes: its needs, plus its effort as general.
+const least = (r) => ({ ...(r.effort && r.effort !== 'EFFORT_UNSPECIFIED' ? { general: effortLevel(r.effort) } : {}), ...r.needs });
+// unmet names why m cannot take what rule r matches, '' if it can.
+const unmet = (r, m) => (hasNeeds(r)
+  ? (meetsAll(m, least(r)) ? '' : 'does not meet ' + formatLevels(least(r)))
+  : (efforts(r).some((e) => !serves(m, e)) ? 'does not serve ' + efforts(r).filter((e) => !serves(m, e)).map(effortName).join(', ') : ''));
 
 // problems mirrors the gateway's own checks so the editor can say what is
 // wrong before a save is refused.
-function problems(rules, byId) {
+function problems(rules, byId, models) {
   const out = [];
   const names = new Set(), prios = new Set();
   const catchAll = new Set();
@@ -54,15 +66,20 @@ function problems(rules, byId) {
     if (r.weights.length && r.weights.some((w) => !(w > 0))) out.push(`${r.name}: every split weight must be above 0.`);
     if (r.shadow_percentage < 0 || r.shadow_percentage > 100) out.push(`${r.name}: shadow share must be 0–100%.`);
     for (const k of Object.keys(r.attributes)) if (RESERVED.has(k)) out.push(`${r.name}: attribute ${k} is reserved.`);
+    if (r.needsErr) out.push(`${r.name}: needs: ${r.needsErr}.`);
     if (!r.enabled) continue;
     const live = r.use.map((id) => byId[id]).filter((m) => m?.enabled);
     if (!live.length) { out.push(`${r.name}: every model in the chain is disabled.`); continue; }
+    if (hasNeeds(r)) {
+      if (!live.some((m) => meetsAll(m, least(r)))) out.push(`${r.name}: no enabled model in the chain meets ${formatLevels(least(r))}.`);
+      continue;
+    }
     for (const e of efforts(r)) {
       if (!live.some((m) => serves(m, e))) out.push(`${r.name}: no enabled model serves ${effortName(e)} effort.`);
       if (!Object.keys(r.attributes).length) catchAll.add(e);
     }
   }
-  if (rules.length) for (const e of LEVELS) if (!catchAll.has(e)) out.push(`No catch-all rule (one without conditions) covers ${effortName(e)} effort.`);
+  if (rules.length && !selects(models)) for (const e of LEVELS) if (!catchAll.has(e)) out.push(`No catch-all rule (one without conditions) covers ${effortName(e)} effort.`);
   return [...new Set(out)];
 }
 
@@ -96,7 +113,7 @@ export function RulesPage() {
   const patch = (p) => { setDraft((d) => ({ ...d, ...p })); setDirty(true); };
 
   const save = async (next, msg, keepName) => {
-    await api('PUT', '/api/proxy/rules', { rules: next });
+    await api('PUT', '/api/proxy/rules', { rules: next.map(({ needsErr, ...r }) => r) }); // needsErr is the editor's own
     toast(msg);
     setDirty(false);
     if (keepName !== undefined) setSel(keepName);
@@ -126,7 +143,7 @@ export function RulesPage() {
       ${draft && html`<${Editor} key=${sel} draft=${draft} patch=${patch} isNew=${sel === '__new'} rules=${rules} models=${models} byId=${byId}
         dirty=${dirty} editable=${editable} save=${save} reorder=${reorder} discard=${() => { const r = rules.find((x) => x.name === sel); setDraft(toDraft(r || blankRule(rules))); setDirty(false); }} />`}
     </div>`}
-    <p class="small muted">Speech, image and judgment calls route at low effort with the reserved attribute <code>modality</code> = tts, image or judge.</p>
+    <p class="small muted">Speech, image, judgment and translation calls match only rules with the reserved attribute <code>modality</code> = tts, image, judge or translate; without needs only that modality filters the models.</p>
   `;
 }
 
@@ -151,8 +168,11 @@ function RuleList({ rules, sel, choose, reorder, canReorder, byId, draftNew }) {
       onDrop=${(e) => { e.preventDefault(); if (drag !== null && reorder && !isNew) reorder(drag, i); setDrag(null); setOver(null); }}>
       <div class="top"><span class="mono bold">${r.name || 'new rule'}</span><span class="small muted">${isNew ? 'unsaved' : 'priority ' + r.priority}</span></div>
       <div class="cluster">
-        <span class="chip">${r.effort && r.effort !== 'EFFORT_UNSPECIFIED' ? 'effort: ' + effortName(r.effort) : 'any effort'}</span>
-        ${conds.length ? conds.map(([k, v]) => html`<span class="chip mono" key=${k}>${k}=${v}</span>`) : html`<span class="chip">catch-all</span>`}
+        ${r.effort && r.effort !== 'EFFORT_UNSPECIFIED' && html`<span class="chip">effort: ${effortName(r.effort)}</span>`}
+        ${Object.entries(r.needs || {}).sort().map(([t, l]) => html`<span class="chip" key=${'n-' + t}>${t} ≥ ${l}</span>`)}
+        ${!hasNeeds(r) && (!r.effort || r.effort === 'EFFORT_UNSPECIFIED') && html`<span class="chip">any needs</span>`}
+        ${conds.map(([k, v]) => html`<span class="chip mono" key=${k}>${k}=${v}</span>`)}
+        ${!conds.length && !hasNeeds(r) && html`<span class="chip">catch-all</span>`}
         ${!r.enabled && html`<${Badge}>disabled<//>`}
         ${off && r.enabled && html`<${Badge} tone="warn">disabled model<//>`}
       </div>
@@ -162,7 +182,7 @@ function RuleList({ rules, sel, choose, reorder, canReorder, byId, draftNew }) {
   return html`<section class="rule-list" aria-label="Rules in priority order">
     ${draftNew && card(fromDraft(draftNew), -1, true)}
     ${rules.map((r, i) => card(r, i, false))}
-    ${!rules.length && !draftNew && html`<div class="card"><${Empty} title="No rules yet">Start with a catch-all rule: no conditions, any effort.<//></div>`}
+    ${!rules.length && !draftNew && html`<div class="card"><${Empty} title="No rules yet">Models with competencies need no rules: a request no rule takes gets the cheapest models that meet its needs. Add a rule to pin a chain.<//></div>`}
     ${canReorder && rules.length > 1 && html`<p class="small muted">${reorder ? 'Drag a card to change its priority. The editor\u2019s Move buttons do the same from the keyboard.' : 'Save or discard the open edits to reorder rules.'}</p>`}
   </section>`;
 }
@@ -175,7 +195,7 @@ function Editor({ draft: d, patch, isNew, rules, models, byId, dirty, editable, 
   const rule = fromDraft(d);
   const others = rules.filter((r) => isNew || r.name !== d.name);
   const next = [...others, rule].sort((a, b) => b.priority - a.priority);
-  const issues = problems(next, byId);
+  const issues = problems(next, byId, models);
   const weightSum = d.chain.reduce((a, m) => a + num(m.weight), 0);
   const idx = rules.findIndex((r) => r.name === d.name);
 
@@ -199,7 +219,7 @@ function Editor({ draft: d, patch, isNew, rules, models, byId, dirty, editable, 
     try { await save(next, isNew ? 'Rule created' : 'Rule saved', rule.name); } catch (e) { setErr(e.message); } finally { setBusy(false); }
   };
   const doDelete = () => confirmAction({
-    title: `Delete ${d.name}?`, text: 'The remaining rules must still cover every effort with a catch-all.',
+    title: `Delete ${d.name}?`, text: selects(models) ? 'Requests it took go to the next matching rule or to the selection.' : 'The remaining rules must still cover every effort with a catch-all.',
     action: () => save(rules.filter((r) => r.name !== d.name), 'Rule deleted', null),
   });
   const moveRule = (dir) => { const j = idx + dir; if (j >= 0 && j < rules.length) reorder(idx, j); };
@@ -218,7 +238,7 @@ function Editor({ draft: d, patch, isNew, rules, models, byId, dirty, editable, 
   if (!preview.length) preview.push('Nowhere yet: add a model.');
   if (d.shadow_model) preview.push(`${num(d.shadow_percentage)}% of requests are also mirrored to ${d.shadow_model}${d.shadow_eval ? ', and a judge compares the answers' : ''}; callers never see the shadow answer.`);
   const condText = rule.attributes && Object.keys(rule.attributes).length ? ' and ' + Object.entries(rule.attributes).map(([k, v]) => `${k}=${v}`).join(', ') : '';
-  const pgHref = '#/playground?' + new URLSearchParams({ effort: d.effort === 'EFFORT_UNSPECIFIED' ? 'medium' : effortName(d.effort), attrs: Object.entries(rule.attributes).map(([k, v]) => `${k}=${v}`).join(',') });
+  const pgHref = '#/playground?' + new URLSearchParams({ effort: d.effort === 'EFFORT_UNSPECIFIED' ? (hasNeeds(rule) ? '' : 'medium') : effortName(d.effort), needs: formatLevels(rule.needs), attrs: Object.entries(rule.attributes).map(([k, v]) => `${k}=${v}`).join(',') });
 
   return html`<section class="card rule-editor" aria-label="Edit rule">
     <div class="card-head">
@@ -240,6 +260,8 @@ function Editor({ draft: d, patch, isNew, rules, models, byId, dirty, editable, 
         <div class="step-title"><span class="n">1</span><h2>When a request matches</h2></div>
         <div class="cluster"><span class="small" style=${{ width: '64px' }}>Effort</span>
           <${Seg} label="Effort" value=${d.effort} options=${EFFORTS} onChange=${(v) => !ro && patch({ effort: v })} /></div>
+        <${Field} label="Needs" hint="topic=level, comma separated: the rule takes requests that need each topic at least at that level. Effort is the deprecated general need." error=${rule.needsErr}>
+          <input value=${d.needsText} disabled=${ro} placeholder="medical=proficient" aria-invalid=${rule.needsErr ? 'true' : undefined} onInput=${(e) => patch({ needsText: e.currentTarget.value })} /><//>
         <datalist id="attr-keys">${ATTR_HINTS.map((k) => html`<option value=${k} />`)}</datalist>
         ${d.conds.map((c, i) => html`<div class="cond-row" key=${i}>
           <span class="joiner">${i === 0 ? 'and' : 'and also'}</span>
@@ -249,7 +271,7 @@ function Editor({ draft: d, patch, isNew, rules, models, byId, dirty, editable, 
           ${!ro && html`<button type="button" class="icon" aria-label="Remove condition" onClick=${() => patch({ conds: d.conds.filter((_, k) => k !== i) })}><${Icon} name="x" /></button>`}
         </div>`)}
         ${!ro && html`<button type="button" class="dashed sm" style=${{ alignSelf: 'flex-start' }} onClick=${() => patch({ conds: [...d.conds, { key: d.conds.length ? '' : 'project', value: '' }] })}>+ Add condition</button>`}
-        ${!d.conds.length && html`<p class="small muted">No conditions: this rule catches every request at ${d.effort === 'EFFORT_UNSPECIFIED' ? 'any effort' : effortName(d.effort) + ' effort'}.</p>`}
+        ${!d.conds.length && !hasNeeds(rule) && html`<p class="small muted">No conditions: this rule catches every request at ${d.effort === 'EFFORT_UNSPECIFIED' ? 'any effort' : effortName(d.effort) + ' effort'}.</p>`}
       </div>
 
       <div class="stack">
@@ -259,7 +281,7 @@ function Editor({ draft: d, patch, isNew, rules, models, byId, dirty, editable, 
         <ol class="chain">
           ${d.chain.map((m, i) => {
             const mm = byId[m.id];
-            const warn = !mm ? 'unknown model' : !mm.enabled ? 'disabled' : efforts(rule).some((e) => !serves(mm, e)) ? 'does not serve ' + efforts(rule).filter((e) => !serves(mm, e)).map(effortName).join(', ') : '';
+            const warn = !mm ? 'unknown model' : !mm.enabled ? 'disabled' : unmet(rule, mm);
             return html`<li key=${m.id} class=${cx(dragI === i && 'dragging')} draggable=${!ro}
               onDragStart=${() => setDragI(i)} onDragEnd=${() => setDragI(null)} onDragOver=${(e) => dragI !== null && e.preventDefault()}
               onDrop=${(e) => { e.preventDefault(); if (dragI !== null) move(dragI, i); setDragI(null); }}>
@@ -298,7 +320,7 @@ function Editor({ draft: d, patch, isNew, rules, models, byId, dirty, editable, 
       <div class="stack">
         <div class="step-title"><span class="n">3</span><h2>Check it</h2></div>
         <div class="preview">
-          <div class="small">A request with effort <strong>${effortName(d.effort)}</strong>${condText} goes:</div>
+          <div class="small">A request ${hasNeeds(rule) ? html`that needs <strong>${formatLevels(rule.needs)}</strong> or more` : html`with effort <strong>${effortName(d.effort)}</strong>`}${condText} goes:</div>
           <ol>${preview.map((p, i) => html`<li key=${i}>${p}</li>`)}</ol>
           ${isAdmin() && !isNew && !dirty && html`<a class="btn sm" href=${pgHref} style=${{ alignSelf: 'flex-start' }}>Send a test prompt in Playground</a>`}
           ${isAdmin() && (isNew || dirty) && html`<span class="small muted">Save the rule to test it in Playground.</span>`}
@@ -306,7 +328,7 @@ function Editor({ draft: d, patch, isNew, rules, models, byId, dirty, editable, 
       </div>
     </div>
     <div class="card-foot">
-      <span class=${cx('small', issues.length ? 'err-text' : 'ok-text')} role="status">${err || (issues.length ? issues[0] : 'Every effort is still covered by a catch-all rule.')}</span>
+      <span class=${cx('small', issues.length ? 'err-text' : 'ok-text')} role="status">${err || (issues.length ? issues[0] : (selects(models) ? 'Requests no rule takes are routed by selection.' : 'Every effort is still covered by a catch-all rule.'))}</span>
       ${editable && html`<div class="cluster">
         ${!isNew && html`<button type="button" class="danger" onClick=${doDelete}>Delete</button>`}
         <button type="button" onClick=${discard} disabled=${!dirty}>Discard</button>

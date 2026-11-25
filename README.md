@@ -221,7 +221,7 @@ The console's own `/api` serves its web UI only and is not a public API.
 
 | ktms-admin | KTMS gateway | light-tokenmeter |
 | --- | --- | --- |
-| 1.x | 1.x; `KTMS_READ_KEY` needs 1.2 or later, the MCP servers page 1.4 or later, node schedules on the Nodes page 1.5 or later, the My agent page 1.6 or later | 1.x; with its authentication on, set `TOKENMETER_TOKEN` to a `read` token |
+| 1.x | 1.x; `KTMS_READ_KEY` needs 1.2 or later, the MCP servers page 1.4 or later, node schedules on the Nodes page 1.5 or later, the My agent page 1.6 or later, competencies and needs 1.7 or later | 1.x; with its authentication on, set `TOKENMETER_TOKEN` to a `read` token |
 | 0.4.x | 0.14.x | 0.1.x |
 | 0.3.x and earlier | 0.13.x | 0.1.x |
 
@@ -318,14 +318,14 @@ five requests in the group.
 
 Team budgets sit next to the table, read from the gateway's own spend counters.
 
-**Models** (need KTMS). Add, edit and delete registry entries: vendor, efforts, capabilities, list prices
-and per-key limits.
+**Models** (need KTMS). Add, edit and delete registry entries: vendor, competencies (`general=expert,
+medical=proficient`; KTMS 1.7), the deprecated efforts, capabilities, list prices and per-key limits.
 
 **Rules.** A visual builder: pick a rule card on the left (drag cards to change priority), then set the
-effort and attribute conditions, the model chain (drag to reorder, cheapest first; later models are
+needs (each topic at least at a level), the deprecated effort and attribute conditions, the model chain (drag to reorder, cheapest first; later models are
 fallbacks), an optional canary split with weights, and shadow traffic. The *Check it* panel says in words
-where a request goes, and the editor flags what the gateway would refuse (no catch-all for an effort, a
-model that does not serve the effort, a weight of 0) before you save. Saves still go through the gateway's
+where a request goes, and the editor flags what the gateway would refuse (no catch-all for an effort
+when no model declares competencies, a chain without a model that meets the needs, a weight of 0) before you save. Saves still go through the gateway's
 own validation.
 
 **Limits.** Per-user rate limits and daily token budgets, and spend caps (USD per UTC day or month) for keys
@@ -359,7 +359,7 @@ with the other agents, with their messages. Minting, revoking and reading the me
 `KTMS_ADMIN_KEY`, since no read key may do them, and each checks the key's or agent's owner first. A revoked agent's conversations stay on the page
 until KTMS deletes them.
 
-**Playground.** Send a prompt or multi-turn conversation through the same routing your clients use, with SSE streaming, tool definitions, interactive tool result responses, effort selection, and attributes. The call is attributed to `console.playground` and your e-mail.
+**Playground.** Send a prompt or multi-turn conversation through the same routing your clients use, with SSE streaming, tool definitions, interactive tool result responses, needs (and the deprecated effort), and attributes. *Where would it go?* asks the gateway (`ExplainRoute`) where the request would go for a client key: the rule or the selection, every candidate with its reason, and for a selection its excess and blended price. The call is attributed to `console.playground` and your e-mail.
 
 **Judge.** Evaluate state (dialogue, agent memory, or system state JSON) against calibrated NOUL (probability of condition being true), CHOICE (classification across options with confidence), and SCORE (ordered levels) criteria via the Judge RPC.
 

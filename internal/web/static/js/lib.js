@@ -99,6 +99,43 @@ export const parseAttrs = (s) => {
 };
 export const cx = (...xs) => xs.filter(Boolean).join(' ');
 
+// ---------- needs and competencies (KTMS 1.7): topic -> basic < proficient < expert ----------
+export const NEED_LEVELS = ['basic', 'proficient', 'expert'];
+const levelRank = (l) => NEED_LEVELS.indexOf(l) + 1;
+const EFFORT_LEVEL = { EFFORT_LOW: 'basic', EFFORT_MEDIUM: 'proficient', EFFORT_HIGH: 'expert' };
+export const effortLevel = (e) => EFFORT_LEVEL[e] || '';
+export const formatLevels = (m) => Object.keys(m || {}).sort().map((t) => `${t}=${m[t]}`).join(', ');
+export const parseLevels = (s) => {
+  const out = {};
+  for (const p of splitList(s)) {
+    const i = p.indexOf('=');
+    if (i < 1) throw new Error(`"${p}": write topic=level`);
+    const t = p.slice(0, i).trim().toLowerCase(), l = p.slice(i + 1).trim().toLowerCase();
+    if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(t)) throw new Error(`"${t}": a topic is lowercase letters, digits, _ or -`);
+    if (!NEED_LEVELS.includes(l)) throw new Error(`${t}: the level is basic, proficient or expert`);
+    out[t] = l;
+  }
+  return out;
+};
+// A model described by efforts keeps serving exactly them, as the gateway does.
+const legacyGeneral = (m) => !(m?.competencies || {}).general && (m?.efforts || []).length > 0;
+export const competenciesOf = (m) => {
+  const out = { ...(m?.competencies || {}) };
+  if (legacyGeneral(m)) {
+    const best = Math.max(0, ...m.efforts.map((e) => levelRank(effortLevel(e))));
+    if (best > 0) out.general = NEED_LEVELS[best - 1];
+  }
+  return out;
+};
+export const meets = (m, t, l) => {
+  if (t === 'general' && legacyGeneral(m)) return m.efforts.some((e) => effortLevel(e) === l);
+  const have = levelRank((m?.competencies || {})[t]);
+  return have > 0 && have >= levelRank(l);
+};
+export const meetsAll = (m, needs) => Object.entries(needs || {}).every(([t, l]) => meets(m, t, l));
+// selects: some enabled model declares competencies, so a request no rule takes is routed by selection.
+export const selects = (models) => (models || []).some((m) => m.enabled && Object.keys(m.competencies || {}).length > 0);
+
 // ---------- toasts ----------
 let toastSet = null;
 let toastSeq = 0;
