@@ -105,7 +105,7 @@ export function PlaygroundPage({ params }) {
   const send = async (e) => {
     e?.preventDefault();
     const text = prompt.trim();
-    if (!text || busy) return;
+    if (!text || busy || unrouted(opts)) return;
     setPrompt('');
     const next = [...conv, { role: 'user', text }];
     setConv(next);
@@ -148,7 +148,8 @@ export function PlaygroundPage({ params }) {
             <textarea rows="3" value=${prompt} placeholder="Ask something… (Ctrl+Enter sends)" aria-label="Message" onInput=${(e) => setPrompt(e.currentTarget.value)}
               onKeyDown=${(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) send(e); }} />
             <div class="cluster">
-              <button type="submit" class="primary" disabled=${busy || !prompt.trim()}>Send</button>
+              <button type="submit" class="primary" disabled=${busy || !prompt.trim() || unrouted(opts)}>Send</button>
+              ${unrouted(opts) && html`<span class="small err-text">With effort none, give needs or pick a model.</span>`}
               ${busy && html`<button type="button" class="danger" onClick=${() => abort.current?.abort()}>Stop</button>`}
             </div>
           </form>
@@ -182,6 +183,9 @@ function ToolCall({ tc, done, reply, busy }) {
   </div>`;
 }
 
+// unrouted: auto with effort none and no needs gives the gateway nothing to route by.
+const unrouted = (o) => o.model === 'auto' && !o.effort && !o.needs.trim();
+
 const EFFORT_ENUM = { low: 'EFFORT_LOW', medium: 'EFFORT_MEDIUM', high: 'EFFORT_HIGH' };
 
 // ExplainCard dry-runs the request for a client key (ExplainRoute): the rule
@@ -203,7 +207,7 @@ function ExplainCard({ opts }) {
   const ranked = (c) => res.selected && (!c.dropped || c.dropped === 'chain_length');
   return html`<${Card} title="Where would it go?">
     <${Field} label="Client key" hint="The key a service calls with: its vendor keys and allowed models decide."><input value=${key} placeholder="billing" onInput=${(e) => setKey(e.currentTarget.value)} /><//>
-    <button type="button" class="sm" style=${{ alignSelf: 'flex-start' }} disabled=${busy || !key.trim()} onClick=${run}>Explain the route</button>
+    <button type="button" class="sm" style=${{ alignSelf: 'flex-start' }} disabled=${busy || !key.trim() || unrouted(opts)} onClick=${run}>Explain the route</button>
     ${res && html`<div class="stack small" role="status">
       <div>${res.selected ? 'No rule matched: selected by needs' : res.rule ? 'Rule ' + res.rule : 'No rule'}${Object.keys(res.needs || {}).length ? ' · needs ' + formatLevels(res.needs) : ''}</div>
       <ol>${(res.candidates || []).map((c) => html`<li key=${c.model_id}><span class="mono">${c.model_id}</span> ${c.dropped ? html`<span class="muted">dropped: ${c.dropped}</span>` : html`<span class="ok-text">kept</span>`}${ranked(c) && html` <span class="muted">· +${c.excess} levels · $${Number(c.blended_price_per_mtok).toFixed(3)} / Mtok</span>`}</li>`)}</ol>
