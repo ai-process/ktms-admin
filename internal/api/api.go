@@ -242,12 +242,12 @@ type handler func(w http.ResponseWriter, r *http.Request, u *auth.User)
 type policy int
 
 const (
-	anyUser    policy = iota // /api/me, /api/health
-	globalRead               // every tenant's data: admins and viewers
-	adminOnly                // global changes, and calls made with the console's own key
-	team                     // admins and viewers globally, team users for their own team
-	own                      // every signed-in person, self included, for their own agent only
-	globalQuery              // a read of every tenant's data with a body (POST): admins and viewers
+	anyUser     policy = iota // /api/me, /api/health
+	globalRead                // every tenant's data: admins and viewers
+	adminOnly                 // global changes, and calls made with the console's own key
+	team                      // admins and viewers globally, team users for their own team
+	own                       // every signed-in person, self included, for their own agent only
+	globalQuery               // a read of every tenant's data with a body (POST): admins and viewers
 )
 
 func (p policy) allows(u *auth.User, write bool) bool {

@@ -520,7 +520,7 @@ type playgroundMessage struct {
 }
 
 type playgroundReq struct {
-	Model      string              `json:"model"` // "", "auto", or an exact model id
+	Model      string              `json:"model"`  // "", "auto", or an exact model id
 	Effort     string              `json:"effort"` // deprecated: the general need
 	Needs      map[string]string   `json:"needs"`  // topic -> level (KTMS 1.7)
 	System     string              `json:"system"`
