@@ -541,9 +541,7 @@ func (s *Server) buildPlaygroundReq(req playgroundReq, u *auth.User) (*pb.Genera
 	case "high":
 		effort = pb.Effort_EFFORT_HIGH
 	case "":
-		if len(req.Needs) > 0 {
-			effort = pb.Effort_EFFORT_UNSPECIFIED // the needs say it all
-		}
+		effort = pb.Effort_EFFORT_UNSPECIFIED // none: the needs say it all, as ExplainRoute is asked
 	}
 	override := ""
 	if req.Model != "" && req.Model != "auto" {

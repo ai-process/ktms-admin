@@ -126,7 +126,7 @@ var readMethods = map[string]bool{
 	pb.AdminService_ListUserRateLimits_FullMethodName: true, pb.AdminService_ListSpendLimits_FullMethodName: true,
 	pb.AdminService_ListOrganizations_FullMethodName: true, pb.AdminService_GetTeam_FullMethodName: true,
 	pb.AdminService_ListTeams_FullMethodName: true, pb.AdminService_GetTeamSpend_FullMethodName: true,
-	pb.AdminService_GetSpend_FullMethodName: true, "/ktms.v1.AdminService/ExplainRoute": true,
+	pb.AdminService_GetSpend_FullMethodName: true, pb.AdminService_ExplainRoute_FullMethodName: true,
 	pb.AdminService_ListMCPTools_FullMethodName:    true,
 	pb.AdminService_GetNodeSchedule_FullMethodName: true, pb.AdminService_ListNodeSchedules_FullMethodName: true,
 	pb.AdminService_ListAgents_FullMethodName: true, pb.AdminService_ListAgentTasks_FullMethodName: true,

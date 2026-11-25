@@ -113,6 +113,7 @@ export const parseLevels = (s) => {
     const t = p.slice(0, i).trim().toLowerCase(), l = p.slice(i + 1).trim().toLowerCase();
     if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(t)) throw new Error(`"${t}": a topic is lowercase letters, digits, _ or -`);
     if (!NEED_LEVELS.includes(l)) throw new Error(`${t}: the level is basic, proficient or expert`);
+    if (t in out) throw new Error(`${t} is given twice`);
     out[t] = l;
   }
   return out;

@@ -320,7 +320,7 @@ function Editor({ draft: d, patch, isNew, rules, models, byId, dirty, editable, 
       <div class="stack">
         <div class="step-title"><span class="n">3</span><h2>Check it</h2></div>
         <div class="preview">
-          <div class="small">A request ${hasNeeds(rule) ? html`that needs <strong>${formatLevels(rule.needs)}</strong> or more` : html`with effort <strong>${effortName(d.effort)}</strong>`}${condText} goes:</div>
+          <div class="small">A request ${hasNeeds(rule) ? html`that needs <strong>${formatLevels(least(rule))}</strong> or more` : html`with effort <strong>${effortName(d.effort)}</strong>`}${condText} goes:</div>
           <ol>${preview.map((p, i) => html`<li key=${i}>${p}</li>`)}</ol>
           ${isAdmin() && !isNew && !dirty && html`<a class="btn sm" href=${pgHref} style=${{ alignSelf: 'flex-start' }}>Send a test prompt in Playground</a>`}
           ${isAdmin() && (isNew || dirty) && html`<span class="small muted">Save the rule to test it in Playground.</span>`}
