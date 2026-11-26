@@ -221,7 +221,7 @@ The console's own `/api` serves its web UI only and is not a public API.
 
 | ktms-admin | KTMS gateway | light-tokenmeter |
 | --- | --- | --- |
-| 1.x | 1.x; `KTMS_READ_KEY` needs 1.2 or later, the MCP servers page 1.4 or later, node schedules on the Nodes page 1.5 or later, the My agent page 1.6 or later, competencies and needs 1.7 or later | 1.x; with its authentication on, set `TOKENMETER_TOKEN` to a `read` token |
+| 1.x | 1.x; `KTMS_READ_KEY` needs 1.2 or later, the MCP servers page 1.4 or later, node schedules on the Nodes page 1.5 or later, the My agent page 1.6 or later, competencies and needs 1.7 or later, images and BOX in Judge 1.8 or later | 1.x; with its authentication on, set `TOKENMETER_TOKEN` to a `read` token |
 | 0.4.x | 0.14.x | 0.1.x |
 | 0.3.x and earlier | 0.13.x | 0.1.x |
 
@@ -361,7 +361,7 @@ until KTMS deletes them.
 
 **Playground.** Send a prompt or multi-turn conversation through the same routing your clients use, with SSE streaming, tool definitions, interactive tool result responses, needs (and the deprecated effort), and attributes. *Where would it go?* asks the gateway (`ExplainRoute`) where the request would go for a client key: the rule or the selection, every candidate with its reason, and for a selection its excess and blended price. The call is attributed to `console.playground` and your e-mail.
 
-**Judge.** Evaluate state (dialogue, agent memory, or system state JSON) against calibrated NOUL (probability of condition being true), CHOICE (classification across options with confidence), and SCORE (ordered levels) criteria via the Judge RPC.
+**Judge.** Evaluate state (dialogue, agent memory, or system state JSON) against calibrated NOUL (probability of condition being true), CHOICE (classification across options with confidence), and SCORE (ordered levels) criteria via the Judge RPC. Add PNG or JPEG images, each with a name the state and the questions refer to (KTMS 1.8, TypeSafe), and ask BOX questions: the answer is drawn as a box over the image, with its confidence or "no confidence given". KTMS's refusals of an image (size, format, EXIF rotation) show under that image.
 
 ## Security model
 

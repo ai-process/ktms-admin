@@ -696,7 +696,7 @@ func (s *Server) proxyPlaygroundStream(w http.ResponseWriter, r *http.Request, u
 }
 
 type judgeQuestionReq struct {
-	Type          string            `json:"type"` // "NOUL" | "CHOICE" | "SCORE"
+	Type          string            `json:"type"` // "NOUL" | "CHOICE" | "SCORE" | "BOX"
 	Instructions  string            `json:"instructions"`
 	Options       map[string]string `json:"options,omitempty"`
 	Levels        []string          `json:"levels,omitempty"`
@@ -704,9 +704,21 @@ type judgeQuestionReq struct {
 	FalseCriteria string            `json:"false_criteria,omitempty"`
 }
 
+// judgeImageReq is one image of the judge state, named so questions can refer
+// to it (KTMS 1.8, TypeSafe).
+type judgeImageReq struct {
+	Name     string `json:"name"`
+	MimeType string `json:"mime_type"`
+	Data     []byte `json:"data"` // base64 in JSON
+}
+
+// maxJudgeBody fits KTMS's 16 MiB of judge media as base64.
+const maxJudgeBody = 24 << 20
+
 type judgeReq struct {
 	StateJSON     json.RawMessage             `json:"state_json"`
 	StateText     string                      `json:"state_text,omitempty"`
+	Images        []judgeImageReq             `json:"images,omitempty"`
 	Questions     map[string]judgeQuestionReq `json:"questions"`
 	ModelOverride string                      `json:"model_override,omitempty"`
 	Attributes    map[string]string           `json:"attributes,omitempty"`
@@ -719,20 +731,27 @@ func (s *Server) proxyJudge(w http.ResponseWriter, r *http.Request, u *auth.User
 		return
 	}
 	var req judgeReq
-	if err := readJSON(r, &req); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(nil, r.Body, maxJudgeBody)).Decode(&req); err != nil {
 		writeErr(w, http.StatusBadRequest, "bad_request", "invalid request body")
 		return
 	}
 
 	stateStr := req.StateText
-	if len(req.StateJSON) > 0 {
+	if len(req.StateJSON) > 0 && string(req.StateJSON) != "null" {
 		stateStr = string(req.StateJSON)
 	}
 	if strings.TrimSpace(stateStr) == "" {
-		writeErr(w, http.StatusBadRequest, "bad_request", "state_json or state_text is required")
+		stateStr = "" // blank is no state; KTMS would read it as invalid JSON
+	}
+	if stateStr == "" && len(req.Images) == 0 {
+		writeErr(w, http.StatusBadRequest, "bad_request", "state_json, state_text or an image is required")
 		return
 	}
-	if !json.Valid([]byte(stateStr)) {
+	media := make([]*pb.MediaPart, 0, len(req.Images))
+	for _, img := range req.Images {
+		media = append(media, &pb.MediaPart{Name: img.Name, Part: &pb.MediaPart_Image{Image: &pb.ImagePart{Data: img.Data, MimeType: img.MimeType}}})
+	}
+	if strings.TrimSpace(stateStr) != "" && !json.Valid([]byte(stateStr)) {
 		b, _ := json.Marshal(stateStr)
 		stateStr = string(b)
 	}
@@ -752,6 +771,8 @@ func (s *Server) proxyJudge(w http.ResponseWriter, r *http.Request, u *auth.User
 			qType = pb.JudgeType_JUDGE_TYPE_CHOICE
 		case "SCORE", "JUDGE_TYPE_SCORE", "3":
 			qType = pb.JudgeType_JUDGE_TYPE_SCORE
+		case "BOX", "JUDGE_TYPE_BOX", "4":
+			qType = pb.JudgeType_JUDGE_TYPE_BOX
 		default:
 			writeErr(w, http.StatusBadRequest, "bad_request", "unknown question type for "+id)
 			return
@@ -788,6 +809,7 @@ func (s *Server) proxyJudge(w http.ResponseWriter, r *http.Request, u *auth.User
 
 	resp, err := s.data.Judge(ctx, &pb.JudgeRequest{
 		StateJson:     stateStr,
+		StateMedia:    media,
 		Questions:     questions,
 		Attributes:    attrs,
 		ActionId:      "console.judge",
