@@ -16,6 +16,9 @@ Notable changes to ktms-admin. The format follows
 ### Fixed
 - Saving a model from a form without the competencies field keeps them.
 
+### Changed
+- The Nodes page calls `ktms-node` the node daemon, as the KTMS docs do.
+
 ## [1.3.0] - 2026-11-24
 
 ### Added
