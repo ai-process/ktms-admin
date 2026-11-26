@@ -6,6 +6,10 @@ Notable changes to ktms-admin. The format follows
 
 ## [Unreleased]
 
+### Added
+- Judge: images with names in the state and BOX questions, the box drawn over the image; KTMS's refusals of an
+  image shown under it. Needs KTMS 1.8.
+
 ## [1.4.0] - 2026-11-26
 
 ### Added

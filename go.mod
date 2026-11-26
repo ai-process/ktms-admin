@@ -3,7 +3,7 @@ module github.com/ai-process/ktms-admin
 go 1.26.0
 
 require (
-	github.com/ai-process/ktms v1.7.0
+	github.com/ai-process/ktms v1.7.1-0.20261126184627-4b3657cf6864
 	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/go-jose/go-jose/v4 v4.1.4
 	github.com/rs/zerolog v1.35.1
