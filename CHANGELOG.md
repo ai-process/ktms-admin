@@ -6,6 +6,8 @@ Notable changes to ktms-admin. The format follows
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-11-26
+
 ### Added
 - Competencies and needs (KTMS 1.7): a competencies field on the model form and column in the models
   table, needs on rules (with the editor's checks: a chain must meet the rule's needs, and the catch-all
@@ -20,6 +22,10 @@ Notable changes to ktms-admin. The format follows
 
 ### Fixed
 - Saving a model from a form without the competencies field keeps them.
+
+### Compatibility
+- Use 1.4 with KTMS 1.7: an older console drops competencies and needs when it saves a model or the
+  rules. With KTMS 1.6 the new fields are simply absent.
 
 ## [1.3.0] - 2026-11-24
 
