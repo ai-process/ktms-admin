@@ -1,5 +1,5 @@
-github.com/ai-process/ktms v1.6.2-0.20261126160448-3e3d64604596 h1:Unl7UkHCsIsLf8qWMWPXDBMwrmj7awgSAK/4yfb7Xgg=
-github.com/ai-process/ktms v1.6.2-0.20261126160448-3e3d64604596/go.mod h1:NKaBwRGZE7go91KmSLy8vXUPG6uUgz8oBU/5xA9gZqM=
+github.com/ai-process/ktms v1.7.0 h1:ansRgOoh2swoNACQIc4VwpSwOCi18+dVJsbUqcw+p78=
+github.com/ai-process/ktms v1.7.0/go.mod h1:NKaBwRGZE7go91KmSLy8vXUPG6uUgz8oBU/5xA9gZqM=
 github.com/coreos/go-oidc/v3 v3.21.0 h1:wZo4Q9Pum8dYEj0eMUPrqR+kvuGkeUplbLpNCkBqoWM=
 github.com/coreos/go-oidc/v3 v3.21.0/go.mod h1:DYCf24+ncYi+XkIH97GY1+dqoRlbaSI26KVTCI9SrY4=
 github.com/go-jose/go-jose/v4 v4.1.4 h1:moDMcTHmvE6Groj34emNPLs/qtYXRVcd6S7NHbHz3kA=
