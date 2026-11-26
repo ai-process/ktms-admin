@@ -1,4 +1,4 @@
-import { html, useState, api, useAsync, toast, PageHead, Card, Field, Seg, Badge, Meter, LoadError, Icon, parseAttrs } from '../lib.js';
+import { html, useState, useEffect, useRef, api, useAsync, toast, PageHead, Card, Field, Seg, Badge, Meter, LoadError, Icon, parseAttrs } from '../lib.js';
 import { loadCfg } from '../state.js';
 
 const SAMPLE_STATE = {
@@ -35,6 +35,10 @@ export function JudgePage() {
   const [state, setState] = useState(JSON.stringify(SAMPLE_STATE, null, 2));
   const [qs, setQs] = useState(SAMPLE_QUESTIONS);
   const [imgs, setImgs] = useState([]);
+  const imgsRef = useRef(imgs);
+  imgsRef.current = imgs;
+  // Previews are object URLs: free them when the page goes away.
+  useEffect(() => () => imgsRef.current.forEach((m) => URL.revokeObjectURL(m.url)), []);
   const [res, setRes] = useState(null);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
@@ -43,7 +47,10 @@ export function JudgePage() {
 
   const addImages = async (files) => {
     try {
-      const added = await Promise.all([...files].map((f, k) => readImage(f, 'image_' + (imgs.length + k + 1))));
+      const taken = new Set(imgs.map((m) => m.name));
+      let n = 0;
+      const nextName = () => { do n++; while (taken.has('image_' + n)); taken.add('image_' + n); return 'image_' + n; };
+      const added = await Promise.all([...files].map((f) => readImage(f, nextName())));
       setImgs([...imgs, ...added]);
     } catch (e) { toast('Cannot read the image: ' + e.message, true); }
   };
@@ -149,6 +156,7 @@ function Answer({ id, a, imgs }) {
   const t = typeOf(a.type);
   const conf = a.confidence ? html`<span class="small muted">confidence ${p100(a.confidence)}</span>` : null;
   const [on, setOn] = useState(0);
+  const img = imgs[on] || imgs[0];
   const dist = (entries, pick, label) => html`<div class="dist">${entries.map(([k, p]) => html`
     <span class=${'label' + (k === pick ? ' bold mono' : '')} title=${label(k)}>${label(k)}</span><${Meter} value=${p} tone=${k === pick ? 'ok' : ''} /><span class="small tabular">${p100(p)}</span>`)}</div>`;
   return html`<${Card} title=${id} actions=${html`<${Badge}>${Object.fromEntries(TYPES)[t] || t}<//>`}>
@@ -160,9 +168,9 @@ function Answer({ id, a, imgs }) {
       ${a.probabilities && dist(Object.entries(a.probabilities), null, (k) => a.legend?.[k] || 'Level ' + k)}`}
     ${t === 'BOX' && html`<div class="big-val"><span class="small muted">${a.confidence_unset ? 'no confidence given' : 'confidence ' + p100(a.confidence ?? 0)}</span></div>
       ${imgs.length > 1 && html`<${Field} label="Draw on"><select value=${on} onChange=${(e) => setOn(Number(e.currentTarget.value))}>${imgs.map((m, i) => html`<option value=${i}>${m.name}</option>`)}</select><//>`}
-      ${imgs[on] && a.box && html`<div style=${{ position: 'relative', display: 'inline-block', maxWidth: '100%' }}>
-        <img src=${imgs[on].url} alt=${imgs[on].name} style=${{ display: 'block', maxWidth: '100%', borderRadius: '8px' }} />
-        <div aria-label="Box" style=${{ position: 'absolute', border: '2px solid var(--orange, #ff7a1a)', boxShadow: '0 0 0 1px rgba(0,0,0,.4)',
+      ${img && a.box && html`<div style=${{ position: 'relative', display: 'inline-block', maxWidth: '100%' }}>
+        <img src=${img.url} alt=${img.name} style=${{ display: 'block', maxWidth: '100%', borderRadius: '8px' }} />
+        <div aria-label="Box" style=${{ position: 'absolute', border: '2px solid var(--accent, #ff7a1a)', boxShadow: '0 0 0 1px rgba(0,0,0,.4)',
           top: (a.box.top ?? 0) * 100 + '%', left: (a.box.left ?? 0) * 100 + '%', width: ((a.box.right ?? 0) - (a.box.left ?? 0)) * 100 + '%', height: ((a.box.bottom ?? 0) - (a.box.top ?? 0)) * 100 + '%' }}></div>
       </div>`}
       ${a.box && html`<p class="small mono">top ${(a.box.top ?? 0).toFixed(3)} · bottom ${(a.box.bottom ?? 0).toFixed(3)} · left ${(a.box.left ?? 0).toFixed(3)} · right ${(a.box.right ?? 0).toFixed(3)}</p>`}`}

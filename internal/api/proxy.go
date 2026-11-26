@@ -740,7 +740,10 @@ func (s *Server) proxyJudge(w http.ResponseWriter, r *http.Request, u *auth.User
 	if len(req.StateJSON) > 0 && string(req.StateJSON) != "null" {
 		stateStr = string(req.StateJSON)
 	}
-	if strings.TrimSpace(stateStr) == "" && len(req.Images) == 0 {
+	if strings.TrimSpace(stateStr) == "" {
+		stateStr = "" // blank is no state; KTMS would read it as invalid JSON
+	}
+	if stateStr == "" && len(req.Images) == 0 {
 		writeErr(w, http.StatusBadRequest, "bad_request", "state_json, state_text or an image is required")
 		return
 	}
