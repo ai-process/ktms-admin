@@ -16,12 +16,10 @@ Notable changes to ktms-admin. The format follows
 ### Changed
 - The console imports `ktms.v1` from KTMS (`github.com/ai-process/ktms/gen/ktms/v1`) instead of keeping a copy of
   its proto: no `proto/`, `internal/gen`, `make proto` or proto check any more.
+- The Nodes page calls `ktms-node` the node daemon, as the KTMS docs do.
 
 ### Fixed
 - Saving a model from a form without the competencies field keeps them.
-
-### Changed
-- The Nodes page calls `ktms-node` the node daemon, as the KTMS docs do.
 
 ## [1.3.0] - 2026-11-24
 
