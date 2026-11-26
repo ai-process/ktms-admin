@@ -2145,7 +2145,7 @@ type NodeInfo struct {
 	WarmModels      []string               `protobuf:"bytes,18,rep,name=warm_models,json=warmModels,proto3" json:"warm_models,omitempty"`
 	CapacityPercent uint32                 `protobuf:"varint,19,opt,name=capacity_percent,json=capacityPercent,proto3" json:"capacity_percent,omitempty"` // current level of the node's schedule
 	EffectiveSlots  int32                  `protobuf:"varint,20,opt,name=effective_slots,json=effectiveSlots,proto3" json:"effective_slots,omitempty"`    // concurrent requests allowed at that level
-	ScheduleSource  string                 `protobuf:"bytes,21,opt,name=schedule_source,json=scheduleSource,proto3" json:"schedule_source,omitempty"`     // local | ktms; empty from agents that predate it
+	ScheduleSource  string                 `protobuf:"bytes,21,opt,name=schedule_source,json=scheduleSource,proto3" json:"schedule_source,omitempty"`     // local | ktms; empty from daemons that predate it
 	CapacitySource  string                 `protobuf:"bytes,22,opt,name=capacity_source,json=capacitySource,proto3" json:"capacity_source,omitempty"`     // schedule | override | ktms_schedule | ktms_override | default
 	CapacityUntil   *timestamppb.Timestamp `protobuf:"bytes,23,opt,name=capacity_until,json=capacityUntil,proto3" json:"capacity_until,omitempty"`        // end of the override behind capacity_percent
 	unknownFields   protoimpl.UnknownFields
@@ -2511,7 +2511,7 @@ func (x *GetNodeScheduleRequest) GetNodeId() string {
 	return ""
 }
 
-// NodeScheduleInfo is what KTMS keeps for a node: the agent follows it only
+// NodeScheduleInfo is what KTMS keeps for a node: the node daemon follows it only
 // when it runs with schedule_source "ktms" (NodeInfo.schedule_source).
 type NodeScheduleInfo struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -5586,9 +5586,10 @@ type RouteCandidate struct {
 	// node_unavailable, node_pool_disabled, language_pair. New reasons may appear.
 	Dropped   string               `protobuf:"bytes,3,opt,name=dropped,proto3" json:"dropped,omitempty"`
 	PausedFor *durationpb.Duration `protobuf:"bytes,4,opt,name=paused_for,json=pausedFor,proto3" json:"paused_for,omitempty"` // vendor_paused: until the vendor's Retry-After ends
-	// Selection without a rule ranks by these: levels above the needs summed
-	// over the needed topics, then the blended price (3 x input + output) / 4
-	// per million tokens at the standard rate.
+	// Experimental: selection without a rule ranks by these: levels above the
+	// needs summed over the needed topics, then the blended price
+	// (3 x input + output) / 4 per million tokens at the standard rate (per
+	// million characters for translation). The order may change in a 1.x minor.
 	Excess              int32   `protobuf:"varint,5,opt,name=excess,proto3" json:"excess,omitempty"`
 	BlendedPricePerMtok float64 `protobuf:"fixed64,6,opt,name=blended_price_per_mtok,json=blendedPricePerMtok,proto3" json:"blended_price_per_mtok,omitempty"`
 	unknownFields       protoimpl.UnknownFields
