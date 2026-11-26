@@ -13,6 +13,10 @@ Notable changes to ktms-admin. The format follows
   *Where would it go?*: the gateway's `ExplainRoute` for a client key, with the selection's candidates.
   Efforts stay as deprecated.
 
+### Changed
+- The console imports `ktms.v1` from KTMS (`github.com/ai-process/ktms/gen/ktms/v1`) instead of keeping a copy of
+  its proto: no `proto/`, `internal/gen`, `make proto` or proto check any more.
+
 ### Fixed
 - Saving a model from a form without the competencies field keeps them.
 

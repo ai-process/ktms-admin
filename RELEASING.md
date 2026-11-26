@@ -10,8 +10,8 @@ dropping a setting waits for a new major.
    - move the `[Unreleased]` entries of [`CHANGELOG.md`](CHANGELOG.md) under
      `## [X.Y.Z] - YYYY-MM-DD`;
    - when the release needs a newer KTMS or light-tokenmeter, move the pair in
-     [`scripts/e2e.refs`](scripts/e2e.refs) to their release tags, copy KTMS's `proto/ktms/v1` at
-     that tag over `proto/ktms/v1`, run `make proto`, and update the table in
+     [`scripts/e2e.refs`](scripts/e2e.refs) to their release tags, require the same KTMS tag in
+     `go.mod` (`go get github.com/ai-process/ktms@vX.Y.Z && go mod tidy`), and update the table in
      [Compatibility](README.md#compatibility);
    - set `V=` in [`SECURITY.md`](SECURITY.md) to the new tag.
 2. After it is merged, tag main, push the tag, and publish the GitHub Release with the
@@ -37,7 +37,7 @@ secret: cosign signs keylessly with the workflow's OIDC identity, which
 
 ## Checks
 
-Every pull request runs `scripts/proto-check.sh` (the proto copy equals KTMS's at the ref in
-`scripts/e2e.refs`) and `scripts/e2e.sh` against that KTMS and light-tokenmeter pair;
-[`e2e-main.yml`](.github/workflows/e2e-main.yml) runs the e2e test daily against their `main`, so
-a break shows up before the pair is moved.
+Every pull request runs `scripts/e2e.sh` against the KTMS and light-tokenmeter pair in
+`scripts/e2e.refs`; [`e2e-main.yml`](.github/workflows/e2e-main.yml) runs it daily against their
+`main`, after building the console with `ktms.v1` from KTMS `main`, so a break shows up before the
+pair is moved.

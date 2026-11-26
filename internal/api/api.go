@@ -24,7 +24,7 @@ import (
 
 	"github.com/ai-process/ktms-admin/internal/auth"
 	"github.com/ai-process/ktms-admin/internal/config"
-	pb "github.com/ai-process/ktms-admin/internal/gen/ktms/v1"
+	pb "github.com/ai-process/ktms/gen/ktms/v1"
 	"github.com/ai-process/ktms-admin/internal/usage"
 	"github.com/ai-process/ktms-admin/internal/web"
 )

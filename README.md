@@ -388,16 +388,14 @@ until KTMS deletes them.
 ```bash
 make test    # go test -race ./...
 make dev     # run on :8080 without sign-in (set KTMS_* and/or TOKENMETER_URL)
-make proto   # regenerate internal/gen from proto/ (needs buf)
 ```
 
 `internal/web/static` is plain HTML, CSS and ES modules served as-is: `js/main.js` (shell and routing),
 `js/lib.js` (shared components), `js/pages/*` (one module per page), and `vendor/` (Preact 10 and htm 3,
 unmodified except that hooks import `./preact.mjs`). Restart the server after editing them: they are embedded
-at build time. `proto/` is a copy of KTMS's
-protocol, so the console talks to it over gRPC without importing its code. CI fails when the copy differs
-from KTMS at the ref in `scripts/e2e.refs`, or `internal/gen` from the copy: copy the files over and run
-`make proto`.
+at build time. The gRPC types come from KTMS itself: `github.com/ai-process/ktms/gen/ktms/v1`, at the
+version in `go.mod`. A feature not yet released in KTMS is required at a pseudo-version of its `main`
+(`go get github.com/ai-process/ktms@main`); a release requires a KTMS tag.
 
 Layout: `cmd/ktms-admin` (entrypoint), `internal/auth` (sessions, allowlists, sign-in page; one package per sign-in method below it),
 `internal/api` (JSON API and guards), `internal/usage` (light-tokenmeter client and the greedy/worthy

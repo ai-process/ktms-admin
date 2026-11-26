@@ -18,7 +18,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/ai-process/ktms-admin/internal/auth"
-	pb "github.com/ai-process/ktms-admin/internal/gen/ktms/v1"
+	pb "github.com/ai-process/ktms/gen/ktms/v1"
 	"github.com/ai-process/ktms-admin/internal/usage"
 )
 

@@ -15,7 +15,7 @@ import (
 	"github.com/ai-process/ktms-admin/internal/auth"
 	"github.com/ai-process/ktms-admin/internal/auth/oidc"
 	"github.com/ai-process/ktms-admin/internal/config"
-	pb "github.com/ai-process/ktms-admin/internal/gen/ktms/v1"
+	pb "github.com/ai-process/ktms/gen/ktms/v1"
 )
 
 func (f *fakeAdmin) GetTeamSpend(_ context.Context, r *pb.GetTeamSpendRequest, _ ...grpc.CallOption) (*pb.GetTeamSpendResponse, error) {
