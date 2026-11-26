@@ -82,7 +82,7 @@ export function NodesPage() {
     </section>
     <${Card} title="Nodes" flush>
       <${Table} loading=${st.loading && !st.data} rows=${nodeRows} head=${['Node', 'State', 'Level', 'Models', { label: 'Queue', num: true }, 'VRAM', { label: 'Speed', num: true }, 'Heartbeat', { label: 'Actions', sr: true }]}
-        empty=${{ title: 'No nodes connected', children: 'Mint a node key and start ktms-node with NODE_KEY on a GPU machine.' }} />
+        empty=${{ title: 'No nodes connected', children: 'Mint a node key and start the node daemon, ktms-node, with NODE_KEY on a GPU machine.' }} />
     <//>
     <${Card} title="Node keys" flush>
       <${Table} loading=${st.loading && !st.data} rows=${keyRows} head=${['Name', 'Node id', 'Models', 'Networks', 'Created', 'Status', { label: 'Actions', sr: true }]}
