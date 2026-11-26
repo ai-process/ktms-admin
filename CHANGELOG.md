@@ -6,8 +6,20 @@ Notable changes to ktms-admin. The format follows
 
 ## [Unreleased]
 
+### Added
+- Competencies and needs (KTMS 1.7): a competencies field on the model form and column in the models
+  table, needs on rules (with the editor's checks: a chain must meet the rule's needs, and the catch-all
+  per effort is no longer required once a model declares competencies), needs in the Playground, and
+  *Where would it go?*: the gateway's `ExplainRoute` for a client key, with the selection's candidates.
+  Efforts stay as deprecated.
+
 ### Changed
+- The console imports `ktms.v1` from KTMS (`github.com/ai-process/ktms/gen/ktms/v1`) instead of keeping a copy of
+  its proto: no `proto/`, `internal/gen`, `make proto` or proto check any more.
 - The Nodes page calls `ktms-node` the node daemon, as the KTMS docs do.
+
+### Fixed
+- Saving a model from a form without the competencies field keeps them.
 
 ## [1.3.0] - 2026-11-24
 

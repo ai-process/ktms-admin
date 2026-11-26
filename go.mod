@@ -3,6 +3,7 @@ module github.com/ai-process/ktms-admin
 go 1.26.0
 
 require (
+	github.com/ai-process/ktms v1.7.0
 	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/go-jose/go-jose/v4 v4.1.4
 	github.com/rs/zerolog v1.35.1
@@ -15,9 +16,9 @@ require (
 
 require (
 	github.com/mattn/go-colorable v0.1.14 // indirect
-	github.com/mattn/go-isatty v0.0.20 // indirect
+	github.com/mattn/go-isatty v0.0.23 // indirect
 	golang.org/x/net v0.60.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260706201446-f0a921348800 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260928230214-8a89bd6388cc // indirect
 )

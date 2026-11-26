@@ -18,7 +18,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/ai-process/ktms-admin/internal/auth"
-	pb "github.com/ai-process/ktms-admin/internal/gen/ktms/v1"
+	pb "github.com/ai-process/ktms/gen/ktms/v1"
 	"github.com/ai-process/ktms-admin/internal/usage"
 )
 
@@ -258,6 +258,9 @@ func (s *Server) proxyUpsertModel(w http.ResponseWriter, r *http.Request, u *aut
 				if !hasField(rawMap, "price_per_million_chars", "pricePerMillionChars") {
 					m.PricePerMillionChars = em.GetPricePerMillionChars()
 				}
+				if !hasField(rawMap, "competencies") {
+					m.Competencies = em.GetCompetencies()
+				}
 				break
 			}
 		}
@@ -269,6 +272,28 @@ func (s *Server) proxyUpsertModel(w http.ResponseWriter, r *http.Request, u *aut
 	}
 	s.dropPrices()
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// proxyExplain dry-runs routing for a client key (AdminService/ExplainRoute):
+// the rule or the selection, and why each model is kept or dropped.
+func (s *Server) proxyExplain(w http.ResponseWriter, r *http.Request, _ *auth.User) {
+	var req pb.ExplainRouteRequest
+	if err := readProto(r, &req); err != nil {
+		backendErr(w, badBody(err))
+		return
+	}
+	if req.GetApiKeyName() == "" {
+		writeErr(w, http.StatusBadRequest, "bad_request", "api_key_name is required")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)
+	defer cancel()
+	resp, err := s.admin.ExplainRoute(ctx, &req)
+	if err != nil {
+		backendErr(w, err)
+		return
+	}
+	writeProto(w, resp)
 }
 
 func (s *Server) proxyDeleteModel(w http.ResponseWriter, r *http.Request, u *auth.User) {
@@ -495,8 +520,9 @@ type playgroundMessage struct {
 }
 
 type playgroundReq struct {
-	Model      string              `json:"model"` // "", "auto", or an exact model id
-	Effort     string              `json:"effort"`
+	Model      string              `json:"model"`  // "", "auto", or an exact model id
+	Effort     string              `json:"effort"` // deprecated: the general need
+	Needs      map[string]string   `json:"needs"`  // topic -> level (KTMS 1.7)
 	System     string              `json:"system"`
 	Prompt     string              `json:"prompt"`
 	Messages   []playgroundMessage `json:"messages"`
@@ -514,6 +540,8 @@ func (s *Server) buildPlaygroundReq(req playgroundReq, u *auth.User) (*pb.Genera
 		effort = pb.Effort_EFFORT_LOW
 	case "high":
 		effort = pb.Effort_EFFORT_HIGH
+	case "":
+		effort = pb.Effort_EFFORT_UNSPECIFIED // none: the needs say it all, as ExplainRoute is asked
 	}
 	override := ""
 	if req.Model != "" && req.Model != "auto" {
@@ -555,6 +583,7 @@ func (s *Server) buildPlaygroundReq(req playgroundReq, u *auth.User) (*pb.Genera
 
 	return &pb.GenerateTextRequest{
 		Effort:                effort,
+		Needs:                 req.Needs,
 		Attributes:            attrs,
 		ActionId:              "console.playground",
 		ModelOverride:         override,

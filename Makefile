@@ -1,14 +1,10 @@
-.PHONY: build run test proto fmt dev
+.PHONY: build run test fmt dev
 
 build:
 	go build -trimpath -ldflags="-s -w" -o bin/ktms-admin ./cmd/ktms-admin
 
 test:
 	go test -race ./...
-
-# Regenerate internal/gen from proto/ (needs buf).
-proto:
-	buf generate
 
 fmt:
 	go fmt ./...

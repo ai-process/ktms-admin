@@ -14,7 +14,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/ai-process/ktms-admin/internal/auth"
-	pb "github.com/ai-process/ktms-admin/internal/gen/ktms/v1"
+	pb "github.com/ai-process/ktms/gen/ktms/v1"
 )
 
 // agentsServer is KTMS's built-in MCP server of the agents' inbox; a key

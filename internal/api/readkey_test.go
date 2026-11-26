@@ -11,7 +11,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
-	pb "github.com/ai-process/ktms-admin/internal/gen/ktms/v1"
+	pb "github.com/ai-process/ktms/gen/ktms/v1"
 )
 
 // scopedAdmin answers as Keystone would for the key a call carries: the admin

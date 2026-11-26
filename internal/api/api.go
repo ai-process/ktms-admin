@@ -24,7 +24,7 @@ import (
 
 	"github.com/ai-process/ktms-admin/internal/auth"
 	"github.com/ai-process/ktms-admin/internal/config"
-	pb "github.com/ai-process/ktms-admin/internal/gen/ktms/v1"
+	pb "github.com/ai-process/ktms/gen/ktms/v1"
 	"github.com/ai-process/ktms-admin/internal/usage"
 	"github.com/ai-process/ktms-admin/internal/web"
 )
@@ -126,7 +126,7 @@ var readMethods = map[string]bool{
 	pb.AdminService_ListUserRateLimits_FullMethodName: true, pb.AdminService_ListSpendLimits_FullMethodName: true,
 	pb.AdminService_ListOrganizations_FullMethodName: true, pb.AdminService_GetTeam_FullMethodName: true,
 	pb.AdminService_ListTeams_FullMethodName: true, pb.AdminService_GetTeamSpend_FullMethodName: true,
-	pb.AdminService_GetSpend_FullMethodName: true, "/ktms.v1.AdminService/ExplainRoute": true,
+	pb.AdminService_GetSpend_FullMethodName: true, pb.AdminService_ExplainRoute_FullMethodName: true,
 	pb.AdminService_ListMCPTools_FullMethodName:    true,
 	pb.AdminService_GetNodeSchedule_FullMethodName: true, pb.AdminService_ListNodeSchedules_FullMethodName: true,
 	pb.AdminService_ListAgents_FullMethodName: true, pb.AdminService_ListAgentTasks_FullMethodName: true,
@@ -171,6 +171,7 @@ func (s *Server) Handler() http.Handler {
 		api("PUT /api/proxy/models/{id}", adminOnly, s.proxyUpsertModel)
 		api("DELETE /api/proxy/models/{id}", adminOnly, s.proxyDeleteModel)
 		api("PUT /api/proxy/rules", adminOnly, s.proxyReplaceRules)
+		api("POST /api/proxy/explain", globalQuery, s.proxyExplain)
 		api("GET /api/proxy/user-rate-limits", globalRead, s.proxyListUserRateLimits)
 		api("PUT /api/proxy/user-rate-limits", adminOnly, s.proxySetUserRateLimit)
 		api("DELETE /api/proxy/user-rate-limits", adminOnly, s.proxyDeleteUserRateLimit)
@@ -241,11 +242,12 @@ type handler func(w http.ResponseWriter, r *http.Request, u *auth.User)
 type policy int
 
 const (
-	anyUser    policy = iota // /api/me, /api/health
-	globalRead               // every tenant's data: admins and viewers
-	adminOnly                // global changes, and calls made with the console's own key
-	team                     // admins and viewers globally, team users for their own team
-	own                      // every signed-in person, self included, for their own agent only
+	anyUser     policy = iota // /api/me, /api/health
+	globalRead                // every tenant's data: admins and viewers
+	adminOnly                 // global changes, and calls made with the console's own key
+	team                      // admins and viewers globally, team users for their own team
+	own                       // every signed-in person, self included, for their own agent only
+	globalQuery               // a read of every tenant's data with a body (POST): admins and viewers
 )
 
 func (p policy) allows(u *auth.User, write bool) bool {
@@ -254,6 +256,8 @@ func (p policy) allows(u *auth.User, write bool) bool {
 		return !write
 	case globalRead:
 		return !write && u.CanReadGlobal()
+	case globalQuery:
+		return u.CanReadGlobal()
 	case adminOnly:
 		return u.IsSuperAdmin()
 	case own:

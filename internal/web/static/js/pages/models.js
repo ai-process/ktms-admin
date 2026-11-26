@@ -1,4 +1,4 @@
-import { html, useState, api, useAsync, openDialog, confirmAction, toast, FormDialog, PageHead, Card, Table, Field, Check, Badge, LoadError, compact, num, effortName } from '../lib.js';
+import { html, useState, api, useAsync, openDialog, confirmAction, toast, FormDialog, PageHead, Card, Table, Field, Check, Badge, LoadError, compact, num, effortName, formatLevels, parseLevels, competenciesOf } from '../lib.js';
 import { isAdmin, loadCfg } from '../state.js';
 
 export const VENDORS = ['openai', 'anthropic', 'google', 'deepseek', 'groq', 'mistral', 'azure', 'bedrock', 'ollama', 'typesafe', 'local'];
@@ -12,7 +12,7 @@ const CAPS = [
 ];
 
 const BLANK = {
-  id: '', vendor: 'openai', endpoint: '', efforts: ['EFFORT_LOW', 'EFFORT_MEDIUM', 'EFFORT_HIGH'], capabilities: [],
+  id: '', vendor: 'openai', endpoint: '', efforts: [], competencies: { general: 'proficient' }, capabilities: [],
   rpm: 0, rpm_burst: 0, queue_timeout_ms: 0, budget_grace_margin: 0,
   price_in_per_mtok: 0, price_out_per_mtok: 0, price_in_peak_per_mtok: 0, price_out_peak_per_mtok: 0,
   price_in_batch_per_mtok: 0, price_out_batch_per_mtok: 0, price_cache_read_per_mtok: 0, price_cache_write_per_mtok: 0,
@@ -37,7 +37,8 @@ export function ModelsPage() {
 
   const rows = models.map((m) => html`<tr key=${m.id} class=${m.enabled ? '' : 'off'}>
     <td><div class="stacked"><span class="mono">${m.id}</span><span class="small">${m.vendor}${m.endpoint ? ' · custom endpoint' : ''}</span></div></td>
-    <td><div class="cluster">${(m.efforts || []).map((e) => html`<span class="chip" key=${e}>${effortName(e)}</span>`)}</div></td>
+    <td><div class="cluster">${Object.entries(competenciesOf(m)).sort().map(([t, l]) => html`<span class="chip" key=${t}
+      title=${t === 'general' && !(m.competencies || {}).general ? 'From efforts: ' + (m.efforts || []).map(effortName).join(', ') : ''}>${t}: ${l}</span>`)}</div></td>
     <td><div class="cluster">${(m.capabilities || []).map((c) => html`<span class="chip" key=${c}>${c}</span>`)}</div></td>
     <td class="num">$${num(m.price_in_per_mtok)} / $${num(m.price_out_per_mtok)}</td>
     <td class="num">${rpmText(m)}</td>
@@ -56,7 +57,7 @@ export function ModelsPage() {
     <${LoadError} error=${st.error} retry=${st.reload} />
     <${Card} flush label="Models">
       <${Table} loading=${st.loading} rows=${rows}
-        head=${['Model', 'Efforts', 'Capabilities', { label: 'In / out per Mtok', num: true }, { label: 'Requests / min', num: true }, { label: 'Daily tokens / key', num: true }, 'Status', { label: 'Actions', sr: true }]}
+        head=${['Model', 'Competencies', 'Capabilities', { label: 'In / out per Mtok', num: true }, { label: 'Requests / min', num: true }, { label: 'Daily tokens / key', num: true }, 'Status', { label: 'Actions', sr: true }]}
         empty=${{ title: 'No models yet', children: 'Add one, then a rule that routes to it.', action: isAdmin() && html`<button type="button" class="primary" onClick=${() => edit(null)}>Add model</button>` }} />
     <//>
   `;
@@ -75,7 +76,9 @@ function ModelForm({ model, close }) {
     const id = isNew ? String(fd.get('id')).trim() : m.id;
     if (!/^[A-Za-z0-9._:/-]+$/.test(id)) throw new Error('The model id may contain letters, digits and . _ : / - only.');
     const efforts = ['LOW', 'MEDIUM', 'HIGH'].filter((e) => fd.get('effort_' + e)).map((e) => 'EFFORT_' + e);
-    const spec = { ...m, id, vendor: fd.get('vendor'), endpoint: String(fd.get('endpoint')).trim(), efforts, capabilities: caps, enabled: !!fd.get('enabled') };
+    const competencies = parseLevels(fd.get('competencies'));
+    if (!efforts.length && !Object.keys(competencies).length) throw new Error('Give the model its competencies, e.g. general=proficient.');
+    const spec = { ...m, id, vendor: fd.get('vendor'), endpoint: String(fd.get('endpoint')).trim(), efforts, competencies, capabilities: caps, enabled: !!fd.get('enabled') };
     for (const k of ['rpm', 'rpm_burst', 'queue_timeout_ms', 'budget_grace_margin', 'price_in_per_mtok', 'price_out_per_mtok', 'price_in_peak_per_mtok', 'price_out_peak_per_mtok', 'price_in_batch_per_mtok', 'price_out_batch_per_mtok', 'price_cache_read_per_mtok', 'price_cache_write_per_mtok', 'daily_tokens_per_key', 'daily_tokens_per_user']) spec[k] = num(fd.get(k));
     await api('PUT', '/api/proxy/models/' + encodeURIComponent(id), spec);
     toast('Model saved');
@@ -87,7 +90,9 @@ function ModelForm({ model, close }) {
       <${Field} label="Vendor"><select name="vendor">${VENDORS.map((v) => html`<option value=${v} defaultSelected=${v === m.vendor}>${v}</option>`)}</select><//>
       <${Field} label="Endpoint override" hint="Optional base URL, e.g. an Azure deployment or a local server." class="wide"><input name="endpoint" defaultValue=${m.endpoint} placeholder="https://…" /><//>
     </div>
-    <fieldset><legend>Efforts it may serve</legend><div class="cluster">
+    <${Field} label="Competencies" hint="topic=level, comma separated; levels basic, proficient, expert. A request's needs are met at the model's level or below. Needs KTMS 1.7." class="wide">
+      <input name="competencies" defaultValue=${formatLevels(m.competencies)} placeholder="general=expert, medical=proficient" autocomplete="off" /><//>
+    <fieldset><legend>Efforts (deprecated: read as general, served exactly)</legend><div class="cluster">
       ${['LOW', 'MEDIUM', 'HIGH'].map((e) => html`<${Check} key=${e} name=${'effort_' + e} label=${e.toLowerCase()} defaultChecked=${m.efforts.includes('EFFORT_' + e)} />`)}
     </div></fieldset>
     <fieldset><legend>Capabilities</legend><div class="cluster">

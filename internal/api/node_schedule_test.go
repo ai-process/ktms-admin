@@ -10,7 +10,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	pb "github.com/ai-process/ktms-admin/internal/gen/ktms/v1"
+	pb "github.com/ai-process/ktms/gen/ktms/v1"
 )
 
 func (f *fakeAdmin) GetNodeSchedule(_ context.Context, r *pb.GetNodeScheduleRequest, _ ...grpc.CallOption) (*pb.NodeScheduleInfo, error) {
